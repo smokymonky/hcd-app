@@ -27,11 +27,21 @@ const AdminPage = ({ user, onLogout }) => {
     if (activeTab === 'users') loadUsers();
   }, [activeTab]);
 
+  // Map API fields to frontend fields
+  const mapActivity = (a) => ({
+    ...a,
+    activity: a.name || a.activity || '',
+    dueDates: a.due_dates || a.dueDates || [],
+    monthStatus: a.month_status || a.monthStatus || {},
+  });
+
   const loadActivities = async () => {
     try {
       const data = await activitiesAPI.getAll();
-      if (data && data.activities) setActivities(data.activities);
-      else if (Array.isArray(data)) setActivities(data);
+      let items = [];
+      if (data && data.activities) items = data.activities;
+      else if (Array.isArray(data)) items = data;
+      if (items.length > 0) setActivities(items.map(mapActivity));
     } catch (e) {
       console.log('Using local data - API not available:', e.message);
     }
@@ -71,12 +81,23 @@ const AdminPage = ({ user, onLogout }) => {
   const handleSaveActivity = async () => {
     if (!editItem.activity.trim()) { showMessage('Activity name is required', 'error'); return; }
     setLoading(true);
+    // Map frontend fields back to API fields
+    const apiData = {
+      name: editItem.activity,
+      owner: editItem.owner,
+      category: editItem.category,
+      status: editItem.status,
+      due_dates: editItem.dueDates,
+      month_status: editItem.monthStatus || {},
+      description: editItem.description || '',
+      notes: editItem.notes || '',
+    };
     try {
       if (formType === 'create-activity') {
-        await activitiesAPI.create(editItem);
+        await activitiesAPI.create(apiData);
         showMessage('Activity created successfully!');
       } else {
-        await activitiesAPI.update(editItem.id, editItem);
+        await activitiesAPI.update(editItem.id, apiData);
         showMessage('Activity updated successfully!');
       }
       await loadActivities();
@@ -101,7 +122,7 @@ const AdminPage = ({ user, onLogout }) => {
 
   const handleStatusChange = async (item, newStatus) => {
     try {
-      await activitiesAPI.updateStatus(item.id, newStatus, item.monthStatus);
+      await activitiesAPI.updateStatus(item.id, newStatus, item.monthStatus || item.month_status || {});
       showMessage(`Status changed to ${newStatus}`);
       await loadActivities();
     } catch (e) {
@@ -110,7 +131,7 @@ const AdminPage = ({ user, onLogout }) => {
   };
 
   const handleMonthToggle = async (item, month) => {
-    const ms = { ...item.monthStatus };
+    const ms = { ...(item.monthStatus || item.month_status || {}) };
     if (ms[month] === 'Completed') {
       delete ms[month];
     } else {
