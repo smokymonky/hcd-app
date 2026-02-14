@@ -1,68 +1,66 @@
-// API Service - Connects frontend to backend
-const API_URL = process.env.REACT_APP_API_URL || 'https://hcd-app.up.railway.app/api';
+import React, { useState, useEffect } from 'react';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import LoginPage from './pages/LoginPage';
+import DashboardPage from './pages/DashboardPage';
+import AdminPage from './pages/AdminPage';
 
-function getToken() {
-  return localStorage.getItem('hcd_token');
-}
+function App() {
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
 
-function headers(json = true) {
-  const h = {};
-  if (json) h['Content-Type'] = 'application/json';
-  const token = getToken();
-  if (token) h['Authorization'] = `Bearer ${token}`;
-  return h;
-}
+  useEffect(() => {
+    const savedUser = localStorage.getItem('hcd_user');
+    const savedToken = localStorage.getItem('hcd_token');
+    if (savedUser && savedToken) {
+      try {
+        setUser(JSON.parse(savedUser));
+      } catch (e) {
+        localStorage.removeItem('hcd_user');
+        localStorage.removeItem('hcd_token');
+      }
+    }
+    setLoading(false);
+  }, []);
 
-async function request(path, options = {}) {
-  const response = await fetch(`${API_URL}${path}`, {
-    ...options,
-    headers: { ...headers(options.body ? true : false), ...options.headers }
-  });
-  const data = await response.json();
-  if (!response.ok) {
-    throw new Error(data.error || data.message || 'Request failed');
+  const handleLogout = () => {
+    localStorage.removeItem('hcd_token');
+    localStorage.removeItem('hcd_user');
+    localStorage.removeItem('hcd_permissions');
+    setUser(null);
+  };
+
+  if (loading) {
+    return (
+      <div style={styles.loading}>
+        <div style={styles.spinner} />
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      </div>
+    );
   }
-  return data;
+
+  const isAdmin = user && (user.role === 'admin' || user.role === 'Admin');
+
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/login" element={user ? <Navigate to="/dashboard" /> : <LoginPage setUser={setUser} />} />
+        <Route path="/dashboard" element={user ? <DashboardPage user={user} onLogout={handleLogout} /> : <Navigate to="/login" />} />
+        <Route path="/admin" element={isAdmin ? <AdminPage user={user} onLogout={handleLogout} /> : <Navigate to={user ? "/dashboard" : "/login"} />} />
+        <Route path="*" element={<Navigate to={user ? "/dashboard" : "/login"} />} />
+      </Routes>
+    </BrowserRouter>
+  );
 }
 
-// Auth
-export const authAPI = {
-  login: (email, password) => request('/auth/login', {
-    method: 'POST', body: JSON.stringify({ email, password })
-  }),
-  me: () => request('/auth/me'),
-  logout: () => request('/auth/logout', { method: 'POST' }),
-};
-
-// Activities
-export const activitiesAPI = {
-  getAll: (filters = {}) => {
-    const params = new URLSearchParams();
-    Object.entries(filters).forEach(([k, v]) => { if (v && v !== 'all') params.append(k, v); });
-    const qs = params.toString();
-    return request(`/activities${qs ? '?' + qs : ''}`);
+const styles = {
+  loading: {
+    minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
+    background: 'linear-gradient(135deg, #1a1028 0%, #2d1f42 30%, #3d2856 60%, #4a3265 100%)',
   },
-  getOne: (id) => request(`/activities/${id}`),
-  create: (data) => request('/activities', {
-    method: 'POST', body: JSON.stringify(data)
-  }),
-  update: (id, data) => request(`/activities/${id}`, {
-    method: 'PUT', body: JSON.stringify(data)
-  }),
-  updateStatus: (id, status, monthStatus) => request(`/activities/${id}/status`, {
-    method: 'PATCH', body: JSON.stringify({ status, monthStatus })
-  }),
-  delete: (id) => request(`/activities/${id}`, { method: 'DELETE' }),
+  spinner: {
+    width: 40, height: 40, border: '4px solid rgba(255,255,255,0.1)',
+    borderTopColor: '#F3C036', borderRadius: '50%', animation: 'spin 0.8s linear infinite',
+  },
 };
 
-// Users
-export const usersAPI = {
-  getAll: () => request('/users'),
-  create: (data) => request('/users', {
-    method: 'POST', body: JSON.stringify(data)
-  }),
-  update: (id, data) => request(`/users/${id}`, {
-    method: 'PUT', body: JSON.stringify(data)
-  }),
-  delete: (id) => request(`/users/${id}`, { method: 'DELETE' }),
-};
+export default App;
