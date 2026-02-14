@@ -10,6 +10,7 @@ const ownerClassMap = { OP:'op','D&C':'dc','T&A':'ta',OD:'od','Com&Bn':'cb',SBM:
 
 function getMonthDisplay(item, month) {
   if (!item.dueDates.includes(month)) return null;
+  if (item.status === 'Completed Early') return { icon: '⭐', isIcon: true };
   if (item.status === 'Completed') return { icon: '✅', isIcon: true };
   if (item.status === 'Progressing' && item.monthStatus?.[month] === 'Completed') return { icon: '✅', isIcon: true };
   if (item.status === 'Progressing' && item.monthStatus?.[month] === 'Delayed') return { icon: '🔴', isIcon: true };
