@@ -1,140 +1,68 @@
-// =============================================
-// API Service
-// Handles all backend communication
-// =============================================
+// API Service - Connects frontend to backend
+const API_URL = process.env.REACT_APP_API_URL || 'https://hcd-app.up.railway.app/api';
 
-import axios from 'axios';
+function getToken() {
+  return localStorage.getItem('hcd_token');
+}
 
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
+function headers(json = true) {
+  const h = {};
+  if (json) h['Content-Type'] = 'application/json';
+  const token = getToken();
+  if (token) h['Authorization'] = `Bearer ${token}`;
+  return h;
+}
 
-// Create axios instance
-const api = axios.create({
-  baseURL: API_URL,
-  headers: {
-    'Content-Type': 'application/json'
+async function request(path, options = {}) {
+  const response = await fetch(`${API_URL}${path}`, {
+    ...options,
+    headers: { ...headers(options.body ? true : false), ...options.headers }
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.error || data.message || 'Request failed');
   }
-});
+  return data;
+}
 
-// Add token to requests
-api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('hcd_token');
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
-  }
-  return config;
-});
-
-// Handle response errors
-api.interceptors.response.use(
-  (response) => response,
-  (error) => {
-    if (error.response?.status === 401) {
-      // Token expired or invalid - logout
-      localStorage.removeItem('hcd_token');
-      localStorage.removeItem('hcd_user');
-      window.location.href = '/login';
-    }
-    return Promise.reject(error);
-  }
-);
-
-// =============================================
-// Auth API
-// =============================================
-
+// Auth
 export const authAPI = {
-  login: async (email, password) => {
-    const response = await api.post('/auth/login', { email, password });
-    return response.data;
-  },
-
-  logout: async () => {
-    const response = await api.post('/auth/logout');
-    return response.data;
-  },
-
-  getMe: async () => {
-    const response = await api.get('/auth/me');
-    return response.data;
-  }
+  login: (email, password) => request('/auth/login', {
+    method: 'POST', body: JSON.stringify({ email, password })
+  }),
+  me: () => request('/auth/me'),
+  logout: () => request('/auth/logout', { method: 'POST' }),
 };
 
-// =============================================
-// Activities API
-// =============================================
-
+// Activities
 export const activitiesAPI = {
-  getAll: async (filters = {}) => {
-    const params = new URLSearchParams(filters).toString();
-    const response = await api.get(`/activities?${params}`);
-    return response.data;
+  getAll: (filters = {}) => {
+    const params = new URLSearchParams();
+    Object.entries(filters).forEach(([k, v]) => { if (v && v !== 'all') params.append(k, v); });
+    const qs = params.toString();
+    return request(`/activities${qs ? '?' + qs : ''}`);
   },
-
-  getById: async (id) => {
-    const response = await api.get(`/activities/${id}`);
-    return response.data;
-  },
-
-  create: async (data) => {
-    const response = await api.post('/activities', data);
-    return response.data;
-  },
-
-  update: async (id, data) => {
-    const response = await api.put(`/activities/${id}`, data);
-    return response.data;
-  },
-
-  updateStatus: async (id, status, monthStatus) => {
-    const response = await api.patch(`/activities/${id}/status`, { status, month_status: monthStatus });
-    return response.data;
-  },
-
-  delete: async (id) => {
-    const response = await api.delete(`/activities/${id}`);
-    return response.data;
-  },
-
-  getStats: async () => {
-    const response = await api.get('/activities/stats/summary');
-    return response.data;
-  }
+  getOne: (id) => request(`/activities/${id}`),
+  create: (data) => request('/activities', {
+    method: 'POST', body: JSON.stringify(data)
+  }),
+  update: (id, data) => request(`/activities/${id}`, {
+    method: 'PUT', body: JSON.stringify(data)
+  }),
+  updateStatus: (id, status, monthStatus) => request(`/activities/${id}/status`, {
+    method: 'PATCH', body: JSON.stringify({ status, monthStatus })
+  }),
+  delete: (id) => request(`/activities/${id}`, { method: 'DELETE' }),
 };
 
-// =============================================
-// Users API
-// =============================================
-
+// Users
 export const usersAPI = {
-  getAll: async () => {
-    const response = await api.get('/users');
-    return response.data;
-  },
-
-  getById: async (id) => {
-    const response = await api.get(`/users/${id}`);
-    return response.data;
-  },
-
-  create: async (data) => {
-    const response = await api.post('/users', data);
-    return response.data;
-  },
-
-  update: async (id, data) => {
-    const response = await api.put(`/users/${id}`, data);
-    return response.data;
-  },
-
-  delete: async (id) => {
-    const response = await api.delete(`/users/${id}`);
-    return response.data;
-  },
-
-  getByFunction: async (func) => {
-    const response = await api.get(`/users/by-function/${func}`);
-    return response.data;
-  }
+  getAll: () => request('/users'),
+  create: (data) => request('/users', {
+    method: 'POST', body: JSON.stringify(data)
+  }),
+  update: (id, data) => request(`/users/${id}`, {
+    method: 'PUT', body: JSON.stringify(data)
+  }),
+  delete: (id) => request(`/users/${id}`, { method: 'DELETE' }),
 };
-
-export default api;
