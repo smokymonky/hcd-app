@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import hrPlanData from '../data/hrPlanData';
 import { exportToPDF } from '../utils/pdfExport';
+import { useNavigate } from 'react-router-dom';
 import '../styles/dashboard.css';
 
 const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -10,7 +11,6 @@ const ownerClassMap = { OP:'op','D&C':'dc','T&A':'ta',OD:'od','Com&Bn':'cb',SBM:
 
 function getMonthDisplay(item, month) {
   if (!item.dueDates.includes(month)) return null;
-  if (item.status === 'Completed Early') return { icon: '⭐', isIcon: true };
   if (item.status === 'Completed') return { icon: '✅', isIcon: true };
   if (item.status === 'Progressing' && item.monthStatus?.[month] === 'Completed') return { icon: '✅', isIcon: true };
   if (item.status === 'Progressing' && item.monthStatus?.[month] === 'Delayed') return { icon: '🔴', isIcon: true };
@@ -23,6 +23,7 @@ const DashboardPage = ({ user, onLogout }) => {
   const [currentView, setCurrentView] = useState('timeline');
   const [filters, setFilters] = useState({ function:'all', category:'all', status:'all', month:'all' });
   const [searchQuery, setSearchQuery] = useState('');
+  const navigate = useNavigate();
   const [activeCard, setActiveCard] = useState(null);
 
   useEffect(() => { document.body.setAttribute('data-theme', theme); localStorage.setItem('hcd-theme', theme); }, [theme]);
@@ -73,7 +74,7 @@ const DashboardPage = ({ user, onLogout }) => {
   const cm = months[new Date().getMonth()], nm = months[(new Date().getMonth()+1)%12];
   const upcoming = filteredData.filter(i => i.dueDates.includes(cm) || i.dueDates.includes(nm)).length;
 
-  const canExportPDF = user && (user.role === 'admin' || user.role === 'Admin' || user.role === 'hr_director' || user.role === 'HR Director' || user.role === 'esmd' || user.role === 'ceo');
+  const canExportPDF = user && (user.role === 'admin' || user.role === 'hr_director' || user.role === 'esmd' || user.role === 'ceo');
 
   // Cards view helpers
   const funcDefs = [
@@ -118,6 +119,10 @@ const DashboardPage = ({ user, onLogout }) => {
               Export PDF
             </button>
           )}
+          <div style={{display:'flex',alignItems:'center',gap:'8px',marginLeft:'8px',paddingLeft:'16px',borderLeft:'1px solid var(--border-color)'}}>
+            <span style={{color:'var(--text-secondary)',fontSize:'13px',fontWeight:500}}>{user?.name || user?.email || 'User'}</span>
+            <button onClick={() => { localStorage.removeItem('hcd_token'); localStorage.removeItem('hcd_user'); localStorage.removeItem('hcd_permissions'); if(onLogout) onLogout(); navigate('/login'); }} style={{padding:'8px 16px',background:'rgba(239,68,68,0.1)',border:'1px solid rgba(239,68,68,0.3)',borderRadius:'8px',color:'#ef4444',fontFamily:'Inter,sans-serif',fontSize:'13px',fontWeight:600,cursor:'pointer',transition:'all 0.15s ease'}}>Logout</button>
+          </div>
         </div>
       </header>
 
