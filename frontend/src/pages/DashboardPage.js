@@ -72,7 +72,7 @@ const DashboardPage = ({ user, onLogout }) => {
   const cm = months[new Date().getMonth()], nm = months[(new Date().getMonth()+1)%12];
   const upcoming = filteredData.filter(i => i.dueDates.includes(cm) || i.dueDates.includes(nm)).length;
 
-  const canExportPDF = user && (user.role === 'admin' || user.role === 'hr_director' || user.role === 'esmd' || user.role === 'ceo');
+  const canExportPDF = user && (user.role === 'admin' || user.role === 'Admin' || user.role === 'hr_director' || user.role === 'HR Director' || user.role === 'esmd' || user.role === 'ceo');
 
   // Cards view helpers
   const funcDefs = [
