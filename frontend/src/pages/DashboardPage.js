@@ -108,6 +108,12 @@ const DashboardPage = ({ user, onLogout }) => {
           <div className="header-title"><h1>HCD Annual Plan 2026</h1></div>
         </div>
         <div className="header-right">
+          {canExportPDF && (
+            <button className="btn-theme" onClick={() => navigate('/admin')} style={{fontSize:'13px',width:'auto',padding:'0 16px',gap:'6px',display:'flex',alignItems:'center'}}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+              Admin
+            </button>
+          )}
           <button className="btn-theme" onClick={() => setTheme(t => t === 'dark' ? 'light' : 'dark')}>
             {theme === 'dark' ? '🌙' : '☀️'}
           </button>
