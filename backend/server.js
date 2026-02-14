@@ -11,6 +11,9 @@ const authRoutes = require('./routes/auth');
 const activitiesRoutes = require('./routes/activities');
 const usersRoutes = require('./routes/users');
 
+// Import database initializer
+const initDatabase = require('./config/initDatabase');
+
 // Initialize Express app
 const app = express();
 
@@ -20,20 +23,12 @@ const app = express();
 
 // Enable CORS
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+  origin: process.env.FRONTEND_URL || '*',
   credentials: true
 }));
 
 // Parse JSON bodies
 app.use(express.json());
-
-// Request logging (development)
-if (process.env.NODE_ENV !== 'production') {
-  app.use((req, res, next) => {
-    console.log(`${new Date().toISOString()} | ${req.method} ${req.path}`);
-    next();
-  });
-}
 
 // =============================================
 // Routes
@@ -74,14 +69,16 @@ app.use((err, req, res, next) => {
 
 const PORT = process.env.PORT || 5000;
 
-app.listen(PORT, () => {
-  console.log('=============================================');
-  console.log('🚀 HCD Application Backend');
-  console.log('=============================================');
-  console.log(`✅ Server running on port ${PORT}`);
-  console.log(`✅ Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`✅ API URL: http://localhost:${PORT}/api`);
-  console.log('=============================================');
-});
+// Initialize database then start server
+initDatabase()
+  .then(() => {
+    app.listen(PORT, () => {
+      console.log('HCD Application Backend running on port ' + PORT);
+    });
+  })
+  .catch((err) => {
+    console.error('Failed to initialize database:', err);
+    process.exit(1);
+  });
 
 module.exports = app;
