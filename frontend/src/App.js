@@ -1,7 +1,3 @@
-// =============================================
-// HCD Application - Main App Component
-// =============================================
-
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import LoginPage from './pages/LoginPage';
@@ -11,16 +7,21 @@ function App() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // Check for existing session on load
+  // Check for existing login on app load
   useEffect(() => {
-    const storedUser = localStorage.getItem('hcd_user');
-    if (storedUser) {
-      setUser(JSON.parse(storedUser));
+    const savedUser = localStorage.getItem('hcd_user');
+    const savedToken = localStorage.getItem('hcd_token');
+    if (savedUser && savedToken) {
+      try {
+        setUser(JSON.parse(savedUser));
+      } catch (e) {
+        localStorage.removeItem('hcd_user');
+        localStorage.removeItem('hcd_token');
+      }
     }
     setLoading(false);
   }, []);
 
-  // Logout function
   const handleLogout = () => {
     localStorage.removeItem('hcd_token');
     localStorage.removeItem('hcd_user');
@@ -31,8 +32,8 @@ function App() {
   if (loading) {
     return (
       <div style={styles.loading}>
-        <div style={styles.spinner}></div>
-        <p>Loading...</p>
+        <div style={styles.spinner} />
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
       </div>
     );
   }
@@ -40,23 +41,14 @@ function App() {
   return (
     <BrowserRouter>
       <Routes>
-        {/* Login Route */}
-        <Route 
-          path="/login" 
-          element={
-            user ? <Navigate to="/dashboard" /> : <LoginPage setUser={setUser} />
-          } 
+        <Route
+          path="/login"
+          element={user ? <Navigate to="/dashboard" /> : <LoginPage setUser={setUser} />}
         />
-
-        {/* Dashboard Route */}
-        <Route 
-          path="/dashboard" 
-          element={
-            user ? <DashboardPage user={user} onLogout={handleLogout} /> : <Navigate to="/login" />
-          } 
+        <Route
+          path="/dashboard"
+          element={user ? <DashboardPage user={user} onLogout={handleLogout} /> : <Navigate to="/login" />}
         />
-
-        {/* Default Redirect */}
         <Route path="*" element={<Navigate to={user ? "/dashboard" : "/login"} />} />
       </Routes>
     </BrowserRouter>
@@ -67,20 +59,18 @@ const styles = {
   loading: {
     minHeight: '100vh',
     display: 'flex',
-    flexDirection: 'column',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#1a1028',
-    color: '#ffffff'
+    background: 'linear-gradient(135deg, #1a1028 0%, #2d1f42 30%, #3d2856 60%, #4a3265 100%)',
   },
   spinner: {
-    width: '40px',
-    height: '40px',
-    border: '4px solid #2d1f42',
-    borderTop: '4px solid #F3C036',
+    width: 40,
+    height: 40,
+    border: '4px solid rgba(255,255,255,0.1)',
+    borderTopColor: '#F3C036',
     borderRadius: '50%',
-    animation: 'spin 1s linear infinite'
-  }
+    animation: 'spin 0.8s linear infinite',
+  },
 };
 
 export default App;
