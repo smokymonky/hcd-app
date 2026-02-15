@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import hrPlanData from '../data/hrPlanData';
+import { activitiesAPI } from '../services/api';
 import { exportToPDF } from '../utils/pdfExport';
 import { useNavigate } from 'react-router-dom';
 import '../styles/dashboard.css';
@@ -9,27 +10,67 @@ const quarters = { Q1:['Jan','Feb','Mar'], Q2:['Apr','May','Jun'], Q3:['Jul','Au
 const statusIcons = { Scheduled:'📅', Progressing:'⏳', Completed:'✅', Delayed:'🔴', 'On Hold':'⏸️', Canceled:'❌', 'Completed Early':'⭐' };
 const ownerClassMap = { OP:'op','D&C':'dc','T&A':'ta',OD:'od','Com&Bn':'cb',SBM:'sbm',ALL:'all','T&A/D&C':'ta','OD/D&C':'od','OD/SBM':'od','OD/Com&Bn':'od' };
 
+// Map API fields to frontend fields
+function mapActivity(a) {
+  return {
+    ...a,
+    activity: a.name || a.activity || '',
+    dueDates: a.due_dates || a.dueDates || [],
+    monthStatus: a.month_status || a.monthStatus || {},
+  };
+}
+
 function getMonthDisplay(item, month) {
   if (!item.dueDates.includes(month)) return null;
+  const ms = item.monthStatus?.[month] || '';
+  // Check month-level status first
+  if (ms === 'Completed') return { icon: '✅', isIcon: true };
+  if (ms === 'Delayed') return { icon: '🔴', isIcon: true };
+  if (ms === 'Completed Early') return { icon: '⭐', isIcon: true };
+  // Then check overall status
+  if (item.status === 'Completed Early') return { icon: '⭐', isIcon: true };
   if (item.status === 'Completed') return { icon: '✅', isIcon: true };
-  if (item.status === 'Progressing' && item.monthStatus?.[month] === 'Completed') return { icon: '✅', isIcon: true };
-  if (item.status === 'Progressing' && item.monthStatus?.[month] === 'Delayed') return { icon: '🔴', isIcon: true };
+  // Default: scheduled (gold box with letter)
   return { letter: month.charAt(0), isIcon: false };
 }
 
 const DashboardPage = ({ user, onLogout }) => {
   const [theme, setTheme] = useState(() => localStorage.getItem('hcd-theme') || 'dark');
+  const [allData, setAllData] = useState([...hrPlanData]);
   const [filteredData, setFilteredData] = useState([...hrPlanData]);
   const [currentView, setCurrentView] = useState('timeline');
   const [filters, setFilters] = useState({ function:'all', category:'all', status:'all', month:'all' });
   const [searchQuery, setSearchQuery] = useState('');
   const navigate = useNavigate();
   const [activeCard, setActiveCard] = useState(null);
+  const [dataLoaded, setDataLoaded] = useState(false);
+
+  // Load data from API on mount
+  useEffect(() => {
+    const loadFromAPI = async () => {
+      try {
+        const data = await activitiesAPI.getAll();
+        let items = [];
+        if (data && data.activities) items = data.activities;
+        else if (Array.isArray(data)) items = data;
+        if (items.length > 0) {
+          const mapped = items.map(mapActivity);
+          setAllData(mapped);
+          setFilteredData(mapped);
+          setDataLoaded(true);
+        }
+      } catch (e) {
+        console.log('Using local data - API not available:', e.message);
+        setDataLoaded(true);
+      }
+    };
+    loadFromAPI();
+  }, []);
 
   useEffect(() => { document.body.setAttribute('data-theme', theme); localStorage.setItem('hcd-theme', theme); }, [theme]);
 
   const applyFilters = useCallback(() => {
-    let data = hrPlanData.filter(item => {
+    let data = allData.filter(item => {
       if (filters.function !== 'all') {
         const owners = item.owner.split('/').map(o => o.trim());
         if (!owners.includes(filters.function)) return false;
@@ -47,7 +88,7 @@ const DashboardPage = ({ user, onLogout }) => {
       return true;
     });
     setFilteredData(data);
-  }, [filters, searchQuery]);
+  }, [filters, searchQuery, allData]);
 
   useEffect(() => { applyFilters(); }, [applyFilters]);
 
@@ -60,7 +101,7 @@ const DashboardPage = ({ user, onLogout }) => {
     else if (type === 'upcoming') {
       setActiveCard('upcoming');
       const cm = months[new Date().getMonth()], nm = months[(new Date().getMonth()+1)%12];
-      setFilteredData(hrPlanData.filter(i => i.dueDates.includes(cm) || i.dueDates.includes(nm)));
+      setFilteredData(allData.filter(i => i.dueDates.includes(cm) || i.dueDates.includes(nm)));
       return;
     } else { setFilters({ ...base, status: type }); setActiveCard(type); }
   };
@@ -118,7 +159,7 @@ const DashboardPage = ({ user, onLogout }) => {
             {theme === 'dark' ? '🌙' : '☀️'}
           </button>
           {canExportPDF && (
-            <button className="btn-export" onClick={() => exportToPDF(filters.month)}>
+            <button className="btn-export" onClick={() => exportToPDF(filters.month, allData)}>
               <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
               </svg>
