@@ -10,6 +10,24 @@ const quarters = { Q1:['Jan','Feb','Mar'], Q2:['Apr','May','Jun'], Q3:['Jul','Au
 const statusIcons = { Scheduled:'📅', Progressing:'⏳', Completed:'✅', Delayed:'🔴', 'On Hold':'⏸️', Canceled:'❌', 'Completed Early':'⭐' };
 const ownerClassMap = { OP:'op','D&C':'dc','T&A':'ta',OD:'od','Com&Bn':'cb',SBM:'sbm',ALL:'all','T&A/D&C':'ta','OD/D&C':'od','OD/SBM':'od','OD/Com&Bn':'od' };
 
+// Sort order: by function (OP→D&C→T&A→OD→Com&Bn→SBM→ALL) then by earliest due date
+const ownerOrder = {OP:0,'D&C':1,'T&A':2,OD:3,'Com&Bn':4,SBM:5,ALL:6};
+function getOwnerOrder(o) { const f = o.split('/')[0].trim(); return ownerOrder[f] !== undefined ? ownerOrder[f] : 99; }
+function getEarliestMonth(dd) { if (!dd || dd.length === 0) return 99; return Math.min(...dd.map(m => months.indexOf(m)).filter(i => i >= 0)); }
+function sortActivities(items) {
+  return [...items].sort((a, b) => {
+    // First sort by category (Activities → Maintenance → Reports)
+    const catOrder = {'Activities/Programs/Projects':0,'Maintenance Projects':1,'Reports':2};
+    const catDiff = (catOrder[a.category]||0) - (catOrder[b.category]||0);
+    if (catDiff !== 0) return catDiff;
+    // Then by owner function order
+    const ownerDiff = getOwnerOrder(a.owner) - getOwnerOrder(b.owner);
+    if (ownerDiff !== 0) return ownerDiff;
+    // Then by earliest due date
+    return getEarliestMonth(a.dueDates) - getEarliestMonth(b.dueDates);
+  });
+}
+
 // Map API fields to frontend fields
 function mapActivity(a) {
   return {
@@ -54,7 +72,7 @@ const DashboardPage = ({ user, onLogout }) => {
         if (data && data.activities) items = data.activities;
         else if (Array.isArray(data)) items = data;
         if (items.length > 0) {
-          const mapped = items.map(mapActivity);
+          const mapped = sortActivities(items.map(mapActivity));
           setAllData(mapped);
           setFilteredData(mapped);
           setDataLoaded(true);
