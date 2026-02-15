@@ -3,7 +3,7 @@ import hrPlanData from '../data/hrPlanData';
 
 const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
-export async function exportToPDF(monthFilter) {
+export async function exportToPDF(monthFilter, dataFromDashboard) {
   if (!window.jspdf) {
     const s1 = document.createElement('script');
     s1.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
@@ -48,7 +48,7 @@ export async function exportToPDF(monthFilter) {
   const getEarliestMonth = (dd) => { if(!dd||dd.length===0)return 99; return Math.min(...dd.map(m=>months.indexOf(m)).filter(i=>i>=0)); };
   const sortAct = (items) => [...items].sort((a,b) => { const od=getOwnerOrder(a.owner)-getOwnerOrder(b.owner); return od!==0?od:getEarliestMonth(a.dueDates)-getEarliestMonth(b.dueDates); });
 
-  const allData = hrPlanData;
+  const allData = (dataFromDashboard && dataFromDashboard.length > 0) ? dataFromDashboard : hrPlanData;
   const ss = {
     total:allData.length, scheduled:allData.filter(i=>i.status==='Scheduled').length,
     progressing:allData.filter(i=>i.status==='Progressing').length,
