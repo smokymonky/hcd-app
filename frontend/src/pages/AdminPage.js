@@ -132,10 +132,16 @@ const AdminPage = ({ user, onLogout }) => {
 
   const handleMonthToggle = async (item, month) => {
     const ms = { ...(item.monthStatus || item.month_status || {}) };
-    if (ms[month] === 'Completed') {
-      delete ms[month];
-    } else {
+    const current = ms[month] || '';
+    // Cycle: (empty/Scheduled) → Completed → Delayed → Completed Early → (empty)
+    if (!current || current === 'Scheduled') {
       ms[month] = 'Completed';
+    } else if (current === 'Completed') {
+      ms[month] = 'Delayed';
+    } else if (current === 'Delayed') {
+      ms[month] = 'Completed Early';
+    } else {
+      delete ms[month];
     }
     try {
       await activitiesAPI.updateStatus(item.id, item.status, ms);
@@ -272,13 +278,19 @@ const AdminPage = ({ user, onLogout }) => {
                       <div style={{display:'flex',flexWrap:'wrap',gap:'2px'}}>
                         {months.map(m => {
                           const isDue = item.dueDates?.includes(m);
-                          const isCompleted = item.monthStatus?.[m] === 'Completed';
+                          const mStatus = item.monthStatus?.[m] || '';
                           if (!isDue) return <span key={m} style={S.monthDot}></span>;
+                          const colors = {
+                            'Completed': { bg:'#22c55e', color:'#fff', icon:'✓', next:'Delayed' },
+                            'Delayed': { bg:'#ef4444', color:'#fff', icon:'!', next:'Completed Early' },
+                            'Completed Early': { bg:'#a855f7', color:'#fff', icon:'★', next:'Scheduled (reset)' },
+                          };
+                          const c = colors[mStatus];
                           return (
                             <span key={m} onClick={() => handleMonthToggle(item, m)}
-                              style={{...S.monthTag, background: isCompleted ? '#22c55e' : '#F3C036', color: isCompleted ? '#fff' : '#371E54', cursor:'pointer'}}
-                              title={`${m}: ${isCompleted ? 'Completed (click to undo)' : 'Click to mark completed'}`}>
-                              {isCompleted ? '✓' : m.charAt(0)}
+                              style={{...S.monthTag, background: c ? c.bg : '#F3C036', color: c ? c.color : '#371E54', cursor:'pointer'}}
+                              title={`${m}: ${mStatus || 'Scheduled'} → Click for ${c ? c.next : 'Completed'}`}>
+                              {c ? c.icon : m.charAt(0)}
                             </span>
                           );
                         })}
@@ -448,7 +460,7 @@ const S = {
   tabActive: { background:'linear-gradient(135deg, #ec4899 0%, #a855f7 100%)', color:'#fff' },
   message: { padding:'12px 20px', borderRadius:'12px', border:'1px solid', marginBottom:'16px', fontSize:'14px', fontWeight:500, display:'flex', alignItems:'center', gap:'8px' },
   logoutBtn: { padding:'8px 16px', background:'rgba(239,68,68,0.1)', border:'1px solid rgba(239,68,68,0.3)', borderRadius:'8px', color:'#ef4444', fontFamily:'Inter,sans-serif', fontSize:'13px', fontWeight:600, cursor:'pointer' },
-  statusSelect: { padding:'6px 8px', background:'var(--bg-input)', border:'1px solid var(--border-color)', borderRadius:'6px', color:'var(--text-primary)', fontFamily:'Inter,sans-serif', fontSize:'12px', cursor:'pointer' },
+  statusSelect: { padding:'6px 8px', background:'#2d1f42', border:'1px solid var(--border-color)', borderRadius:'6px', color:'#ffffff', fontFamily:'Inter,sans-serif', fontSize:'12px', cursor:'pointer' },
   monthTag: { display:'inline-flex', alignItems:'center', justifyContent:'center', width:'22px', height:'22px', borderRadius:'4px', fontSize:'10px', fontWeight:700 },
   monthDot: { display:'inline-block', width:'22px', height:'22px' },
   editBtn: { padding:'4px 8px', background:'rgba(59,130,246,0.1)', border:'1px solid rgba(59,130,246,0.3)', borderRadius:'6px', cursor:'pointer', fontSize:'14px' },
@@ -463,7 +475,7 @@ const S = {
   field: { display:'flex', flexDirection:'column', gap:'6px', flex:1 },
   fieldRow: { display:'flex', gap:'16px' },
   fieldLabel: { color:'var(--text-secondary)', fontSize:'13px', fontWeight:600 },
-  fieldInput: { width:'100%', padding:'12px 16px', background:'var(--bg-input)', border:'1px solid var(--border-color)', borderRadius:'10px', fontFamily:'Inter,sans-serif', fontSize:'14px', color:'var(--text-primary)', outline:'none', boxSizing:'border-box' },
+  fieldInput: { width:'100%', padding:'12px 16px', background:'#2d1f42', border:'1px solid var(--border-color)', borderRadius:'10px', fontFamily:'Inter,sans-serif', fontSize:'14px', color:'#ffffff', outline:'none', boxSizing:'border-box' },
   monthPicker: { padding:'6px 12px', borderRadius:'8px', border:'1px solid var(--border-color)', fontFamily:'Inter,sans-serif', fontSize:'12px', fontWeight:600, cursor:'pointer', transition:'all 0.15s ease' },
   cancelBtn: { padding:'10px 24px', background:'var(--bg-input)', border:'1px solid var(--border-color)', borderRadius:'8px', fontFamily:'Inter,sans-serif', fontSize:'14px', fontWeight:600, color:'var(--text-secondary)', cursor:'pointer' },
   saveBtn: { padding:'10px 24px', background:'linear-gradient(135deg, #ec4899 0%, #a855f7 100%)', border:'none', borderRadius:'8px', fontFamily:'Inter,sans-serif', fontSize:'14px', fontWeight:600, color:'#fff', cursor:'pointer', boxShadow:'0 4px 20px rgba(236,72,153,0.3)' },
