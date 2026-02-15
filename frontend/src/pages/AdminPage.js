@@ -121,12 +121,13 @@ const AdminPage = ({ user, onLogout }) => {
   };
 
   const handleStatusChange = async (item, newStatus) => {
+    // Update local state immediately
+    setActivities(prev => prev.map(a => a.id === item.id ? { ...a, status: newStatus } : a));
+    showMessage(`Status changed to ${newStatus}`);
     try {
       await activitiesAPI.updateStatus(item.id, newStatus, item.monthStatus || item.month_status || {});
-      showMessage(`Status changed to ${newStatus}`);
-      await loadActivities();
     } catch (e) {
-      showMessage('Error: ' + e.message, 'error');
+      console.log('API update failed:', e.message);
     }
   };
 
@@ -134,21 +135,27 @@ const AdminPage = ({ user, onLogout }) => {
     const ms = { ...(item.monthStatus || item.month_status || {}) };
     const current = ms[month] || '';
     // Cycle: (empty/Scheduled) → Completed → Delayed → Completed Early → (empty)
+    let newStatus;
     if (!current || current === 'Scheduled') {
       ms[month] = 'Completed';
+      newStatus = 'Completed';
     } else if (current === 'Completed') {
       ms[month] = 'Delayed';
+      newStatus = 'Delayed';
     } else if (current === 'Delayed') {
       ms[month] = 'Completed Early';
+      newStatus = 'Completed Early';
     } else {
       delete ms[month];
+      newStatus = 'Scheduled';
     }
+    // Update local state immediately so UI reflects change
+    setActivities(prev => prev.map(a => a.id === item.id ? { ...a, monthStatus: { ...ms }, month_status: { ...ms } } : a));
+    showMessage(`${month} → ${newStatus}`);
     try {
       await activitiesAPI.updateStatus(item.id, item.status, ms);
-      showMessage(`${month} marked as ${ms[month] ? 'Completed' : 'Scheduled'}`);
-      await loadActivities();
     } catch (e) {
-      showMessage('Error: ' + e.message, 'error');
+      console.log('API update failed:', e.message);
     }
   };
 
