@@ -53,7 +53,7 @@ const checkPermission = (permission) => {
 
 // Check if user is Admin
 const isAdmin = (req, res, next) => {
-  if (req.user.role !== 'Admin') {
+  if (req.user.role.toLowerCase() !== 'admin') {
     return res.status(403).json({ error: 'Admin access required.' });
   }
   next();
