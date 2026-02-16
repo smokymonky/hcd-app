@@ -1118,50 +1118,238 @@ h1, h2, h3, h4, h5, h6 {
    RESPONSIVE
    ======================================== */
 @media (max-width: 768px) {
-    .filters-bar {
-        grid-template-columns: repeat(2, 1fr);
+    .dashboard-container {
+        padding: 12px;
     }
 
-    .filter-reset {
-        grid-column: span 2;
-        width: 100%;
-        height: 48px;
-    }
-
+    /* Header - compact mobile layout */
     .header {
         flex-direction: column;
         text-align: center;
-        gap: var(--spacing-md);
+        gap: 12px;
+        padding: 16px;
     }
 
     .header-left {
         flex-direction: column;
+        gap: 8px;
     }
 
     .header-divider {
         display: none;
     }
 
+    .header-title h1 {
+        font-size: 18px;
+    }
+
     .header-right {
         flex-wrap: wrap;
         justify-content: center;
+        gap: 8px;
     }
 
-    .dashboard-container {
-        padding: var(--spacing-md);
+    .header-logo svg {
+        height: 30px;
     }
 
+    /* Filters - full width stacked */
+    .filters-bar {
+        grid-template-columns: 1fr;
+        gap: 8px;
+    }
+
+    .filter-select {
+        width: 100%;
+        font-size: 14px;
+        padding: 12px 16px;
+    }
+
+    .filter-reset {
+        width: 100%;
+        height: 44px;
+    }
+
+    /* Summary Cards - 2 column grid */
+    .summary-cards {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 8px;
+    }
+
+    .summary-card {
+        padding: 16px 12px;
+    }
+
+    .card-value {
+        font-size: 28px;
+    }
+
+    .card-label {
+        font-size: 11px;
+    }
+
+    /* Status Legend - wrap on mobile */
+    .status-legend {
+        flex-wrap: wrap;
+        gap: 8px 16px;
+        padding: 12px 16px;
+    }
+
+    .legend-item {
+        font-size: 12px;
+    }
+
+    /* View Section */
     .view-header {
         flex-direction: column;
-        gap: var(--spacing-md);
+        gap: 12px;
+    }
+
+    .view-toggle {
+        width: 100%;
+        justify-content: center;
     }
 
     .search-box {
         width: 100%;
     }
 
+    /* Timeline Table - horizontal scroll with better mobile display */
+    .timeline-container {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .timeline-table {
+        min-width: 900px;
+    }
+
+    .timeline-table .activity-name {
+        min-width: 180px;
+        font-size: 12px;
+    }
+
+    .timeline-table th,
+    .timeline-table td {
+        padding: 6px 4px;
+        font-size: 11px;
+    }
+
+    .timeline-table th.month-col {
+        font-size: 10px;
+    }
+
+    /* Category Header */
+    .category-header h3 {
+        font-size: 14px;
+    }
+
+    /* Data Table - horizontal scroll */
+    .table-view-container {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .data-table {
+        min-width: 600px;
+    }
+
+    .data-table th,
+    .data-table td {
+        padding: 8px 6px;
+        font-size: 12px;
+    }
+
+    /* Cards View */
+    .cards-grid {
+        grid-template-columns: 1fr;
+        gap: 12px;
+    }
+
+    .function-card {
+        padding: 16px;
+    }
+
+    .function-card-header h3 {
+        font-size: 15px;
+    }
+
+    /* Owner Badge - smaller on mobile */
+    .owner-badge {
+        font-size: 10px;
+        padding: 2px 8px;
+    }
+
+    /* Month markers */
+    .month-marker {
+        width: 24px;
+        height: 24px;
+        font-size: 11px;
+    }
+
+    /* Buttons */
+    .btn-export {
+        font-size: 12px;
+        padding: 8px 16px;
+    }
+
+    .btn-theme {
+        width: 36px;
+        height: 36px;
+    }
+}
+
+/* Extra small screens */
+@media (max-width: 480px) {
+    .dashboard-container {
+        padding: 8px;
+    }
+
+    .header {
+        padding: 12px;
+    }
+
+    .header-title h1 {
+        font-size: 16px;
+    }
+
     .summary-cards {
         grid-template-columns: repeat(2, 1fr);
+        gap: 6px;
+    }
+
+    .summary-card {
+        padding: 12px 8px;
+    }
+
+    .card-value {
+        font-size: 24px;
+    }
+
+    .card-icon svg {
+        width: 20px;
+        height: 20px;
+    }
+
+    .filters-bar {
+        gap: 6px;
+    }
+
+    .view-toggle {
+        gap: 4px;
+    }
+
+    .view-btn {
+        font-size: 12px;
+        padding: 6px 12px;
+    }
+
+    .status-legend {
+        gap: 6px 12px;
+    }
+
+    .legend-item {
+        font-size: 11px;
     }
 }
 
