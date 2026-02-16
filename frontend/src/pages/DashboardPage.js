@@ -7,7 +7,7 @@ import '../styles/dashboard.css';
 
 const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const quarters = { Q1:['Jan','Feb','Mar'], Q2:['Apr','May','Jun'], Q3:['Jul','Aug','Sep'], Q4:['Oct','Nov','Dec'] };
-const statusIcons = { Scheduled:'🔶', Progressing:'⏳', Completed:'✅', Delayed:'🔴', 'On Hold':'⏸️', Canceled:'❌', 'Completed Early':'⭐' };
+const statusIcons = { Scheduled:'🗓️', Progressing:'⏳', Completed:'✅', Delayed:'🔴', 'On Hold':'⏸️', Canceled:'❌', 'Completed Early':'⭐' };
 const ownerClassMap = { OP:'op','D&C':'dc','T&A':'ta',OD:'od','Com&Bn':'cb',SBM:'sbm',ALL:'all','T&A/D&C':'ta','OD/D&C':'od','OD/SBM':'od','OD/Com&Bn':'od' };
 
 // Sort order: by function (OP→D&C→T&A→OD→Com&Bn→SBM→ALL) then by earliest due date
