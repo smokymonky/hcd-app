@@ -164,7 +164,6 @@ export async function exportToPDF(monthFilter, dataFromDashboard) {
           } else if(mStatus === 'Completed Early' || (!mStatus && item.status === 'Completed Early')){
             doc.setFillColor(...C.COMPLETED_EARLY); doc.roundedRect(mx+0.35,bxY,bxW,bxH,0.7,0.7,'F');
             drawCheckmark(doc,bcx,rcY,2.5,C.WHITE);
-            doc.setFillColor(...C.WHITE); doc.circle(bcx+1.2,rcY-1,0.5,'F');
           } else {
             doc.setFillColor(...C.GOLD); doc.roundedRect(mx+0.35,bxY,bxW,bxH,0.7,0.7,'F');
             doc.setTextColor(...C.PRIMARY_PURPLE); doc.setFontSize(7); doc.setFont('helvetica','bold');
