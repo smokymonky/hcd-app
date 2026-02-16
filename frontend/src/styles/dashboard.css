@@ -1214,19 +1214,22 @@ h1, h2, h3, h4, h5, h6 {
         width: 100%;
     }
 
-    /* Timeline Table - horizontal scroll with better mobile display */
+    /* Timeline Table - fit screen on mobile */
     .timeline-container {
         overflow-x: auto;
         -webkit-overflow-scrolling: touch;
     }
 
     .timeline-table {
-        min-width: 900px;
+        min-width: unset;
+        width: 100%;
+        table-layout: auto;
     }
 
     .timeline-table .activity-name {
-        min-width: 180px;
+        min-width: unset;
         font-size: 12px;
+        word-break: break-word;
     }
 
     .timeline-table th,
@@ -1244,14 +1247,15 @@ h1, h2, h3, h4, h5, h6 {
         font-size: 14px;
     }
 
-    /* Data Table - horizontal scroll */
+    /* Data Table - fit screen */
     .table-view-container {
         overflow-x: auto;
         -webkit-overflow-scrolling: touch;
     }
 
     .data-table {
-        min-width: 600px;
+        min-width: unset;
+        width: 100%;
     }
 
     .data-table th,
