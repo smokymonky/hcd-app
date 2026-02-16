@@ -1,21 +1,20 @@
-const CACHE_NAME = 'hcd-app-v1';
-const urlsToCache = [
-  '/',
-  '/index.html',
-  '/icon-192x192.png',
-  '/icon-512x512.png'
-];
+const CACHE_NAME = 'hcd-app-v2';
 
-// Install - cache core assets
 self.addEventListener('install', event => {
   event.waitUntil(
-    caches.open(CACHE_NAME)
-      .then(cache => cache.addAll(urlsToCache))
+    caches.open(CACHE_NAME).then(cache => {
+      return cache.addAll([
+        '/',
+        '/index.html',
+        '/manifest.json',
+        '/icon-192x192.png',
+        '/icon-512x512.png'
+      ]).catch(err => console.log('Cache addAll error:', err));
+    })
   );
   self.skipWaiting();
 });
 
-// Activate - clean old caches
 self.addEventListener('activate', event => {
   event.waitUntil(
     caches.keys().then(names =>
@@ -25,15 +24,33 @@ self.addEventListener('activate', event => {
   self.clients.claim();
 });
 
-// Fetch - network first, fallback to cache
 self.addEventListener('fetch', event => {
+  const url = new URL(event.request.url);
+  
+  if (url.pathname.startsWith('/api')) {
+    event.respondWith(
+      fetch(event.request).catch(() => {
+        return new Response(JSON.stringify({ error: 'You are offline' }), {
+          headers: { 'Content-Type': 'application/json' }
+        });
+      })
+    );
+    return;
+  }
+  
   event.respondWith(
     fetch(event.request)
       .then(response => {
         const clone = response.clone();
-        caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
+        caches.open(CACHE_NAME).then(cache => {
+          cache.put(event.request, clone);
+        });
         return response;
       })
-      .catch(() => caches.match(event.request))
+      .catch(() => {
+        return caches.match(event.request).then(cached => {
+          return cached || caches.match('/index.html');
+        });
+      })
   );
 });
