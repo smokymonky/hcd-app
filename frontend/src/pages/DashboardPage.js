@@ -7,7 +7,7 @@ import '../styles/dashboard.css';
 
 const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const quarters = { Q1:['Jan','Feb','Mar'], Q2:['Apr','May','Jun'], Q3:['Jul','Aug','Sep'], Q4:['Oct','Nov','Dec'] };
-const statusIcons = { Scheduled:'📅', Progressing:'⏳', Completed:'✅', Delayed:'🔴', 'On Hold':'⏸️', Canceled:'❌', 'Completed Early':'⭐' };
+const statusIcons = { Scheduled:'🔶', Progressing:'⏳', Completed:'✅', Delayed:'🔴', 'On Hold':'⏸️', Canceled:'❌', 'Completed Early':'⭐' };
 const ownerClassMap = { OP:'op','D&C':'dc','T&A':'ta',OD:'od','Com&Bn':'cb',SBM:'sbm',ALL:'all','T&A/D&C':'ta','OD/D&C':'od','OD/SBM':'od','OD/Com&Bn':'od' };
 
 // Sort order: by function (OP→D&C→T&A→OD→Com&Bn→SBM→ALL) then by earliest due date
@@ -219,7 +219,13 @@ const DashboardPage = ({ user, onLogout }) => {
       </header>
 
       {/* ===== FILTERS ===== */}
-      <div className="filters-bar">
+      {isMobile && (
+        <button onClick={() => setCollapsedCats(prev => ({...prev, _filters: !prev._filters}))} style={{width:'100%',padding:'12px',background:'var(--card-bg)',border:'1px solid var(--border)',borderRadius:10,color:'var(--text)',fontSize:14,fontWeight:600,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:collapsedCats._filters ? 0 : 8}}>
+          <span>🔍 Filters</span>
+          <span style={{transition:'transform 0.3s',transform:collapsedCats._filters?'rotate(-90deg)':'rotate(0)'}}>▼</span>
+        </button>
+      )}
+      <div className="filters-bar" style={isMobile && collapsedCats._filters ? {display:'none'} : {}}>
         <select className="filter-select" value={filters.function} onChange={e => setFilters(f => ({...f, function: e.target.value}))}>
           <option value="all">All Functions</option>
           <option value="OP">Operations (OP)</option>
@@ -288,7 +294,7 @@ const DashboardPage = ({ user, onLogout }) => {
             {[{v:'timeline',label:'Timeline',d:'M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z'},
               {v:'table',label:'Table',d:'M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z'},
               {v:'cards',label:'Cards',d:'M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z'}
-            ].map(({v,label,d}) => (
+            ].filter(({v}) => !isMobile || v !== 'table').map(({v,label,d}) => (
               <button key={v} className={`view-btn ${currentView===v?'active':''}`} onClick={()=>setCurrentView(v)}>
                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={d}/></svg>
                 {label}
