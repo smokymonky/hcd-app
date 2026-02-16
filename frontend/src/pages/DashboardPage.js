@@ -63,6 +63,7 @@ const DashboardPage = ({ user, onLogout }) => {
   const [activeCard, setActiveCard] = useState(null);
   const [dataLoaded, setDataLoaded] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
+  const [collapsedCats, setCollapsedCats] = useState({});
 
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth <= 768);
@@ -307,6 +308,55 @@ const DashboardPage = ({ user, onLogout }) => {
               {['Activities/Programs/Projects','Maintenance Projects','Reports'].map(cat => {
                 const items = filteredData.filter(i => i.category === cat);
                 if (!items.length) return null;
+
+                {/* MOBILE: Card-based layout */}
+                if (isMobile) {
+                  const isCollapsed = collapsedCats[cat];
+                  return (
+                    <div key={cat} className="category-section">
+                      <div className="category-header" onClick={() => setCollapsedCats(prev => ({...prev, [cat]: !prev[cat]}))} style={{cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+                        <div style={{display:'flex',alignItems:'center',gap:8}}><h3>{cat}</h3><span className="category-count">{items.length} items</span></div>
+                        <span style={{fontSize:18,color:'var(--text-light)',transition:'transform 0.3s',transform:isCollapsed?'rotate(-90deg)':'rotate(0)'}}> ▼</span>
+                      </div>
+                      {!isCollapsed && (
+                        <div style={{display:'flex',flexDirection:'column',gap:8,marginTop:8}}>
+                          {items.map((item, idx) => {
+                            const ms = item.monthStatus || {};
+                            const short3 = {'January':'Jan','February':'Feb','March':'Mar','April':'Apr','May':'May','June':'Jun','July':'Jul','August':'Aug','September':'Sep','October':'Oct','November':'Nov','December':'Dec'};
+                            return (
+                              <div key={item.id} style={{background:'var(--card-bg)',border:'1px solid var(--border)',borderRadius:10,padding:'12px 14px'}}>
+                                <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:8}}>
+                                  <div style={{flex:1}}>
+                                    <div style={{fontSize:13,fontWeight:600,color:'var(--text)',lineHeight:1.3}}>{idx+1}. {item.activity}</div>
+                                    <div style={{display:'flex',alignItems:'center',gap:8,marginTop:6}}>
+                                      <span className={`owner-badge owner-${ownerClassMap[item.owner]||'all'}`} style={{fontSize:10,padding:'2px 8px'}}>{item.owner}</span>
+                                      <span style={{fontSize:11,color:'var(--text-light)'}}>{item.status}</span>
+                                    </div>
+                                  </div>
+                                  <span className={`status-icon status-${item.status.toLowerCase().replace(/\s+/g,'')}`} style={{fontSize:18}}>{statusIcons[item.status]}</span>
+                                </div>
+                                {item.dueDates && item.dueDates.length > 0 && (
+                                  <div style={{display:'flex',flexWrap:'wrap',gap:3,marginTop:8}}>
+                                    {item.dueDates.map(m => {
+                                      const s = ms[m] || '';
+                                      let bg = '#F3C036', clr = '#371E54', text = short3[m] || m.substring(0,3);
+                                      if (s === 'Completed' || (!s && item.status === 'Completed')) { bg = '#22c55e'; clr = '#fff'; text = '✓ ' + (short3[m]||m.substring(0,3)); }
+                                      else if (s === 'Delayed') { bg = '#ef4444'; clr = '#fff'; text = '! ' + (short3[m]||m.substring(0,3)); }
+                                      else if (s === 'Completed Early' || (!s && item.status === 'Completed Early')) { bg = '#8B5CF6'; clr = '#fff'; text = '✓ ' + (short3[m]||m.substring(0,3)); }
+                                      return <span key={m} style={{display:'inline-flex',alignItems:'center',justifyContent:'center',height:22,borderRadius:5,fontSize:10,fontWeight:600,background:bg,color:clr,padding:'0 8px'}}>{text}</span>;
+                                    })}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                }
+
+                {/* DESKTOP: Original table layout */}
                 return (
                   <div key={cat} className="category-section">
                     <div className="category-header"><h3>{cat}</h3><span className="category-count">{items.length} items</span></div>
@@ -314,8 +364,8 @@ const DashboardPage = ({ user, onLogout }) => {
                       <thead><tr>
                         <th style={{width:30}}>#</th><th>Activity</th>
                         <th style={{width:60}}>Owner</th>
-                        {!isMobile && <th style={{width:60}}>Status</th>}
-                        {isMobile ? <th style={{width:90}}>Due</th> : months.map(m=><th key={m} className="month-col">{m}</th>)}
+                        <th style={{width:60}}>Status</th>
+                        {months.map(m=><th key={m} className="month-col">{m}</th>)}
                       </tr></thead>
                       <tbody>
                         {items.map((item, idx) => (
@@ -323,10 +373,8 @@ const DashboardPage = ({ user, onLogout }) => {
                             <td>{idx+1}</td>
                             <td className="activity-name">{item.activity}</td>
                             <td className="owner-cell"><span className={`owner-badge owner-${ownerClassMap[item.owner]||'all'}`}>{item.owner}</span></td>
-                            {!isMobile && <td className="status-cell"><span className={`status-icon status-${item.status.toLowerCase().replace(/\s+/g,'')}`} title={item.status}>{statusIcons[item.status]}</span></td>}
-                            {isMobile ? (
-                              <td>{getMobileDue(item)}</td>
-                            ) : months.map(m => {
+                            <td className="status-cell"><span className={`status-icon status-${item.status.toLowerCase().replace(/\s+/g,'')}`} title={item.status}>{statusIcons[item.status]}</span></td>
+                            {months.map(m => {
                               const d = getMonthDisplay(item, m);
                               if (!d) return <td key={m} className="month-cell"></td>;
                               if (d.isIcon) return <td key={m} className="month-cell"><span className="month-status-icon">{d.icon}</span></td>;
