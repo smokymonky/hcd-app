@@ -32,7 +32,14 @@ const AdminPage = ({ user, onLogout }) => {
   const [users, setUsers] = useState([]);
   const [editItem, setEditItem] = useState(null);
   const [showForm, setShowForm] = useState(false);
-  const [formType, setFormType] = useState(''); // 'create-activity', 'edit-activity', 'create-user', 'edit-user'
+  const [formType, setFormType] = useState('');
+  const [message, setMessage] = useState({ text: '', type: '' });
+  const [loading, setLoading] = useState(false);
+  // Filters
+  const [adminSearch, setAdminSearch] = useState('');
+  const [adminFilterFunc, setAdminFilterFunc] = useState('all');
+  const [adminFilterCat, setAdminFilterCat] = useState('all');
+  const [adminFilterStatus, setAdminFilterStatus] = useState('all');
   const [message, setMessage] = useState({ text: '', type: '' });
   const [loading, setLoading] = useState(false);
 
@@ -278,13 +285,40 @@ const AdminPage = ({ user, onLogout }) => {
             <h3 style={{color:'var(--text-primary)',fontSize:'16px'}}>Manage Activities</h3>
             <button className="btn-export" onClick={handleCreateActivity}>+ New Activity</button>
           </div>
+          {/* Admin Filters */}
+          <div style={{display:'flex',gap:'8px',padding:'12px 16px',flexWrap:'wrap',alignItems:'center'}}>
+            <input type="text" placeholder="🔍 Search activities..." value={adminSearch} onChange={e=>setAdminSearch(e.target.value)}
+              style={{...S.adminFilter, flex:'1', minWidth:'180px'}} />
+            <select value={adminFilterFunc} onChange={e=>setAdminFilterFunc(e.target.value)} style={S.adminFilter}>
+              <option value="all">All Functions</option>
+              {['OP','D&C','T&A','OD','Com&Bn','SBM','ALL'].map(f=><option key={f} value={f}>{f}</option>)}
+            </select>
+            <select value={adminFilterCat} onChange={e=>setAdminFilterCat(e.target.value)} style={S.adminFilter}>
+              <option value="all">All Categories</option>
+              {categoryOptions.map(c=><option key={c} value={c}>{c}</option>)}
+            </select>
+            <select value={adminFilterStatus} onChange={e=>setAdminFilterStatus(e.target.value)} style={S.adminFilter}>
+              <option value="all">All Status</option>
+              {statusOptions.map(s=><option key={s} value={s}>{s}</option>)}
+            </select>
+            {(adminSearch||adminFilterFunc!=='all'||adminFilterCat!=='all'||adminFilterStatus!=='all') && (
+              <button onClick={()=>{setAdminSearch('');setAdminFilterFunc('all');setAdminFilterCat('all');setAdminFilterStatus('all');}}
+                style={{...S.adminFilter, background:'rgba(239,68,68,0.1)', border:'1px solid rgba(239,68,68,0.3)', color:'#ef4444', cursor:'pointer', fontWeight:600}}>✕ Reset</button>
+            )}
+          </div>
           <div style={{padding:'16px',overflowX:'auto'}}>
             <table className="data-table">
               <thead><tr>
                 <th>#</th><th>Activity</th><th>Owner</th><th>Category</th><th>Status</th><th>Due Dates</th><th>Actions</th>
               </tr></thead>
               <tbody>
-                {activities.map((item, idx) => (
+                {activities.filter(item => {
+                  if (adminSearch && !item.activity.toLowerCase().includes(adminSearch.toLowerCase())) return false;
+                  if (adminFilterFunc !== 'all' && !item.owner.split('/').map(o=>o.trim()).includes(adminFilterFunc)) return false;
+                  if (adminFilterCat !== 'all' && item.category !== adminFilterCat) return false;
+                  if (adminFilterStatus !== 'all' && item.status !== adminFilterStatus) return false;
+                  return true;
+                }).map((item, idx) => (
                   <tr key={item.id}>
                     <td>{idx + 1}</td>
                     <td className="activity-name">{item.activity}</td>
@@ -501,6 +535,7 @@ const S = {
   monthPicker: { padding:'6px 12px', borderRadius:'8px', border:'1px solid var(--border-color)', fontFamily:'Inter,sans-serif', fontSize:'12px', fontWeight:600, cursor:'pointer', transition:'all 0.15s ease' },
   cancelBtn: { padding:'10px 24px', background:'var(--bg-input)', border:'1px solid var(--border-color)', borderRadius:'8px', fontFamily:'Inter,sans-serif', fontSize:'14px', fontWeight:600, color:'var(--text-secondary)', cursor:'pointer' },
   saveBtn: { padding:'10px 24px', background:'linear-gradient(135deg, #ec4899 0%, #a855f7 100%)', border:'none', borderRadius:'8px', fontFamily:'Inter,sans-serif', fontSize:'14px', fontWeight:600, color:'#fff', cursor:'pointer', boxShadow:'0 4px 20px rgba(236,72,153,0.3)' },
+  adminFilter: { padding:'8px 12px', background:'#2d1f42', border:'1px solid var(--border-color)', borderRadius:'8px', fontFamily:'Inter,sans-serif', fontSize:'13px', color:'#ffffff', outline:'none' },
 };
 
 export default AdminPage;
