@@ -146,16 +146,16 @@ const DashboardPage = ({ user, onLogout }) => {
   const getMobileDue = (item) => {
     if (!item.dueDates || item.dueDates.length === 0) return <span style={{color:'var(--text-light)',fontSize:11}}>TBD</span>;
     const ms = item.monthStatus || {};
-    const shortMonth = {'January':'J','February':'F','March':'M','April':'A','May':'M','June':'Jn','July':'Jl','August':'A','September':'S','October':'O','November':'N','December':'D'};
+    const short3 = {'January':'Jan','February':'Feb','March':'Mar','April':'Apr','May':'May','June':'Jun','July':'Jul','August':'Aug','September':'Sep','October':'Oct','November':'Nov','December':'Dec'};
     return (
-      <div style={{display:'flex',flexWrap:'wrap',gap:'2px',maxWidth:120}}>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(3, 1fr)',gap:'2px',maxWidth:110}}>
         {item.dueDates.map(m => {
           const s = ms[m] || '';
-          let bg = '#F3C036', color = '#371E54', text = shortMonth[m] || m.charAt(0);
+          let bg = '#F3C036', color = '#371E54', text = short3[m] || m.substring(0,3);
           if (s === 'Completed' || (!s && item.status === 'Completed')) { bg = '#22c55e'; color = '#fff'; text = '✓'; }
           else if (s === 'Delayed') { bg = '#ef4444'; color = '#fff'; text = '!'; }
           else if (s === 'Completed Early' || (!s && item.status === 'Completed Early')) { bg = '#8B5CF6'; color = '#fff'; text = '✓'; }
-          return <span key={m} title={m} style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:20,height:18,borderRadius:3,fontSize:9,fontWeight:700,background:bg,color}}>{text}</span>;
+          return <span key={m} title={m} style={{display:'inline-flex',alignItems:'center',justifyContent:'center',height:18,borderRadius:3,fontSize:8,fontWeight:700,background:bg,color,padding:'0 2px'}}>{text}</span>;
         })}
       </div>
     );
