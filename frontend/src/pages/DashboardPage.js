@@ -146,15 +146,16 @@ const DashboardPage = ({ user, onLogout }) => {
   const getMobileDue = (item) => {
     if (!item.dueDates || item.dueDates.length === 0) return <span style={{color:'var(--text-light)',fontSize:11}}>TBD</span>;
     const ms = item.monthStatus || {};
+    const shortMonth = {'January':'J','February':'F','March':'M','April':'A','May':'M','June':'Jn','July':'Jl','August':'A','September':'S','October':'O','November':'N','December':'D'};
     return (
-      <div style={{display:'flex',flexWrap:'wrap',gap:'3px'}}>
+      <div style={{display:'flex',flexWrap:'wrap',gap:'2px',maxWidth:120}}>
         {item.dueDates.map(m => {
           const s = ms[m] || '';
-          let bg = '#F3C036', color = '#371E54', text = m;
+          let bg = '#F3C036', color = '#371E54', text = shortMonth[m] || m.charAt(0);
           if (s === 'Completed' || (!s && item.status === 'Completed')) { bg = '#22c55e'; color = '#fff'; text = '✓'; }
           else if (s === 'Delayed') { bg = '#ef4444'; color = '#fff'; text = '!'; }
           else if (s === 'Completed Early' || (!s && item.status === 'Completed Early')) { bg = '#8B5CF6'; color = '#fff'; text = '✓'; }
-          return <span key={m} style={{display:'inline-flex',alignItems:'center',justifyContent:'center',minWidth:28,height:20,borderRadius:4,fontSize:10,fontWeight:700,background:bg,color,padding:'0 4px'}}>{text}</span>;
+          return <span key={m} title={m} style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:20,height:18,borderRadius:3,fontSize:9,fontWeight:700,background:bg,color}}>{text}</span>;
         })}
       </div>
     );
@@ -311,9 +312,10 @@ const DashboardPage = ({ user, onLogout }) => {
                     <div className="category-header"><h3>{cat}</h3><span className="category-count">{items.length} items</span></div>
                     <table className="timeline-table">
                       <thead><tr>
-                        <th style={{width:40}}>#</th><th style={{minWidth:isMobile?150:280}}>Activity</th>
-                        <th style={{width:80}}>Owner</th><th style={{width:60}}>Status</th>
-                        {isMobile ? <th style={{minWidth:100}}>Due</th> : months.map(m=><th key={m} className="month-col">{m}</th>)}
+                        <th style={{width:30}}>#</th><th>Activity</th>
+                        <th style={{width:60}}>Owner</th>
+                        {!isMobile && <th style={{width:60}}>Status</th>}
+                        {isMobile ? <th style={{width:90}}>Due</th> : months.map(m=><th key={m} className="month-col">{m}</th>)}
                       </tr></thead>
                       <tbody>
                         {items.map((item, idx) => (
@@ -321,7 +323,7 @@ const DashboardPage = ({ user, onLogout }) => {
                             <td>{idx+1}</td>
                             <td className="activity-name">{item.activity}</td>
                             <td className="owner-cell"><span className={`owner-badge owner-${ownerClassMap[item.owner]||'all'}`}>{item.owner}</span></td>
-                            <td className="status-cell"><span className={`status-icon status-${item.status.toLowerCase().replace(/\s+/g,'')}`} title={item.status}>{statusIcons[item.status]}</span></td>
+                            {!isMobile && <td className="status-cell"><span className={`status-icon status-${item.status.toLowerCase().replace(/\s+/g,'')}`} title={item.status}>{statusIcons[item.status]}</span></td>}
                             {isMobile ? (
                               <td>{getMobileDue(item)}</td>
                             ) : months.map(m => {
