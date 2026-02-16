@@ -148,14 +148,23 @@ export async function exportToPDF(monthFilter, dataFromDashboard) {
       doc.setFillColor(...(scMap[item.status]||C.LIGHT_PURPLE));
       doc.circle(tX+nC+aC+oC+sC/2,rcY,1.4,'F');
 
-      const cMs=[]; if(item.monthStatus)Object.keys(item.monthStatus).forEach(m=>{if(item.monthStatus[m]==='Completed')cMs.push(m);});
+      const mSt = item.monthStatus || item.month_status || {};
       months.forEach((m,mi)=>{
         const mx=tX+nC+aC+oC+sC+mi*mC,bcx=mx+mC/2;
         if(item.dueDates&&item.dueDates.includes(m)){
           const bxH=rH-1.2,bxW=mC-0.7,bxY=rcY-bxH/2;
-          if(cMs.includes(m)){
+          const mStatus = mSt[m] || '';
+          if(mStatus === 'Completed' || (!mStatus && (item.status === 'Completed'))){
             doc.setFillColor(...C.COMPLETED); doc.roundedRect(mx+0.35,bxY,bxW,bxH,0.7,0.7,'F');
             drawCheckmark(doc,bcx,rcY,2.5,C.WHITE);
+          } else if(mStatus === 'Delayed'){
+            doc.setFillColor(...C.DELAYED); doc.roundedRect(mx+0.35,bxY,bxW,bxH,0.7,0.7,'F');
+            doc.setTextColor(...C.WHITE); doc.setFontSize(7); doc.setFont('helvetica','bold');
+            doc.text('!',bcx,rcY+1,{align:'center'});
+          } else if(mStatus === 'Completed Early' || (!mStatus && item.status === 'Completed Early')){
+            doc.setFillColor(...C.COMPLETED_EARLY); doc.roundedRect(mx+0.35,bxY,bxW,bxH,0.7,0.7,'F');
+            doc.setTextColor(...C.WHITE); doc.setFontSize(7); doc.setFont('helvetica','bold');
+            doc.text('★',bcx,rcY+1,{align:'center'});
           } else {
             doc.setFillColor(...C.GOLD); doc.roundedRect(mx+0.35,bxY,bxW,bxH,0.7,0.7,'F');
             doc.setTextColor(...C.PRIMARY_PURPLE); doc.setFontSize(7); doc.setFont('helvetica','bold');
