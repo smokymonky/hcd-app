@@ -62,6 +62,13 @@ const DashboardPage = ({ user, onLogout }) => {
   const navigate = useNavigate();
   const [activeCard, setActiveCard] = useState(null);
   const [dataLoaded, setDataLoaded] = useState(false);
+  const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth <= 768);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   // Load data from API on mount
   useEffect(() => {
@@ -134,6 +141,24 @@ const DashboardPage = ({ user, onLogout }) => {
   const upcoming = filteredData.filter(i => i.dueDates.includes(cm) || i.dueDates.includes(nm)).length;
 
   const canExportPDF = user && ['admin','Admin','hr_director','HR Director','esmd','ceo'].includes(user.role);
+
+  // Mobile: format due dates with status icons
+  const getMobileDue = (item) => {
+    if (!item.dueDates || item.dueDates.length === 0) return <span style={{color:'var(--text-light)',fontSize:11}}>TBD</span>;
+    const ms = item.monthStatus || {};
+    return (
+      <div style={{display:'flex',flexWrap:'wrap',gap:'3px'}}>
+        {item.dueDates.map(m => {
+          const s = ms[m] || '';
+          let bg = '#F3C036', color = '#371E54', text = m;
+          if (s === 'Completed' || (!s && item.status === 'Completed')) { bg = '#22c55e'; color = '#fff'; text = '✓'; }
+          else if (s === 'Delayed') { bg = '#ef4444'; color = '#fff'; text = '!'; }
+          else if (s === 'Completed Early' || (!s && item.status === 'Completed Early')) { bg = '#8B5CF6'; color = '#fff'; text = '✓'; }
+          return <span key={m} style={{display:'inline-flex',alignItems:'center',justifyContent:'center',minWidth:28,height:20,borderRadius:4,fontSize:10,fontWeight:700,background:bg,color,padding:'0 4px'}}>{text}</span>;
+        })}
+      </div>
+    );
+  };
 
   // Cards view helpers
   const funcDefs = [
@@ -286,9 +311,9 @@ const DashboardPage = ({ user, onLogout }) => {
                     <div className="category-header"><h3>{cat}</h3><span className="category-count">{items.length} items</span></div>
                     <table className="timeline-table">
                       <thead><tr>
-                        <th style={{width:40}}>#</th><th style={{minWidth:280}}>Activity</th>
+                        <th style={{width:40}}>#</th><th style={{minWidth:isMobile?150:280}}>Activity</th>
                         <th style={{width:80}}>Owner</th><th style={{width:60}}>Status</th>
-                        {months.map(m=><th key={m} className="month-col">{m}</th>)}
+                        {isMobile ? <th style={{minWidth:100}}>Due</th> : months.map(m=><th key={m} className="month-col">{m}</th>)}
                       </tr></thead>
                       <tbody>
                         {items.map((item, idx) => (
@@ -297,7 +322,9 @@ const DashboardPage = ({ user, onLogout }) => {
                             <td className="activity-name">{item.activity}</td>
                             <td className="owner-cell"><span className={`owner-badge owner-${ownerClassMap[item.owner]||'all'}`}>{item.owner}</span></td>
                             <td className="status-cell"><span className={`status-icon status-${item.status.toLowerCase().replace(/\s+/g,'')}`} title={item.status}>{statusIcons[item.status]}</span></td>
-                            {months.map(m => {
+                            {isMobile ? (
+                              <td>{getMobileDue(item)}</td>
+                            ) : months.map(m => {
                               const d = getMonthDisplay(item, m);
                               if (!d) return <td key={m} className="month-cell"></td>;
                               if (d.isIcon) return <td key={m} className="month-cell"><span className="month-status-icon">{d.icon}</span></td>;
