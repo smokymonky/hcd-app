@@ -1,1408 +1,408 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
-
-/* ========================================
-   CSS VARIABLES - ALJ FINANCE BRANDING
-   ======================================== */
-:root {
-    /* Primary Brand Colors */
-    --primary-purple: #371E54;
-    --primary-gold: #F3C036;
-    --secondary-purple: #A888BE;
-    
-    /* Gradients */
-    --gradient-pink: linear-gradient(135deg, #ec4899 0%, #a855f7 100%);
-    --gradient-purple: linear-gradient(135deg, #7c3aed 0%, #a855f7 100%);
-    
-    /* Status Colors */
-    --status-scheduled: #3B82F6;
-    --status-progressing: #F3C036;
-    --status-completed: #22c55e;
-    --status-delayed: #EF4444;
-    --status-onhold: #6B7280;
-    --status-notcompleted: #F97316;
-    --status-completedearly: #8B5CF6;
-    
-    /* Spacing */
-    --spacing-xs: 4px;
-    --spacing-sm: 8px;
-    --spacing-md: 16px;
-    --spacing-lg: 24px;
-    --spacing-xl: 32px;
-    --spacing-2xl: 48px;
-    
-    /* Border Radius */
-    --radius-sm: 8px;
-    --radius-md: 12px;
-    --radius-lg: 16px;
-    --radius-xl: 24px;
-    
-    /* Transitions */
-    --transition-fast: 0.15s ease;
-    --transition-normal: 0.25s ease;
-    --transition-slow: 0.4s ease;
-}
-
-/* ========================================
-   DARK THEME (DEFAULT)
-   ======================================== */
-[data-theme="dark"] {
-    --bg-primary: linear-gradient(135deg, #1a1028 0%, #2d1f42 30%, #3d2856 60%, #4a3265 100%);
-    --bg-solid: #1a1028;
-    --bg-secondary: rgba(255, 255, 255, 0.03);
-    --bg-card: rgba(255, 255, 255, 0.03);
-    --bg-card-hover: rgba(255, 255, 255, 0.06);
-    --bg-input: rgba(255, 255, 255, 0.05);
-    
-    --text-primary: #ffffff;
-    --text-secondary: rgba(255, 255, 255, 0.75);
-    --text-light: rgba(255, 255, 255, 0.5);
-    --text-white: #FFFFFF;
-    
-    --border-color: rgba(255, 255, 255, 0.1);
-    --border-light: rgba(255, 255, 255, 0.2);
-    
-    --shadow-sm: 0 2px 8px rgba(0,0,0,0.2);
-    --shadow-md: 0 4px 20px rgba(0,0,0,0.3);
-    --shadow-lg: 0 8px 40px rgba(0,0,0,0.4);
-    
-    --header-bg: linear-gradient(135deg, #371E54 0%, #4a2970 100%);
-    --category-header-bg: linear-gradient(135deg, #371E54 0%, #4a2970 100%);
-    
-    --table-row-hover: rgba(255, 255, 255, 0.05);
-    --table-header-bg: rgba(255, 255, 255, 0.05);
-    
-    --glass-bg: rgba(55, 30, 84, 0.4);
-    --glass-border: rgba(168, 136, 190, 0.2);
-}
-
-/* ========================================
-   LIGHT THEME
-   ======================================== */
-[data-theme="light"] {
-    --bg-primary: linear-gradient(135deg, #f8f9fc 0%, #eef1f8 50%, #e8ecf4 100%);
-    --bg-solid: #f8f9fc;
-    --bg-secondary: rgba(255, 255, 255, 0.8);
-    --bg-card: rgba(255, 255, 255, 0.8);
-    --bg-card-hover: rgba(255, 255, 255, 0.95);
-    --bg-input: rgba(255, 255, 255, 0.9);
-    
-    --text-primary: #1a1028;
-    --text-secondary: #64607a;
-    --text-light: #8b85a0;
-    --text-white: #FFFFFF;
-    
-    --border-color: rgba(55, 30, 84, 0.15);
-    --border-light: rgba(55, 30, 84, 0.25);
-    
-    --shadow-sm: 0 1px 3px rgba(0,0,0,0.08);
-    --shadow-md: 0 4px 12px rgba(0,0,0,0.1);
-    --shadow-lg: 0 8px 30px rgba(0,0,0,0.12);
-    
-    --header-bg: linear-gradient(135deg, #371E54 0%, #4a2970 100%);
-    --category-header-bg: linear-gradient(135deg, #371E54 0%, #4a2970 100%);
-    
-    --table-row-hover: rgba(55, 30, 84, 0.05);
-    --table-header-bg: rgba(55, 30, 84, 0.05);
-    
-    --glass-bg: rgba(255, 255, 255, 0.7);
-    --glass-border: rgba(55, 30, 84, 0.15);
-}
-
-/* ========================================
-   RESET & BASE STYLES
-   ======================================== */
-* {
-    margin: 0;
-    padding: 0;
-    box-sizing: border-box;
-}
-
-body {
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-    background: var(--bg-primary);
-    background-attachment: fixed;
-    color: var(--text-primary);
-    line-height: 1.6;
-    min-height: 100vh;
-    transition: background var(--transition-normal), color var(--transition-normal);
-}
-
-h1, h2, h3, h4, h5, h6 {
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-    font-weight: 700;
-}
-
-/* ========================================
-   THEME BUTTON - Simple Icon (HCD2 Style)
-   ======================================== */
-.btn-theme {
-    width: 48px;
-    height: 48px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: var(--bg-input);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-md);
-    font-size: 20px;
-    cursor: pointer;
-    transition: all var(--transition-fast);
-}
-
-.btn-theme:hover {
-    background: var(--bg-card-hover);
-    border-color: var(--border-light);
-}
-
-/* ========================================
-   LAYOUT
-   ======================================== */
-.dashboard-container {
-    max-width: 1600px;
-    margin: 0 auto;
-    padding: var(--spacing-lg);
-}
-
-/* ========================================
-   HEADER - Clean & Minimal (HCD2 Style)
-   ======================================== */
-.header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: var(--spacing-lg) var(--spacing-xl);
-    background: var(--bg-card);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-lg);
-    margin-bottom: var(--spacing-lg);
-    position: relative;
-    overflow: hidden;
-}
-
-.header::before {
-    content: '';
-    position: absolute;
-    top: -50%;
-    right: -10%;
-    width: 400px;
-    height: 400px;
-    background: radial-gradient(circle, rgba(243, 192, 54, 0.1) 0%, transparent 70%);
-    border-radius: 50%;
-}
-
-.header-left {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-lg);
-    z-index: 1;
-}
-
-.header-logo {
-    display: flex;
-    align-items: center;
-}
-
-.header-logo svg {
-    height: 45px;
-    width: auto;
-}
-
-.header-logo svg text {
-    fill: var(--text-primary);
-}
-
-.header-divider {
-    width: 1px;
-    height: 32px;
-    background: var(--border-color);
-}
-
-.header-title h1 {
-    color: var(--text-primary);
-    font-size: 22px;
-    font-weight: 700;
-    letter-spacing: -0.3px;
-}
-
-.header-right {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-md);
-    z-index: 1;
-}
-
-.btn-export {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-sm);
-    padding: 12px 24px;
-    background: var(--gradient-pink);
-    color: var(--text-white);
-    border: none;
-    border-radius: var(--radius-sm);
-    font-family: 'Inter', sans-serif;
-    font-weight: 600;
-    font-size: 14px;
-    cursor: pointer;
-    transition: all var(--transition-fast);
-    box-shadow: 0 4px 20px rgba(236, 72, 153, 0.3);
-}
-
-.btn-export:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 6px 30px rgba(236, 72, 153, 0.4);
-}
-
-.btn-export svg {
-    width: 18px;
-    height: 18px;
-}
-
-/* ========================================
-   FILTERS BAR - Smooth Glass (HCD2 Style)
-   ======================================== */
-.filters-bar {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr) auto;
-    gap: var(--spacing-md);
-    margin-bottom: var(--spacing-lg);
-    align-items: center;
-}
-
-.filter-select {
-    width: 100%;
-    padding: 14px 20px;
-    padding-right: 48px;
-    background: var(--bg-input);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-md);
-    font-family: 'Inter', sans-serif;
-    font-size: 14px;
-    font-weight: 500;
-    color: var(--text-primary);
-    cursor: pointer;
-    transition: all var(--transition-fast);
-    appearance: none;
-    background-repeat: no-repeat;
-    background-position: right 16px center;
-}
-
-[data-theme="dark"] .filter-select {
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='rgba(255,255,255,0.5)' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
-}
-
-[data-theme="light"] .filter-select {
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='rgba(55,30,84,0.5)' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
-}
-
-.filter-select option {
-    background: var(--bg-solid);
-    color: var(--text-primary);
-}
-
-.filter-select:hover {
-    border-color: var(--border-light);
-    background-color: var(--bg-card-hover);
-}
-
-.filter-select:focus {
-    outline: none;
-    border-color: var(--secondary-purple);
-    box-shadow: 0 0 0 3px rgba(168, 136, 190, 0.15);
-}
-
-.filter-reset {
-    width: 48px;
-    height: 48px;
-    min-width: 48px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: var(--bg-input);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-md);
-    color: var(--text-light);
-    cursor: pointer;
-    transition: all var(--transition-fast);
-    flex-shrink: 0;
-}
-
-.filter-reset:hover {
-    background: var(--bg-card-hover);
-    border-color: var(--border-light);
-    color: var(--text-primary);
-}
-
-.filter-reset:active {
-    transform: rotate(-45deg);
-}
-
-.filter-reset svg {
-    width: 18px;
-    height: 18px;
-}
-
-/* ========================================
-   SUMMARY CARDS - Glass Style
-   ======================================== */
-.summary-cards {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-    gap: var(--spacing-md);
-    margin-bottom: var(--spacing-lg);
-}
-
-.summary-card {
-    background: var(--bg-card);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
-    border-radius: var(--radius-lg);
-    padding: var(--spacing-lg);
-    border: 1px solid var(--border-color);
-    transition: all var(--transition-normal);
-    cursor: pointer;
-    position: relative;
-    overflow: hidden;
-}
-
-.summary-card::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 4px;
-    height: 100%;
-    background: var(--card-accent);
-    opacity: 0;
-    transition: opacity var(--transition-fast);
-}
-
-.summary-card:hover {
-    transform: translateY(-4px);
-    background: var(--bg-card-hover);
-    border-color: var(--border-light);
-}
-
-.summary-card:hover::before {
-    opacity: 1;
-}
-
-.summary-card.active {
-    border-color: var(--card-accent);
-    box-shadow: 0 4px 20px rgba(0,0,0,0.2);
-}
-
-.summary-card.active::before {
-    opacity: 1;
-}
-
-.card-total { --card-accent: var(--secondary-purple); }
-.card-completed { --card-accent: var(--status-completed); }
-.card-progress { --card-accent: var(--status-progressing); }
-.card-delayed { --card-accent: var(--status-delayed); }
-.card-upcoming { --card-accent: var(--status-scheduled); }
-.card-onhold { --card-accent: var(--status-onhold); }
-
-.card-icon {
-    width: 44px;
-    height: 44px;
-    border-radius: var(--radius-md);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    margin-bottom: var(--spacing-md);
-    background: color-mix(in srgb, var(--card-accent) 15%, transparent);
-}
-
-.card-icon svg {
-    width: 22px;
-    height: 22px;
-    color: var(--card-accent);
-}
-
-.card-value {
-    font-family: 'Inter', sans-serif;
-    font-size: 32px;
-    font-weight: 800;
-    color: var(--text-primary);
-    line-height: 1;
-    margin-bottom: var(--spacing-xs);
-}
-
-.card-label {
-    font-size: 13px;
-    color: var(--text-secondary);
-    font-weight: 500;
-}
-
-/* ========================================
-   VIEW TOGGLE - Glass Style
-   ======================================== */
-.view-section {
-    background: var(--bg-card);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
-    border-radius: var(--radius-lg);
-    border: 1px solid var(--border-color);
-    overflow: hidden;
-}
-
-.view-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: var(--spacing-md) var(--spacing-lg);
-    border-bottom: 1px solid var(--border-color);
-    background: var(--bg-input);
-}
-
-.view-toggle {
-    display: flex;
-    gap: 4px;
-    background: var(--bg-card);
-    padding: 4px;
-    border-radius: var(--radius-sm);
-    border: 1px solid var(--border-color);
-}
-
-.view-btn {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-sm);
-    padding: var(--spacing-sm) var(--spacing-md);
-    background: transparent;
-    border: none;
-    border-radius: 6px;
-    font-family: 'Inter', sans-serif;
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--text-secondary);
-    cursor: pointer;
-    transition: all var(--transition-fast);
-}
-
-.view-btn:hover {
-    background: var(--bg-card-hover);
-    color: var(--text-primary);
-}
-
-.view-btn.active {
-    background: var(--gradient-pink);
-    color: var(--text-white);
-}
-
-.view-btn svg {
-    width: 16px;
-    height: 16px;
-}
-
-.search-box {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-sm);
-    padding: var(--spacing-sm) var(--spacing-md);
-    background: var(--bg-input);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-sm);
-    width: 280px;
-}
-
-.search-box svg {
-    width: 18px;
-    height: 18px;
-    color: var(--text-light);
-}
-
-.search-box input {
-    border: none;
-    outline: none;
-    font-family: 'Inter', sans-serif;
-    font-size: 14px;
-    width: 100%;
-    color: var(--text-primary);
-    background: transparent;
-}
-
-.search-box input::placeholder {
-    color: var(--text-light);
-}
-
-/* ========================================
-   VIEW CONTENT AREA
-   ======================================== */
-.view-content {
-    padding: var(--spacing-lg);
-    min-height: 500px;
-}
-
-.view-panel {
-    display: none;
-}
-
-.view-panel.active {
-    display: block;
-    animation: fadeIn 0.3s ease;
-}
-
-@keyframes fadeIn {
-    from { opacity: 0; transform: translateY(10px); }
-    to { opacity: 1; transform: translateY(0); }
-}
-
-/* ========================================
-   TIMELINE VIEW
-   ======================================== */
-.timeline-container {
-    overflow-x: auto;
-}
-
-.category-section {
-    margin-bottom: var(--spacing-xl);
-}
-
-.category-header {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-md);
-    padding: var(--spacing-md) var(--spacing-lg);
-    background: var(--category-header-bg);
-    border-radius: var(--radius-md);
-    margin-bottom: var(--spacing-md);
-}
-
-.category-header h3 {
-    color: var(--text-white);
-    font-size: 15px;
-    font-weight: 600;
-}
-
-.category-count {
-    background: rgba(255,255,255,0.2);
-    color: var(--text-white);
-    font-size: 12px;
-    font-weight: 600;
-    padding: 2px 10px;
-    border-radius: 20px;
-}
-
-.timeline-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 13px;
-}
-
-.timeline-table th {
-    background: var(--table-header-bg);
-    padding: var(--spacing-sm) var(--spacing-md);
-    text-align: left;
-    font-weight: 600;
-    color: var(--text-secondary);
-    border-bottom: 2px solid var(--border-color);
-    position: sticky;
-    top: 0;
-    z-index: 10;
-}
-
-.timeline-table th.month-col {
-    text-align: center;
-    min-width: 60px;
-}
-
-.timeline-table td {
-    padding: var(--spacing-sm) var(--spacing-md);
-    border-bottom: 1px solid var(--border-color);
-    vertical-align: middle;
-}
-
-.timeline-table tr:hover {
-    background: var(--table-row-hover);
-}
-
-.timeline-table .activity-name {
-    font-weight: 500;
-    color: var(--text-primary);
-    max-width: 300px;
-}
-
-.timeline-table .owner-cell {
-    text-align: center;
-}
-
-.owner-badge {
-    display: inline-block;
-    padding: 4px 10px;
-    border-radius: 20px;
-    font-size: 11px;
-    font-weight: 600;
-    text-transform: uppercase;
-}
-
-.owner-op { background: #E8F5E9; color: #2E7D32; }
-.owner-dc { background: #E3F2FD; color: #1565C0; }
-.owner-ta { background: #FFF3E0; color: #E65100; }
-.owner-od { background: #F3E5F5; color: #7B1FA2; }
-.owner-cb { background: #FFEBEE; color: #C62828; }
-.owner-sbm { background: #E0F2F1; color: #00695C; }
-.owner-all { background: #FFF8E1; color: #FF8F00; }
-
-.status-cell {
-    text-align: center;
-}
-
-.status-icon {
-    width: 28px;
-    height: 28px;
-    border-radius: 50%;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 14px;
-}
-
-.status-scheduled { background: #E3F2FD; color: #1976D2; }
-.status-progressing { background: #FFF3E0; color: #F57C00; }
-.status-completed { background: #E8F5E9; color: #388E3C; }
-.status-delayed { background: #FFEBEE; color: #D32F2F; }
-.status-onhold { background: #ECEFF1; color: #546E7A; }
-.status-notcompleted { background: #FFEBEE; color: #B71C1C; }
-.status-completedearly { background: #E0F2F1; color: #00897B; }
-
-.month-cell {
-    text-align: center;
-}
-
-.month-marker {
-    width: 32px;
-    height: 32px;
-    border-radius: var(--radius-sm);
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 13px;
-    font-weight: 700;
-    margin: 0 auto;
-    transition: transform var(--transition-fast);
-}
-
-.month-marker:hover {
-    transform: scale(1.1);
-}
-
-/* Gold box for scheduled months */
-.month-marker.scheduled { 
-    background: #F3C036; 
-    color: #371E54; 
-}
-
-/* Status icons for completed/delayed */
-.month-status-icon {
-    font-size: 18px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-}
-
-/* ========================================
-   TABLE VIEW
-   ======================================== */
-.table-view-container {
-    overflow-x: auto;
-}
-
-.data-table {
-    width: 100%;
-    border-collapse: collapse;
-}
-
-.data-table th {
-    background: var(--table-header-bg);
-    padding: var(--spacing-md);
-    text-align: left;
-    font-weight: 600;
-    color: var(--text-secondary);
-    border-bottom: 2px solid var(--border-color);
-    cursor: pointer;
-    user-select: none;
-    transition: background var(--transition-fast);
-}
-
-.data-table th:hover {
-    background: var(--bg-card-hover);
-}
-
-.data-table th .sort-icon {
-    margin-left: var(--spacing-xs);
-    opacity: 0.5;
-}
-
-.data-table th.sorted .sort-icon {
-    opacity: 1;
-}
-
-.data-table td {
-    padding: var(--spacing-md);
-    border-bottom: 1px solid var(--border-color);
-    vertical-align: middle;
-}
-
-.data-table tr:hover {
-    background: var(--table-row-hover);
-}
-
-.due-dates {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 4px;
-}
-
-.due-date-tag {
-    font-size: 11px;
-    padding: 2px 8px;
-    border-radius: 4px;
-    background: var(--bg-secondary);
-    color: var(--text-secondary);
-    border: 1px solid var(--border-color);
-}
-
-/* ========================================
-   CARDS VIEW - ENHANCED
-   ======================================== */
-.cards-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
-    gap: var(--spacing-xl);
-}
-
-.function-card {
-    background: var(--bg-card);
-    border-radius: var(--radius-xl);
-    border: 1px solid var(--border-color);
-    overflow: hidden;
-    transition: all var(--transition-normal);
-    box-shadow: var(--shadow-sm);
-}
-
-.function-card:hover {
-    box-shadow: var(--shadow-lg);
-    transform: translateY(-8px);
-    border-color: var(--border-light);
-}
-
-.function-card-header {
-    padding: var(--spacing-xl) var(--spacing-lg);
-    background: linear-gradient(135deg, var(--function-color) 0%, color-mix(in srgb, var(--function-color) 70%, black) 100%);
-    color: white;
-    position: relative;
-    overflow: hidden;
-}
-
-.function-card-header::before {
-    content: '';
-    position: absolute;
-    top: -50%;
-    right: -20%;
-    width: 200px;
-    height: 200px;
-    background: radial-gradient(circle, rgba(255,255,255,0.2) 0%, transparent 70%);
-    border-radius: 50%;
-}
-
-.function-card-header::after {
-    content: '';
-    position: absolute;
-    bottom: -30%;
-    left: -10%;
-    width: 150px;
-    height: 150px;
-    background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
-    border-radius: 50%;
-}
-
-.function-card-header h3 {
-    font-size: 20px;
-    margin-bottom: 4px;
-    position: relative;
-    z-index: 1;
-}
-
-.function-card-header p {
-    opacity: 0.9;
-    font-size: 14px;
-    font-weight: 500;
-    position: relative;
-    z-index: 1;
-}
-
-.function-op { --function-color: #27AE60; }
-.function-dc { --function-color: #2980B9; }
-.function-ta { --function-color: #E67E22; }
-.function-od { --function-color: #8E44AD; }
-.function-cb { --function-color: #E74C3C; }
-.function-sbm { --function-color: #16A085; }
-
-.function-stats {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    background: var(--bg-card);
-    border-bottom: 1px solid var(--border-color);
-}
-
-.function-stat {
-    padding: var(--spacing-lg) var(--spacing-md);
-    text-align: center;
-    position: relative;
-}
-
-.function-stat:not(:last-child)::after {
-    content: '';
-    position: absolute;
-    right: 0;
-    top: 20%;
-    height: 60%;
-    width: 1px;
-    background: var(--border-color);
-}
-
-.function-stat-value {
-    font-family: 'Plus Jakarta Sans', sans-serif;
-    font-size: 32px;
-    font-weight: 800;
-    color: var(--text-primary);
-    line-height: 1;
-}
-
-.function-stat-value.stat-done {
-    color: var(--status-completed);
-}
-
-.function-stat-value.stat-delayed {
-    color: var(--status-delayed);
-}
-
-.function-stat-label {
-    font-size: 11px;
-    color: var(--text-secondary);
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    margin-top: 4px;
-    font-weight: 600;
-}
-
-.function-progress {
-    padding: var(--spacing-md) var(--spacing-lg);
-    background: var(--bg-secondary);
-}
-
-.function-progress-bar {
-    height: 8px;
-    background: var(--border-color);
-    border-radius: 4px;
-    overflow: hidden;
-}
-
-.function-progress-fill {
-    height: 100%;
-    background: linear-gradient(90deg, var(--function-color), color-mix(in srgb, var(--function-color) 70%, white));
-    border-radius: 4px;
-    transition: width 0.5s ease;
-}
-
-.function-progress-text {
-    display: flex;
-    justify-content: space-between;
-    margin-top: 6px;
-    font-size: 11px;
-    color: var(--text-secondary);
-}
-
-.function-items {
-    padding: var(--spacing-md) var(--spacing-lg);
-    max-height: 280px;
-    overflow-y: auto;
-    background: var(--bg-card);
-}
-
-.function-items::-webkit-scrollbar {
-    width: 6px;
-}
-
-.function-items::-webkit-scrollbar-track {
-    background: var(--bg-secondary);
-    border-radius: 3px;
-}
-
-.function-items::-webkit-scrollbar-thumb {
-    background: var(--border-color);
-    border-radius: 3px;
-}
-
-.function-items::-webkit-scrollbar-thumb:hover {
-    background: var(--text-light);
-}
-
-.function-item {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-sm);
-    padding: var(--spacing-sm) var(--spacing-md);
-    border-radius: var(--radius-md);
-    margin-bottom: var(--spacing-xs);
-    transition: all var(--transition-fast);
-    border-left: 3px solid transparent;
-}
-
-.function-item:hover {
-    background: var(--bg-card-hover);
-    border-left-color: var(--function-color);
-    transform: translateX(4px);
-}
-
-.function-item-status {
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    flex-shrink: 0;
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--item-status-color) 20%, transparent);
-}
-
-.function-item-name {
-    flex: 1;
-    font-size: 13px;
-    color: var(--text-primary);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    font-weight: 500;
-}
-
-.function-item-date {
-    font-size: 11px;
-    color: var(--text-white);
-    flex-shrink: 0;
-    background: var(--function-color);
-    padding: 2px 8px;
-    border-radius: 10px;
-    font-weight: 500;
-}
-
-.function-item-date.tbd {
-    background: var(--text-light);
-}
-
-/* ========================================
-   STATUS LEGEND
-   ======================================== */
-.status-legend {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--spacing-md);
-    padding: var(--spacing-md);
-    background: var(--bg-card);
-    border-radius: var(--radius-md);
-    margin-bottom: var(--spacing-lg);
-    border: 1px solid var(--border-color);
-}
-
-.legend-item {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-sm);
-    font-size: 12px;
-    color: var(--text-secondary);
-}
-
-.legend-icon {
-    width: 28px;
-    height: 28px;
-    border-radius: var(--radius-sm);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 14px;
-    background: transparent !important;
-}
-
-.legend-dot {
-    width: 12px;
-    height: 12px;
-    border-radius: 3px;
-}
-
-/* ========================================
-   LOADING STATE
-   ======================================== */
-.loading {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    min-height: 300px;
-}
-
-.loading-spinner {
-    width: 40px;
-    height: 40px;
-    border: 3px solid var(--border-color);
-    border-top-color: var(--primary-gold);
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
-}
-
-@keyframes spin {
-    to { transform: rotate(360deg); }
-}
-
-/* ========================================
-   EMPTY STATE
-   ======================================== */
-.empty-state {
-    text-align: center;
-    padding: var(--spacing-2xl);
-    color: var(--text-secondary);
-}
-
-.empty-state svg {
-    width: 64px;
-    height: 64px;
-    margin-bottom: var(--spacing-md);
-    opacity: 0.5;
-}
-
-.function-empty {
-    text-align: center;
-    padding: var(--spacing-xl);
-    color: var(--text-light);
-}
-
-.function-empty-icon {
-    font-size: 40px;
-    margin-bottom: var(--spacing-sm);
-    opacity: 0.5;
-}
-
-.function-more {
-    text-align: center;
-    padding: var(--spacing-sm);
-    color: var(--text-secondary);
-    font-size: 12px;
-    font-weight: 500;
-    border-top: 1px dashed var(--border-color);
-    margin-top: var(--spacing-sm);
-}
-
-/* ========================================
-   GLOBAL SCROLLBAR - HCD2 Style
-   ======================================== */
-::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
-}
-
-::-webkit-scrollbar-track {
-    background: transparent;
-}
-
-::-webkit-scrollbar-thumb {
-    background: var(--border-color);
-    border-radius: 3px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-    background: var(--border-light);
-}
-
-/* ========================================
-   RESPONSIVE
-   ======================================== */
-@media (max-width: 768px) {
-    .dashboard-container {
-        padding: 12px;
-    }
-
-    /* Header - compact mobile layout */
-    .header {
-        flex-direction: column;
-        text-align: center;
-        gap: 12px;
-        padding: 16px;
-    }
-
-    .header-left {
-        flex-direction: column;
-        gap: 8px;
-    }
-
-    .header-divider {
-        display: none;
-    }
-
-    .header-title h1 {
-        font-size: 18px;
-    }
-
-    .header-right {
-        flex-wrap: wrap;
-        justify-content: center;
-        gap: 8px;
-    }
-
-    .header-logo svg {
-        height: 30px;
-    }
-
-    /* Filters - full width stacked */
-    .filters-bar {
-        grid-template-columns: 1fr;
-        gap: 8px;
-    }
-
-    .filter-select {
-        width: 100%;
-        font-size: 14px;
-        padding: 12px 16px;
-    }
-
-    .filter-reset {
-        width: 100%;
-        height: 44px;
-    }
-
-    /* Summary Cards - 2 column grid */
-    .summary-cards {
-        grid-template-columns: repeat(2, 1fr);
-        gap: 8px;
-    }
-
-    .summary-card {
-        padding: 16px 12px;
-    }
-
-    .card-value {
-        font-size: 28px;
-    }
-
-    .card-label {
-        font-size: 11px;
-    }
-
-    /* Status Legend - wrap on mobile */
-    .status-legend {
-        flex-wrap: wrap;
-        gap: 8px 16px;
-        padding: 12px 16px;
-    }
-
-    .legend-item {
-        font-size: 12px;
-    }
-
-    /* View Section */
-    .view-header {
-        flex-direction: column;
-        gap: 12px;
-    }
-
-    .view-toggle {
-        width: 100%;
-        justify-content: center;
-    }
-
-    .search-box {
-        width: 100%;
-    }
-
-    /* Timeline Table - fit screen on mobile */
-    .timeline-container {
-        overflow-x: auto;
-        -webkit-overflow-scrolling: touch;
-    }
-
-    .timeline-table {
-        min-width: unset;
-        width: 100%;
-        table-layout: auto;
-    }
-
-    .timeline-table .activity-name {
-        min-width: unset;
-        font-size: 12px;
-        word-break: break-word;
-    }
-
-    .timeline-table th,
-    .timeline-table td {
-        padding: 6px 4px;
-        font-size: 11px;
-    }
-
-    .timeline-table th.month-col {
-        font-size: 10px;
-    }
-
-    /* Category Header */
-    .category-header h3 {
-        font-size: 14px;
-    }
-
-    /* Data Table - fit screen */
-    .table-view-container {
-        overflow-x: auto;
-        -webkit-overflow-scrolling: touch;
-    }
-
-    .data-table {
-        min-width: unset;
-        width: 100%;
-    }
-
-    .data-table th,
-    .data-table td {
-        padding: 8px 6px;
-        font-size: 12px;
-    }
-
-    /* Cards View */
-    .cards-grid {
-        grid-template-columns: 1fr;
-        gap: 12px;
-    }
-
-    .function-card {
-        padding: 16px;
-    }
-
-    .function-card-header h3 {
-        font-size: 15px;
-    }
-
-    /* Owner Badge - smaller on mobile */
-    .owner-badge {
-        font-size: 10px;
-        padding: 2px 8px;
-    }
-
-    /* Month markers */
-    .month-marker {
-        width: 24px;
-        height: 24px;
-        font-size: 11px;
-    }
-
-    /* Buttons */
-    .btn-export {
-        font-size: 12px;
-        padding: 8px 16px;
-    }
-
-    .btn-theme {
-        width: 36px;
-        height: 36px;
-    }
-}
-
-/* Extra small screens */
-@media (max-width: 480px) {
-    .dashboard-container {
-        padding: 8px;
-    }
-
-    .header {
-        padding: 12px;
-    }
-
-    .header-title h1 {
-        font-size: 16px;
-    }
-
-    .summary-cards {
-        grid-template-columns: repeat(2, 1fr);
-        gap: 6px;
-    }
-
-    .summary-card {
-        padding: 12px 8px;
-    }
-
-    .card-value {
-        font-size: 24px;
-    }
-
-    .card-icon svg {
-        width: 20px;
-        height: 20px;
-    }
-
-    .filters-bar {
-        gap: 6px;
-    }
-
-    .view-toggle {
-        gap: 4px;
-    }
-
-    .view-btn {
-        font-size: 12px;
-        padding: 6px 12px;
-    }
-
-    .status-legend {
-        gap: 6px 12px;
-    }
-
-    .legend-item {
-        font-size: 11px;
-    }
-}
-
-/* ========================================
-   TOOLTIP
-   ======================================== */
-.tooltip {
-    position: relative;
-}
-
-.tooltip::after {
-    content: attr(data-tooltip);
-    position: absolute;
-    bottom: 100%;
-    left: 50%;
-    transform: translateX(-50%);
-    padding: 6px 12px;
-    background: var(--bg-dark);
-    color: var(--text-white);
-    font-size: 12px;
-    border-radius: var(--radius-sm);
-    white-space: nowrap;
-    opacity: 0;
-    visibility: hidden;
-    transition: all var(--transition-fast);
-    z-index: 100;
-}
-
-.tooltip:hover::after {
-    opacity: 1;
-    visibility: visible;
-    bottom: calc(100% + 8px);
-}
-
-/* ========================================
-   PRINT STYLES
-   ======================================== */
-@media print {
-    .filters-bar, .view-toggle, .btn-export, .search-box {
-        display: none !important;
-    }
-
-    .header {
-        background: var(--gradient-pink) !important;
-        -webkit-print-color-adjust: exact;
-        print-color-adjust: exact;
-    }
-
-    .view-panel {
-        display: block !important;
-    }
-}
+import React, { useState, useEffect, useCallback } from 'react';
+import hrPlanData from '../data/hrPlanData';
+import { activitiesAPI } from '../services/api';
+import { exportToPDF } from '../utils/pdfExport';
+import { useNavigate } from 'react-router-dom';
+import '../styles/dashboard.css';
+
+const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const quarters = { Q1:['Jan','Feb','Mar'], Q2:['Apr','May','Jun'], Q3:['Jul','Aug','Sep'], Q4:['Oct','Nov','Dec'] };
+const statusIcons = { Scheduled:'📅', Progressing:'⏳', Completed:'✅', Delayed:'🔴', 'On Hold':'⏸️', Canceled:'❌', 'Completed Early':'⭐' };
+const ownerClassMap = { OP:'op','D&C':'dc','T&A':'ta',OD:'od','Com&Bn':'cb',SBM:'sbm',ALL:'all','T&A/D&C':'ta','OD/D&C':'od','OD/SBM':'od','OD/Com&Bn':'od' };
+
+// Sort order: by function (OP→D&C→T&A→OD→Com&Bn→SBM→ALL) then by earliest due date
+const ownerOrder = {OP:0,'D&C':1,'T&A':2,OD:3,'Com&Bn':4,SBM:5,ALL:6};
+function getOwnerOrder(o) { const f = o.split('/')[0].trim(); return ownerOrder[f] !== undefined ? ownerOrder[f] : 99; }
+function getEarliestMonth(dd) { if (!dd || dd.length === 0) return 99; return Math.min(...dd.map(m => months.indexOf(m)).filter(i => i >= 0)); }
+function sortActivities(items) {
+  return [...items].sort((a, b) => {
+    // First sort by category (Activities → Maintenance → Reports)
+    const catOrder = {'Activities/Programs/Projects':0,'Maintenance Projects':1,'Reports':2};
+    const catDiff = (catOrder[a.category]||0) - (catOrder[b.category]||0);
+    if (catDiff !== 0) return catDiff;
+    // Then by owner function order
+    const ownerDiff = getOwnerOrder(a.owner) - getOwnerOrder(b.owner);
+    if (ownerDiff !== 0) return ownerDiff;
+    // Then by earliest due date
+    return getEarliestMonth(a.dueDates) - getEarliestMonth(b.dueDates);
+  });
+}
+
+// Map API fields to frontend fields
+function mapActivity(a) {
+  return {
+    ...a,
+    activity: a.name || a.activity || '',
+    dueDates: a.due_dates || a.dueDates || [],
+    monthStatus: a.month_status || a.monthStatus || {},
+  };
+}
+
+function getMonthDisplay(item, month) {
+  if (!item.dueDates.includes(month)) return null;
+  const ms = item.monthStatus?.[month] || '';
+  // Check month-level status first
+  if (ms === 'Completed') return { icon: '✅', isIcon: true };
+  if (ms === 'Delayed') return { icon: '🔴', isIcon: true };
+  if (ms === 'Completed Early') return { icon: '⭐', isIcon: true };
+  // Then check overall status
+  if (item.status === 'Completed Early') return { icon: '⭐', isIcon: true };
+  if (item.status === 'Completed') return { icon: '✅', isIcon: true };
+  // Default: scheduled (gold box with letter)
+  return { letter: month.charAt(0), isIcon: false };
+}
+
+const DashboardPage = ({ user, onLogout }) => {
+  const [theme, setTheme] = useState(() => localStorage.getItem('hcd-theme') || 'dark');
+  const [allData, setAllData] = useState([...hrPlanData]);
+  const [filteredData, setFilteredData] = useState([...hrPlanData]);
+  const [currentView, setCurrentView] = useState('timeline');
+  const [filters, setFilters] = useState({ function:'all', category:'all', status:'all', month:'all' });
+  const [searchQuery, setSearchQuery] = useState('');
+  const navigate = useNavigate();
+  const [activeCard, setActiveCard] = useState(null);
+  const [dataLoaded, setDataLoaded] = useState(false);
+  const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth <= 768);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  // Load data from API on mount
+  useEffect(() => {
+    const loadFromAPI = async () => {
+      try {
+        const data = await activitiesAPI.getAll();
+        let items = [];
+        if (data && data.activities) items = data.activities;
+        else if (Array.isArray(data)) items = data;
+        if (items.length > 0) {
+          const mapped = sortActivities(items.map(mapActivity));
+          setAllData(mapped);
+          setFilteredData(mapped);
+          setDataLoaded(true);
+        }
+      } catch (e) {
+        console.log('Using local data - API not available:', e.message);
+        setDataLoaded(true);
+      }
+    };
+    loadFromAPI();
+  }, []);
+
+  useEffect(() => { document.body.setAttribute('data-theme', theme); localStorage.setItem('hcd-theme', theme); }, [theme]);
+
+  const applyFilters = useCallback(() => {
+    let data = allData.filter(item => {
+      if (filters.function !== 'all') {
+        const owners = item.owner.split('/').map(o => o.trim());
+        if (!owners.includes(filters.function)) return false;
+      }
+      if (filters.category !== 'all' && item.category !== filters.category) return false;
+      if (filters.status !== 'all' && item.status !== filters.status) return false;
+      if (filters.month !== 'all') {
+        if (quarters[filters.month]) {
+          if (!item.dueDates.some(d => quarters[filters.month].includes(d))) return false;
+        } else {
+          if (!item.dueDates.includes(filters.month)) return false;
+        }
+      }
+      if (searchQuery && !item.activity.toLowerCase().includes(searchQuery.toLowerCase())) return false;
+      return true;
+    });
+    setFilteredData(data);
+  }, [filters, searchQuery, allData]);
+
+  useEffect(() => { applyFilters(); }, [applyFilters]);
+
+  const resetFilters = () => { setFilters({ function:'all', category:'all', status:'all', month:'all' }); setSearchQuery(''); setActiveCard(null); };
+
+  const filterByCard = (type) => {
+    const base = { function:'all', category:'all', month:'all' };
+    setSearchQuery('');
+    if (type === 'total') { setFilters({ ...base, status:'all' }); setActiveCard('total'); }
+    else if (type === 'upcoming') {
+      setActiveCard('upcoming');
+      const cm = months[new Date().getMonth()], nm = months[(new Date().getMonth()+1)%12];
+      setFilteredData(allData.filter(i => i.dueDates.includes(cm) || i.dueDates.includes(nm)));
+      return;
+    } else { setFilters({ ...base, status: type }); setActiveCard(type); }
+  };
+
+  // Stats
+  const total = filteredData.length;
+  const completed = filteredData.filter(i => i.status === 'Completed' || i.status === 'Completed Early').length;
+  const progress = filteredData.filter(i => i.status === 'Progressing').length;
+  const delayed = filteredData.filter(i => i.status === 'Delayed').length;
+  const onhold = filteredData.filter(i => i.status === 'On Hold').length;
+  const cm = months[new Date().getMonth()], nm = months[(new Date().getMonth()+1)%12];
+  const upcoming = filteredData.filter(i => i.dueDates.includes(cm) || i.dueDates.includes(nm)).length;
+
+  const canExportPDF = user && ['admin','Admin','hr_director','HR Director','esmd','ceo'].includes(user.role);
+
+  // Mobile: format due dates with status icons
+  const getMobileDue = (item) => {
+    if (!item.dueDates || item.dueDates.length === 0) return <span style={{color:'var(--text-light)',fontSize:11}}>TBD</span>;
+    const ms = item.monthStatus || {};
+    return (
+      <div style={{display:'flex',flexWrap:'wrap',gap:'3px'}}>
+        {item.dueDates.map(m => {
+          const s = ms[m] || '';
+          let bg = '#F3C036', color = '#371E54', text = m;
+          if (s === 'Completed' || (!s && item.status === 'Completed')) { bg = '#22c55e'; color = '#fff'; text = '✓'; }
+          else if (s === 'Delayed') { bg = '#ef4444'; color = '#fff'; text = '!'; }
+          else if (s === 'Completed Early' || (!s && item.status === 'Completed Early')) { bg = '#8B5CF6'; color = '#fff'; text = '✓'; }
+          return <span key={m} style={{display:'inline-flex',alignItems:'center',justifyContent:'center',minWidth:28,height:20,borderRadius:4,fontSize:10,fontWeight:700,background:bg,color,padding:'0 4px'}}>{text}</span>;
+        })}
+      </div>
+    );
+  };
+
+  // Cards view helpers
+  const funcDefs = [
+    { code:'OP', name:'Operations', cls:'op', icon:'🏢' },
+    { code:'D&C', name:'Development & Career', cls:'dc', icon:'📚' },
+    { code:'T&A', name:'Talent Acquisition', cls:'ta', icon:'👥' },
+    { code:'OD', name:'Organization Design', cls:'od', icon:'🏗️' },
+    { code:'Com&Bn', name:'Compensation & Benefits', cls:'cb', icon:'💰' },
+    { code:'SBM', name:'Strategy Business Management', cls:'sbm', icon:'📊' }
+  ];
+
+  const getStatusColor = (s) => ({
+    Scheduled:'var(--status-scheduled)', Progressing:'var(--status-progressing)',
+    Completed:'var(--status-completed)', Delayed:'var(--status-delayed)',
+    'On Hold':'var(--status-onhold)', Canceled:'var(--status-notcompleted)',
+    'Completed Early':'var(--status-completedearly)'
+  }[s] || 'var(--text-light)');
+
+  return (
+    <div className="dashboard-container">
+      {/* ===== HEADER ===== */}
+      <header className="header">
+        <div className="header-left">
+          <div className="header-logo">
+            <svg viewBox="0 0 180 50" fill="currentColor">
+              <text x="0" y="28" fontFamily="Inter, sans-serif" fontSize="18" fontWeight="600">Abdul Latif Jameel</text>
+              <text x="0" y="44" fontFamily="Inter, sans-serif" fontSize="12" fontWeight="500" fill="var(--text-light)">FINANCE</text>
+            </svg>
+          </div>
+          <div className="header-divider" />
+          <div className="header-title"><h1>HCD Annual Plan 2026</h1></div>
+        </div>
+        <div className="header-right">
+          {canExportPDF && (
+            <button className="btn-theme" onClick={() => navigate('/admin')} style={{fontSize:'13px',width:'auto',padding:'0 16px',gap:'6px',display:'flex',alignItems:'center'}}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+              Admin
+            </button>
+          )}
+          <button className="btn-theme" onClick={() => setTheme(t => t === 'dark' ? 'light' : 'dark')}>
+            {theme === 'dark' ? '🌙' : '☀️'}
+          </button>
+          {canExportPDF && (
+            <button className="btn-export" onClick={() => exportToPDF(filters.month, allData)}>
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              Export PDF
+            </button>
+          )}
+          <div style={{display:'flex',alignItems:'center',gap:'8px',marginLeft:'8px',paddingLeft:'16px',borderLeft:'1px solid var(--border-color)'}}>
+            <span style={{color:'var(--text-secondary)',fontSize:'13px',fontWeight:500}}>{user?.name || user?.email || 'User'}</span>
+            <button onClick={() => { localStorage.removeItem('hcd_token'); localStorage.removeItem('hcd_user'); localStorage.removeItem('hcd_permissions'); if(onLogout) onLogout(); navigate('/login'); }} style={{padding:'8px 16px',background:'rgba(239,68,68,0.1)',border:'1px solid rgba(239,68,68,0.3)',borderRadius:'8px',color:'#ef4444',fontFamily:'Inter,sans-serif',fontSize:'13px',fontWeight:600,cursor:'pointer',transition:'all 0.15s ease'}}>Logout</button>
+          </div>
+        </div>
+      </header>
+
+      {/* ===== FILTERS ===== */}
+      <div className="filters-bar">
+        <select className="filter-select" value={filters.function} onChange={e => setFilters(f => ({...f, function: e.target.value}))}>
+          <option value="all">All Functions</option>
+          <option value="OP">Operations (OP)</option>
+          <option value="D&C">Development &amp; Career (D&amp;C)</option>
+          <option value="T&A">Talent Acquisition (T&amp;A)</option>
+          <option value="OD">Organization Design (OD)</option>
+          <option value="Com&Bn">Compensation &amp; Benefits (Com&amp;Bn)</option>
+          <option value="SBM">Strategy Business Management (SBM)</option>
+          <option value="ALL">Cross-Functional (ALL)</option>
+        </select>
+        <select className="filter-select" value={filters.category} onChange={e => setFilters(f => ({...f, category: e.target.value}))}>
+          <option value="all">All Categories</option>
+          <option value="Activities/Programs/Projects">Activities/Programs/Projects</option>
+          <option value="Maintenance Projects">Maintenance Projects</option>
+          <option value="Reports">Reports</option>
+        </select>
+        <select className="filter-select" value={filters.status} onChange={e => setFilters(f => ({...f, status: e.target.value}))}>
+          <option value="all">All Status</option>
+          <option value="Scheduled">Scheduled</option><option value="Progressing">Progressing</option>
+          <option value="Completed">Completed</option><option value="Delayed">Delayed</option>
+          <option value="On Hold">On Hold</option><option value="Canceled">Canceled</option>
+          <option value="Completed Early">Completed Early</option>
+        </select>
+        <select className="filter-select" value={filters.month} onChange={e => setFilters(f => ({...f, month: e.target.value}))}>
+          <option value="all">All Year 2026</option>
+          <option value="Q1">Q1 (Jan-Mar)</option><option value="Q2">Q2 (Apr-Jun)</option>
+          <option value="Q3">Q3 (Jul-Sep)</option><option value="Q4">Q4 (Oct-Dec)</option>
+          {months.map(m => <option key={m} value={m}>{m}</option>)}
+        </select>
+        <button className="filter-reset" onClick={resetFilters} title="Reset Filters">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>
+          </svg>
+        </button>
+      </div>
+
+      {/* ===== SUMMARY CARDS ===== */}
+      <div className="summary-cards">
+        {[
+          { key:'total', cls:'card-total', val:total, label:'Total Activities', icon:<path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/> },
+          { key:'Completed', cls:'card-completed', val:completed, label:'Completed', icon:<path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/> },
+          { key:'Progressing', cls:'card-progress', val:progress, label:'In Progress', icon:<path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z"/> },
+          { key:'Delayed', cls:'card-delayed', val:delayed, label:'Delayed', icon:<path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/> },
+          { key:'upcoming', cls:'card-upcoming', val:upcoming, label:'Upcoming (30 days)', icon:<path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/> },
+          { key:'On Hold', cls:'card-onhold', val:onhold, label:'On Hold', icon:<path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z"/> },
+        ].map(c => (
+          <div key={c.key} className={`summary-card ${c.cls} ${activeCard===c.key?'active':''}`} onClick={()=>filterByCard(c.key)}>
+            <div className="card-icon"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">{c.icon}</svg></div>
+            <div className="card-value">{c.val}</div>
+            <div className="card-label">{c.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* ===== STATUS LEGEND ===== */}
+      <div className="status-legend">
+        {Object.entries(statusIcons).map(([s, icon]) => (
+          <div key={s} className="legend-item"><span className="legend-icon">{icon}</span><span>{s}</span></div>
+        ))}
+      </div>
+
+      {/* ===== VIEW SECTION ===== */}
+      <div className="view-section">
+        <div className="view-header">
+          <div className="view-toggle">
+            {[{v:'timeline',label:'Timeline',d:'M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z'},
+              {v:'table',label:'Table',d:'M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z'},
+              {v:'cards',label:'Cards',d:'M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z'}
+            ].map(({v,label,d}) => (
+              <button key={v} className={`view-btn ${currentView===v?'active':''}`} onClick={()=>setCurrentView(v)}>
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={d}/></svg>
+                {label}
+              </button>
+            ))}
+          </div>
+          <div className="search-box">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+            <input type="text" placeholder="Search activities..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
+          </div>
+        </div>
+
+        <div className="view-content">
+          {/* TIMELINE VIEW */}
+          <div className={`view-panel ${currentView==='timeline'?'active':''}`}>
+            <div className="timeline-container">
+              {['Activities/Programs/Projects','Maintenance Projects','Reports'].map(cat => {
+                const items = filteredData.filter(i => i.category === cat);
+                if (!items.length) return null;
+                return (
+                  <div key={cat} className="category-section">
+                    <div className="category-header"><h3>{cat}</h3><span className="category-count">{items.length} items</span></div>
+                    <table className="timeline-table">
+                      <thead><tr>
+                        <th style={{width:40}}>#</th><th style={{minWidth:isMobile?150:280}}>Activity</th>
+                        <th style={{width:80}}>Owner</th><th style={{width:60}}>Status</th>
+                        {isMobile ? <th style={{minWidth:100}}>Due</th> : months.map(m=><th key={m} className="month-col">{m}</th>)}
+                      </tr></thead>
+                      <tbody>
+                        {items.map((item, idx) => (
+                          <tr key={item.id}>
+                            <td>{idx+1}</td>
+                            <td className="activity-name">{item.activity}</td>
+                            <td className="owner-cell"><span className={`owner-badge owner-${ownerClassMap[item.owner]||'all'}`}>{item.owner}</span></td>
+                            <td className="status-cell"><span className={`status-icon status-${item.status.toLowerCase().replace(/\s+/g,'')}`} title={item.status}>{statusIcons[item.status]}</span></td>
+                            {isMobile ? (
+                              <td>{getMobileDue(item)}</td>
+                            ) : months.map(m => {
+                              const d = getMonthDisplay(item, m);
+                              if (!d) return <td key={m} className="month-cell"></td>;
+                              if (d.isIcon) return <td key={m} className="month-cell"><span className="month-status-icon">{d.icon}</span></td>;
+                              return <td key={m} className="month-cell"><span className="month-marker scheduled">{d.letter}</span></td>;
+                            })}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                );
+              })}
+              {filteredData.length === 0 && <div className="empty-state"><p>No activities found matching your filters.</p></div>}
+            </div>
+          </div>
+
+          {/* TABLE VIEW */}
+          <div className={`view-panel ${currentView==='table'?'active':''}`}>
+            <div className="table-view-container">
+              <table className="data-table">
+                <thead><tr>
+                  <th>#</th><th>Activity</th><th>Owner</th><th>Category</th><th>Status</th><th>Due Dates</th>
+                </tr></thead>
+                <tbody>
+                  {filteredData.map((item, idx) => (
+                    <tr key={item.id}>
+                      <td>{idx+1}</td>
+                      <td className="activity-name">{item.activity}</td>
+                      <td><span className={`owner-badge owner-${ownerClassMap[item.owner]||'all'}`}>{item.owner}</span></td>
+                      <td>{item.category}</td>
+                      <td><span className={`status-icon status-${item.status.toLowerCase().replace(' ','')}`}>{statusIcons[item.status]}</span> {item.status}</td>
+                      <td><div className="due-dates">{item.dueDates.length>0?item.dueDates.map(d=><span key={d} className="due-date-tag">{d}</span>):<span className="due-date-tag">TBD</span>}</div></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* CARDS VIEW */}
+          <div className={`view-panel ${currentView==='cards'?'active':''}`}>
+            <div className="cards-grid">
+              {funcDefs.map(func => {
+                const fItems = filteredData.filter(i => i.owner.split('/').map(o=>o.trim()).includes(func.code))
+                  .sort((a,b) => { const ai=a.dueDates.length>0?months.indexOf(a.dueDates[0]):99; const bi=b.dueDates.length>0?months.indexOf(b.dueDates[0]):99; return ai-bi; });
+                const t=fItems.length, c=fItems.filter(i=>i.status==='Completed'||i.status==='Completed Early').length;
+                const dl=fItems.filter(i=>i.status==='Delayed').length, pp=t>0?Math.round((c/t)*100):0;
+                return (
+                  <div key={func.code} className={`function-card function-${func.cls}`}>
+                    <div className="function-card-header"><h3>{func.icon} {func.name}</h3><p>{func.code}</p></div>
+                    <div className="function-stats">
+                      <div className="function-stat"><div className="function-stat-value">{t}</div><div className="function-stat-label">Total</div></div>
+                      <div className="function-stat"><div className="function-stat-value stat-done">{c}</div><div className="function-stat-label">Done</div></div>
+                      <div className="function-stat"><div className="function-stat-value stat-delayed">{dl}</div><div className="function-stat-label">Delayed</div></div>
+                    </div>
+                    <div className="function-progress">
+                      <div className="function-progress-bar"><div className="function-progress-fill" style={{width:`${pp}%`}}/></div>
+                      <div className="function-progress-text"><span>Progress</span><span><strong>{pp}%</strong> Complete</span></div>
+                    </div>
+                    <div className="function-items">
+                      {fItems.length>0 ? fItems.slice(0,6).map(item => (
+                        <div key={item.id} className="function-item">
+                          <div className="function-item-status" style={{background:getStatusColor(item.status),'--item-status-color':getStatusColor(item.status)}}/>
+                          <div className="function-item-name" title={item.activity}>{item.activity}</div>
+                          <div className={`function-item-date ${item.dueDates.length===0?'tbd':''}`}>{item.dueDates.length>0?item.dueDates[0]:'TBD'}</div>
+                        </div>
+                      )) : <div className="function-empty"><div className="function-empty-icon">📭</div><p>No activities match your filters</p></div>}
+                      {fItems.length>6 && <div className="function-more">+{fItems.length-6} more activities</div>}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default DashboardPage;
