@@ -35,11 +35,18 @@ const AdminPage = ({ user, onLogout }) => {
   const [formType, setFormType] = useState('');
   const [message, setMessage] = useState({ text: '', type: '' });
   const [loading, setLoading] = useState(false);
+  const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
   // Filters
   const [adminSearch, setAdminSearch] = useState('');
   const [adminFilterFunc, setAdminFilterFunc] = useState('all');
   const [adminFilterCat, setAdminFilterCat] = useState('all');
   const [adminFilterStatus, setAdminFilterStatus] = useState('all');
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth <= 768);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   // Try to load from API, fallback to local data
   useEffect(() => {
@@ -304,62 +311,123 @@ const AdminPage = ({ user, onLogout }) => {
                 style={{...S.adminFilter, background:'rgba(239,68,68,0.1)', border:'1px solid rgba(239,68,68,0.3)', color:'#ef4444', cursor:'pointer', fontWeight:600}}>✕ Reset</button>
             )}
           </div>
-          <div style={{padding:'16px',overflowX:'auto'}}>
-            <table className="data-table">
-              <thead><tr>
-                <th>#</th><th>Activity</th><th>Owner</th><th>Category</th><th>Status</th><th>Due Dates</th><th>Actions</th>
-              </tr></thead>
-              <tbody>
-                {activities.filter(item => {
-                  if (adminSearch && !item.activity.toLowerCase().includes(adminSearch.toLowerCase())) return false;
-                  if (adminFilterFunc !== 'all' && !item.owner.split('/').map(o=>o.trim()).includes(adminFilterFunc)) return false;
-                  if (adminFilterCat !== 'all' && item.category !== adminFilterCat) return false;
-                  if (adminFilterStatus !== 'all' && item.status !== adminFilterStatus) return false;
-                  return true;
-                }).map((item, idx) => (
-                  <tr key={item.id}>
-                    <td>{idx + 1}</td>
-                    <td className="activity-name">{item.activity}</td>
-                    <td><span className={`owner-badge owner-${getOwnerClass(item.owner)}`}>{item.owner}</span></td>
-                    <td style={{fontSize:'12px'}}>{item.category}</td>
-                    <td>
-                      <select value={item.status} onChange={e => handleStatusChange(item, e.target.value)}
-                        style={S.statusSelect}>
-                        {statusOptions.map(s => <option key={s} value={s}>{s}</option>)}
-                      </select>
-                    </td>
-                    <td>
-                      <div style={{display:'flex',flexWrap:'wrap',gap:'2px'}}>
-                        {months.map(m => {
-                          const isDue = item.dueDates?.includes(m);
-                          const mStatus = item.monthStatus?.[m] || '';
-                          if (!isDue) return <span key={m} style={S.monthDot}></span>;
-                          const colors = {
-                            'Completed': { bg:'#22c55e', color:'#fff', icon:'✓', next:'Delayed' },
-                            'Delayed': { bg:'#ef4444', color:'#fff', icon:'!', next:'Completed Early' },
-                            'Completed Early': { bg:'#a855f7', color:'#fff', icon:'★', next:'Scheduled (reset)' },
-                          };
-                          const c = colors[mStatus];
-                          return (
-                            <span key={m} onClick={() => handleMonthToggle(item, m)}
-                              style={{...S.monthTag, background: c ? c.bg : '#F3C036', color: c ? c.color : '#371E54', cursor:'pointer'}}
-                              title={`${m}: ${mStatus || 'Scheduled'} → Click for ${c ? c.next : 'Completed'}`}>
-                              {c ? c.icon : m.charAt(0)}
-                            </span>
-                          );
-                        })}
+          <div style={{padding:'16px',overflowX:isMobile?'hidden':'auto'}}>
+            {(() => {
+              const filtered = activities.filter(item => {
+                if (adminSearch && !item.activity.toLowerCase().includes(adminSearch.toLowerCase())) return false;
+                if (adminFilterFunc !== 'all' && !item.owner.split('/').map(o=>o.trim()).includes(adminFilterFunc)) return false;
+                if (adminFilterCat !== 'all' && item.category !== adminFilterCat) return false;
+                if (adminFilterStatus !== 'all' && item.status !== adminFilterStatus) return false;
+                return true;
+              });
+
+              if (isMobile) {
+                return (
+                  <div style={{display:'flex',flexDirection:'column',gap:10}}>
+                    {filtered.map((item, idx) => (
+                      <div key={item.id} style={{background:'var(--card-bg)',border:'1px solid var(--border)',borderRadius:10,padding:'14px'}}>
+                        <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
+                          <div style={{flex:1}}>
+                            <div style={{fontSize:13,fontWeight:600,color:'var(--text)',lineHeight:1.3,marginBottom:6}}>{idx+1}. {item.activity}</div>
+                            <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+                              <span className={`owner-badge owner-${getOwnerClass(item.owner)}`} style={{fontSize:10,padding:'2px 8px'}}>{item.owner}</span>
+                              <span style={{fontSize:11,color:'var(--text-light)'}}>{item.category.replace('Activities/Programs/Projects','Activities')}</span>
+                            </div>
+                          </div>
+                          <div style={{display:'flex',gap:4}}>
+                            <button onClick={() => handleEditActivity(item)} style={S.editBtn} title="Edit">✏️</button>
+                            <button onClick={() => handleDeleteActivity(item.id)} style={S.deleteBtn} title="Delete">🗑️</button>
+                          </div>
+                        </div>
+                        <div style={{marginTop:8,display:'flex',alignItems:'center',gap:8}}>
+                          <span style={{fontSize:11,color:'var(--text-light)'}}>Status:</span>
+                          <select value={item.status} onChange={e => handleStatusChange(item, e.target.value)}
+                            style={{...S.statusSelect,fontSize:12,padding:'4px 8px'}}>
+                            {statusOptions.map(s => <option key={s} value={s}>{s}</option>)}
+                          </select>
+                        </div>
+                        {item.dueDates && item.dueDates.length > 0 && (
+                          <div style={{marginTop:8}}>
+                            <span style={{fontSize:11,color:'var(--text-light)',marginBottom:4,display:'block'}}>Due Dates (tap to cycle status):</span>
+                            <div style={{display:'flex',flexWrap:'wrap',gap:3}}>
+                              {months.map(m => {
+                                const isDue = item.dueDates?.includes(m);
+                                if (!isDue) return null;
+                                const mStatus = item.monthStatus?.[m] || '';
+                                const colors = {
+                                  'Completed': { bg:'#22c55e', color:'#fff', icon:'✓' },
+                                  'Delayed': { bg:'#ef4444', color:'#fff', icon:'!' },
+                                  'Completed Early': { bg:'#a855f7', color:'#fff', icon:'★' },
+                                };
+                                const c = colors[mStatus];
+                                return (
+                                  <span key={m} onClick={() => handleMonthToggle(item, m)}
+                                    style={{display:'inline-flex',alignItems:'center',justifyContent:'center',height:24,borderRadius:5,fontSize:10,fontWeight:700,background:c?c.bg:'#F3C036',color:c?c.color:'#371E54',padding:'0 8px',cursor:'pointer'}}>
+                                    {c ? `${c.icon} ${m.substring(0,3)}` : m.substring(0,3)}
+                                  </span>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
                       </div>
-                    </td>
-                    <td>
-                      <div style={{display:'flex',gap:'4px'}}>
-                        <button onClick={() => handleEditActivity(item)} style={S.editBtn} title="Edit">✏️</button>
-                        <button onClick={() => handleDeleteActivity(item.id)} style={S.deleteBtn} title="Delete">🗑️</button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                    ))}
+                  </div>
+                );
+              }
+
+              return (
+                <table className="data-table">
+                  <thead><tr>
+                    <th>#</th><th>Activity</th><th>Owner</th><th>Category</th><th>Status</th><th>Due Dates</th><th>Actions</th>
+                  </tr></thead>
+                  <tbody>
+                    {filtered.map((item, idx) => (
+                      <tr key={item.id}>
+                        <td>{idx + 1}</td>
+                        <td className="activity-name">{item.activity}</td>
+                        <td><span className={`owner-badge owner-${getOwnerClass(item.owner)}`}>{item.owner}</span></td>
+                        <td style={{fontSize:'12px'}}>{item.category}</td>
+                        <td>
+                          <select value={item.status} onChange={e => handleStatusChange(item, e.target.value)}
+                            style={S.statusSelect}>
+                            {statusOptions.map(s => <option key={s} value={s}>{s}</option>)}
+                          </select>
+                        </td>
+                        <td>
+                          <div style={{display:'flex',flexWrap:'wrap',gap:'2px'}}>
+                            {months.map(m => {
+                              const isDue = item.dueDates?.includes(m);
+                              const mStatus = item.monthStatus?.[m] || '';
+                              if (!isDue) return <span key={m} style={S.monthDot}></span>;
+                              const colors = {
+                                'Completed': { bg:'#22c55e', color:'#fff', icon:'✓', next:'Delayed' },
+                                'Delayed': { bg:'#ef4444', color:'#fff', icon:'!', next:'Completed Early' },
+                                'Completed Early': { bg:'#a855f7', color:'#fff', icon:'★', next:'Scheduled (reset)' },
+                              };
+                              const c = colors[mStatus];
+                              return (
+                                <span key={m} onClick={() => handleMonthToggle(item, m)}
+                                  style={{...S.monthTag, background: c ? c.bg : '#F3C036', color: c ? c.color : '#371E54', cursor:'pointer'}}
+                                  title={`${m}: ${mStatus || 'Scheduled'} → Click for ${c ? c.next : 'Completed'}`}>
+                                  {c ? c.icon : m.charAt(0)}
+                                </span>
+                              );
+                            })}
+                          </div>
+                        </td>
+                        <td>
+                          <div style={{display:'flex',gap:'4px'}}>
+                            <button onClick={() => handleEditActivity(item)} style={S.editBtn} title="Edit">✏️</button>
+                            <button onClick={() => handleDeleteActivity(item.id)} style={S.deleteBtn} title="Delete">🗑️</button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              );
+            })()}
           </div>
         </div>
       )}
@@ -371,7 +439,29 @@ const AdminPage = ({ user, onLogout }) => {
             <h3 style={{color:'var(--text-primary)',fontSize:'16px'}}>Manage Users</h3>
             <button className="btn-export" onClick={handleCreateUser}>+ New User</button>
           </div>
-          <div style={{padding:'16px',overflowX:'auto'}}>
+          <div style={{padding:'16px',overflowX:isMobile?'hidden':'auto'}}>
+            {isMobile ? (
+              <div style={{display:'flex',flexDirection:'column',gap:10}}>
+                {users.length > 0 ? users.map((u, idx) => (
+                  <div key={u.id} style={{background:'var(--card-bg)',border:'1px solid var(--border)',borderRadius:10,padding:'14px'}}>
+                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
+                      <div>
+                        <div style={{fontSize:14,fontWeight:600,color:'var(--text)'}}>{u.name}</div>
+                        <div style={{fontSize:12,color:'var(--text-light)',marginTop:2}}>{u.email}</div>
+                      </div>
+                      <div style={{display:'flex',gap:4}}>
+                        <button onClick={() => handleEditUser(u)} style={S.editBtn} title="Edit">✏️</button>
+                        <button onClick={() => handleDeleteUser(u.id)} style={S.deleteBtn} title="Delete">🗑️</button>
+                      </div>
+                    </div>
+                    <div style={{display:'flex',gap:8,marginTop:8}}>
+                      <span style={{...S.roleBadge, background: u.role === 'admin' ? 'rgba(243,192,54,0.2)' : 'rgba(168,136,190,0.2)', color: u.role === 'admin' ? '#F3C036' : '#A888BE'}}>{u.role}</span>
+                      <span style={{fontSize:11,color:'var(--text-light)'}}>{u.function_name || u.function || '-'}</span>
+                    </div>
+                  </div>
+                )) : <div style={{textAlign:'center',padding:'40px',color:'var(--text-light)'}}>Loading users or no users found...</div>}
+              </div>
+            ) : (
             <table className="data-table">
               <thead><tr>
                 <th>#</th><th>Name</th><th>Email</th><th>Role</th><th>Function</th><th>Actions</th>
@@ -396,6 +486,7 @@ const AdminPage = ({ user, onLogout }) => {
                 )}
               </tbody>
             </table>
+            )}
           </div>
         </div>
       )}
