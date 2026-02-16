@@ -10,6 +10,21 @@ const categoryOptions = ['Activities/Programs/Projects','Maintenance Projects','
 const ownerOptions = ['OP','D&C','T&A','OD','Com&Bn','SBM','ALL','T&A/D&C','OD/D&C','OD/SBM','OD/Com&Bn'];
 const roleOptions = ['admin','viewer','hr_director','function_head','employee','esmd','ceo'];
 
+// Sort: by category, then owner (OP→D&C→T&A→OD→Com&Bn→SBM→ALL), then earliest due date
+const ownerOrder = {OP:0,'D&C':1,'T&A':2,OD:3,'Com&Bn':4,SBM:5,ALL:6};
+function getOwnerOrder(o) { const f = o.split('/')[0].trim(); return ownerOrder[f] !== undefined ? ownerOrder[f] : 99; }
+function getEarliestMonth(dd) { if (!dd || dd.length === 0) return 99; return Math.min(...dd.map(m => months.indexOf(m)).filter(i => i >= 0)); }
+function sortActivities(items) {
+  return [...items].sort((a, b) => {
+    const catOrder = {'Activities/Programs/Projects':0,'Maintenance Projects':1,'Reports':2};
+    const catDiff = (catOrder[a.category]||0) - (catOrder[b.category]||0);
+    if (catDiff !== 0) return catDiff;
+    const ownerDiff = getOwnerOrder(a.owner) - getOwnerOrder(b.owner);
+    if (ownerDiff !== 0) return ownerDiff;
+    return getEarliestMonth(a.dueDates) - getEarliestMonth(b.dueDates);
+  });
+}
+
 const AdminPage = ({ user, onLogout }) => {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('activities');
@@ -41,7 +56,7 @@ const AdminPage = ({ user, onLogout }) => {
       let items = [];
       if (data && data.activities) items = data.activities;
       else if (Array.isArray(data)) items = data;
-      if (items.length > 0) setActivities(items.map(mapActivity));
+      if (items.length > 0) setActivities(sortActivities(items.map(mapActivity)));
     } catch (e) {
       console.log('Using local data - API not available:', e.message);
     }
