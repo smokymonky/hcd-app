@@ -50,7 +50,7 @@ export const activitiesAPI = {
     method: 'PUT', body: JSON.stringify(data)
   }),
   updateStatus: (id, status, monthStatus) => request(`/activities/${id}/status`, {
-    method: 'PATCH', body: JSON.stringify({ status, monthStatus })
+    method: 'PATCH', body: JSON.stringify({ status, month_status: monthStatus })
   }),
   delete: (id) => request(`/activities/${id}`, { method: 'DELETE' }),
 };
