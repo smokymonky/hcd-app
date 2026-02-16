@@ -65,8 +65,8 @@ const LoginPage = ({ setUser }) => {
           <div style={styles.cardAccent} />
 
           <div style={styles.cardContent}>
-            <h1 style={styles.title}>HCD Annual Plan</h1>
-            <p style={styles.subtitle}>Human Capital Department Portal</p>
+            <h1 style={styles.title}>Human Capital Department Application</h1>
+            <p style={styles.subtitle}>Human Capital Portal</p>
 
             {error && (
               <div style={styles.errorBox}>
@@ -226,12 +226,14 @@ const styles = {
     fontWeight: 700,
     marginBottom: 4,
     letterSpacing: '-0.3px',
+    textAlign: 'center',
   },
   subtitle: {
     color: 'rgba(255,255,255,0.5)',
     fontSize: 14,
     fontWeight: 500,
     marginBottom: 32,
+    textAlign: 'center',
   },
   errorBox: {
     display: 'flex',
