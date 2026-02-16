@@ -1,24 +1,25 @@
 {
-  "short_name": "HCD",
-  "name": "Human Capital Dashboard - ALJ Finance",
-  "description": "HCD Annual Plan Dashboard for Abdul Latif Jameel Finance",
+  "short_name": "HCD App",
+  "name": "Human Capital Department Application",
+  "description": "HCD Annual Plan Dashboard - ALJ Finance",
   "icons": [
     {
-      "src": "icon-192.png",
-      "type": "image/png",
+      "src": "/icon-192x192.png",
       "sizes": "192x192",
+      "type": "image/png",
       "purpose": "any maskable"
     },
     {
-      "src": "icon-512.png",
-      "type": "image/png",
+      "src": "/icon-512x512.png",
       "sizes": "512x512",
+      "type": "image/png",
       "purpose": "any maskable"
     }
   ],
   "start_url": "/",
   "display": "standalone",
-  "theme_color": "#1a1028",
-  "background_color": "#1a1028",
-  "orientation": "any"
+  "theme_color": "#1a0e2e",
+  "background_color": "#1a0e2e",
+  "orientation": "any",
+  "scope": "/"
 }
