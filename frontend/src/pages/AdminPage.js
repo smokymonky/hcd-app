@@ -40,8 +40,6 @@ const AdminPage = ({ user, onLogout }) => {
   const [adminFilterFunc, setAdminFilterFunc] = useState('all');
   const [adminFilterCat, setAdminFilterCat] = useState('all');
   const [adminFilterStatus, setAdminFilterStatus] = useState('all');
-  const [message, setMessage] = useState({ text: '', type: '' });
-  const [loading, setLoading] = useState(false);
 
   // Try to load from API, fallback to local data
   useEffect(() => {
