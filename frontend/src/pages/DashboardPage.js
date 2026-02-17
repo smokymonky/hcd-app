@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, LineChart, Line, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import hrPlanData from '../data/hrPlanData';
 import { activitiesAPI } from '../services/api';
 import { exportToPDF } from '../utils/pdfExport';
@@ -293,7 +294,8 @@ const DashboardPage = ({ user, onLogout }) => {
           <div className="view-toggle">
             {[{v:'timeline',label:'Timeline',d:'M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z'},
               {v:'table',label:'Table',d:'M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z'},
-              {v:'cards',label:'Cards',d:'M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z'}
+              {v:'cards',label:'Cards',d:'M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z'},
+              {v:'charts',label:'Charts',d:'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z'}
             ].filter(({v}) => !isMobile || v !== 'table').map(({v,label,d}) => (
               <button key={v} className={`view-btn ${currentView===v?'active':''}`} onClick={()=>setCurrentView(v)}>
                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={d}/></svg>
@@ -455,6 +457,178 @@ const DashboardPage = ({ user, onLogout }) => {
               })}
             </div>
           </div>
+          {/* CHARTS VIEW */}
+          <div className={`view-panel ${currentView==='charts'?'active':''}`}>
+            {(() => {
+              // Chart colors
+              const COLORS = { completed:'#22c55e', delayed:'#ef4444', scheduled:'#F3C036', early:'#8B5CF6' };
+              const FUNC_COLORS = { OP:'#22c55e', 'D&C':'#3b82f6', 'T&A':'#f59e0b', OD:'#a855f7', 'Com&Bn':'#ef4444', SBM:'#06b6d4', ALL:'#6b7280' };
+              const fullMonths = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+
+              // Helper: get month status from monthStatus object (tries both full and short month names)
+              const getMS = (item, m, mi) => {
+                const ms = item.monthStatus || {};
+                return ms[fullMonths[mi]] || ms[m] || '';
+              };
+
+              // 1. Monthly trend - count month-click statuses per month
+              const monthlyTrend = months.map((m, mi) => {
+                let completed = 0, delayed = 0, early = 0, scheduled = 0;
+                filteredData.forEach(item => {
+                  if (!item.dueDates || !item.dueDates.includes(m)) return;
+                  const s = getMS(item, m, mi);
+                  if (s === 'Completed') completed++;
+                  else if (s === 'Delayed') delayed++;
+                  else if (s === 'Completed Early') early++;
+                  else scheduled++;
+                });
+                return { month: m, Completed: completed, Delayed: delayed, 'Completed Early': early, Scheduled: scheduled };
+              });
+
+              // 2. Function comparison - count all month-click statuses across all months per function
+              const funcNames = ['OP','D&C','T&A','OD','Com&Bn','SBM'];
+              const funcComparison = funcNames.map(fn => {
+                const items = filteredData.filter(i => i.owner.split('/').map(o=>o.trim()).includes(fn));
+                let totalDue = 0, completed = 0, delayed = 0, early = 0, scheduled = 0;
+                items.forEach(item => {
+                  if (!item.dueDates) return;
+                  item.dueDates.forEach(m => {
+                    const mi = months.indexOf(m);
+                    if (mi < 0) return;
+                    totalDue++;
+                    const s = getMS(item, m, mi);
+                    if (s === 'Completed') completed++;
+                    else if (s === 'Delayed') delayed++;
+                    else if (s === 'Completed Early') early++;
+                    else scheduled++;
+                  });
+                });
+                return { function: fn, 'Due Dates': totalDue, Completed: completed + early, Delayed: delayed, Scheduled: scheduled };
+              });
+
+              // 3. Monthly progress by function - how many each function completed per month
+              const monthlyByFunc = months.map((m, mi) => {
+                const row = { month: m };
+                funcNames.forEach(fn => {
+                  let count = 0;
+                  filteredData.forEach(item => {
+                    if (!item.owner.split('/').map(o=>o.trim()).includes(fn)) return;
+                    if (!item.dueDates || !item.dueDates.includes(m)) return;
+                    const s = getMS(item, m, mi);
+                    if (s === 'Completed' || s === 'Completed Early') count++;
+                  });
+                  row[fn] = count;
+                });
+                return row;
+              });
+
+              // 4. Monthly delays by function
+              const monthlyDelaysByFunc = months.map((m, mi) => {
+                const row = { month: m };
+                funcNames.forEach(fn => {
+                  let count = 0;
+                  filteredData.forEach(item => {
+                    if (!item.owner.split('/').map(o=>o.trim()).includes(fn)) return;
+                    if (!item.dueDates || !item.dueDates.includes(m)) return;
+                    const s = getMS(item, m, mi);
+                    if (s === 'Delayed') count++;
+                  });
+                  row[fn] = count;
+                });
+                return row;
+              });
+
+              const chartStyle = {
+                background: 'var(--card-bg)',
+                border: '1px solid var(--border)',
+                borderRadius: 12,
+                padding: isMobile ? '16px 8px' : '24px',
+                marginBottom: 20
+              };
+
+              const titleStyle = { color: 'var(--text)', fontSize: 16, fontWeight: 600, marginBottom: 16 };
+              const subtitleStyle = { color: 'var(--text-light)', fontSize: 12, marginBottom: 12 };
+
+              return (
+                <div style={{display:'flex',flexDirection:'column',gap:20}}>
+                  {/* Chart 1: Overall Monthly Trend */}
+                  <div style={chartStyle}>
+                    <div style={titleStyle}>📈 Monthly Activity Trend</div>
+                    <div style={subtitleStyle}>Month-level status counts: how many due dates are completed, delayed, or still scheduled each month</div>
+                    <ResponsiveContainer width="100%" height={isMobile ? 250 : 350}>
+                      <LineChart data={monthlyTrend}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" />
+                        <XAxis dataKey="month" stroke="var(--text-light)" fontSize={12} />
+                        <YAxis stroke="var(--text-light)" fontSize={12} />
+                        <Tooltip contentStyle={{background:'#2d1f42',border:'1px solid #6B3FA0',borderRadius:8,color:'#fff'}} />
+                        <Legend />
+                        <Line type="monotone" dataKey="Completed" stroke={COLORS.completed} strokeWidth={2} dot={{r:4}} />
+                        <Line type="monotone" dataKey="Completed Early" stroke={COLORS.early} strokeWidth={2} dot={{r:4}} />
+                        <Line type="monotone" dataKey="Delayed" stroke={COLORS.delayed} strokeWidth={2} dot={{r:4}} />
+                        <Line type="monotone" dataKey="Scheduled" stroke={COLORS.scheduled} strokeWidth={2} dot={{r:4}} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+
+                  {/* Chart 2: Function Comparison */}
+                  <div style={chartStyle}>
+                    <div style={titleStyle}>📊 Function Comparison</div>
+                    <div style={subtitleStyle}>Total due dates, completed, delayed, and scheduled per function (based on month clicks)</div>
+                    <ResponsiveContainer width="100%" height={isMobile ? 250 : 350}>
+                      <BarChart data={funcComparison}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" />
+                        <XAxis dataKey="function" stroke="var(--text-light)" fontSize={12} />
+                        <YAxis stroke="var(--text-light)" fontSize={12} />
+                        <Tooltip contentStyle={{background:'#2d1f42',border:'1px solid #6B3FA0',borderRadius:8,color:'#fff'}} />
+                        <Legend />
+                        <Bar dataKey="Due Dates" fill="#6B3FA0" radius={[4,4,0,0]} />
+                        <Bar dataKey="Completed" fill={COLORS.completed} radius={[4,4,0,0]} />
+                        <Bar dataKey="Delayed" fill={COLORS.delayed} radius={[4,4,0,0]} />
+                        <Bar dataKey="Scheduled" fill={COLORS.scheduled} radius={[4,4,0,0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+
+                  {/* Chart 3: Monthly Completions by Function */}
+                  <div style={chartStyle}>
+                    <div style={titleStyle}>✅ Monthly Completions by Function</div>
+                    <div style={subtitleStyle}>How many month-level completions each function achieved per month</div>
+                    <ResponsiveContainer width="100%" height={isMobile ? 280 : 400}>
+                      <BarChart data={monthlyByFunc}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" />
+                        <XAxis dataKey="month" stroke="var(--text-light)" fontSize={12} />
+                        <YAxis stroke="var(--text-light)" fontSize={12} />
+                        <Tooltip contentStyle={{background:'#2d1f42',border:'1px solid #6B3FA0',borderRadius:8,color:'#fff'}} />
+                        <Legend />
+                        {funcNames.map(fn => (
+                          <Bar key={fn} dataKey={fn} stackId="a" fill={FUNC_COLORS[fn]} />
+                        ))}
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+
+                  {/* Chart 4: Monthly Delays by Function */}
+                  <div style={chartStyle}>
+                    <div style={titleStyle}>🔴 Monthly Delays by Function</div>
+                    <div style={subtitleStyle}>How many month-level delays each function has per month</div>
+                    <ResponsiveContainer width="100%" height={isMobile ? 280 : 400}>
+                      <BarChart data={monthlyDelaysByFunc}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" />
+                        <XAxis dataKey="month" stroke="var(--text-light)" fontSize={12} />
+                        <YAxis stroke="var(--text-light)" fontSize={12} />
+                        <Tooltip contentStyle={{background:'#2d1f42',border:'1px solid #6B3FA0',borderRadius:8,color:'#fff'}} />
+                        <Legend />
+                        {funcNames.map(fn => (
+                          <Bar key={fn} dataKey={fn} stackId="a" fill={FUNC_COLORS[fn]} />
+                        ))}
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+
         </div>
       </div>
     </div>
