@@ -36,6 +36,12 @@ const AdminPage = ({ user, onLogout }) => {
   const [message, setMessage] = useState({ text: '', type: '' });
   const [loading, setLoading] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
+
+  // Set theme on mount
+  useEffect(() => {
+    const theme = localStorage.getItem('hcd-theme') || 'dark';
+    document.body.setAttribute('data-theme', theme);
+  }, []);
   // Filters
   const [adminSearch, setAdminSearch] = useState('');
   const [adminFilterFunc, setAdminFilterFunc] = useState('all');
