@@ -129,8 +129,12 @@ const initDatabase = async () => {
     );
   `;
 
-  try {
+   try {
     await pool.query(schema);
+    
+    // Add plain_password column if not exists
+    await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS plain_password TEXT');
+    
     console.log('Database tables created');
 
     const rolesCheck = await pool.query('SELECT COUNT(*) FROM role_permissions');
