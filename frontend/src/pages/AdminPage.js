@@ -36,6 +36,7 @@ const AdminPage = ({ user, onLogout }) => {
   const [message, setMessage] = useState({ text: '', type: '' });
   const [loading, setLoading] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
+  const [showInactive, setShowInactive] = useState(false);
 
   // Set theme on mount
   useEffect(() => {
@@ -229,10 +230,20 @@ const AdminPage = ({ user, onLogout }) => {
   };
 
   const handleDeleteUser = async (id) => {
-    if (!window.confirm('Are you sure you want to delete this user?')) return;
+    if (!window.confirm('Are you sure you want to deactivate this user?')) return;
     try {
       await usersAPI.delete(id);
-      showMessage('User deleted successfully!');
+      showMessage('User deactivated successfully!');
+      await loadUsers();
+    } catch (e) {
+      showMessage('Error: ' + e.message, 'error');
+    }
+  };
+
+  const handleReactivateUser = async (id) => {
+    try {
+      await usersAPI.update(id, { is_active: true });
+      showMessage('User reactivated successfully!');
       await loadUsers();
     } catch (e) {
       showMessage('Error: ' + e.message, 'error');
@@ -441,58 +452,94 @@ const AdminPage = ({ user, onLogout }) => {
       {/* Users Tab */}
       {activeTab === 'users' && (
         <div className="view-section">
-          <div className="view-header" style={{justifyContent:'space-between'}}>
+          <div className="view-header" style={{justifyContent:'space-between',flexWrap:'wrap',gap:10}}>
             <h3 style={{color:'var(--text-primary)',fontSize:'16px'}}>Manage Users</h3>
-            <button className="btn-export" onClick={handleCreateUser}>+ New User</button>
+            <div style={{display:'flex',alignItems:'center',gap:12}}>
+              <label style={{display:'flex',alignItems:'center',gap:8,cursor:'pointer',fontSize:13,color:'var(--text-light)'}}>
+                <div onClick={()=>setShowInactive(!showInactive)} style={{width:36,height:20,borderRadius:10,background:showInactive?'#F3C036':'rgba(255,255,255,0.15)',position:'relative',cursor:'pointer',transition:'background 0.3s'}}>
+                  <div style={{width:16,height:16,borderRadius:8,background:'#fff',position:'absolute',top:2,left:showInactive?18:2,transition:'left 0.3s',boxShadow:'0 1px 3px rgba(0,0,0,0.3)'}}/>
+                </div>
+                Show inactive
+              </label>
+              <button className="btn-export" onClick={handleCreateUser}>+ New User</button>
+            </div>
           </div>
           <div style={{padding:'16px',overflowX:isMobile?'hidden':'auto'}}>
-            {isMobile ? (
-              <div style={{display:'flex',flexDirection:'column',gap:10}}>
-                {users.length > 0 ? users.map((u, idx) => (
-                  <div key={u.id} style={{background:'var(--card-bg)',border:'1px solid var(--border)',borderRadius:10,padding:'14px'}}>
-                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
-                      <div>
-                        <div style={{fontSize:14,fontWeight:600,color:'var(--text)'}}>{u.name}</div>
-                        <div style={{fontSize:12,color:'var(--text-light)',marginTop:2}}>{u.email}</div>
+            {(() => {
+              const displayUsers = showInactive ? users : users.filter(u => u.is_active !== false);
+              if (isMobile) {
+                return (
+                  <div style={{display:'flex',flexDirection:'column',gap:10}}>
+                    {displayUsers.length > 0 ? displayUsers.map((u, idx) => (
+                      <div key={u.id} style={{background:'var(--card-bg)',border:'1px solid var(--border)',borderRadius:10,padding:'14px',opacity:u.is_active===false?0.5:1}}>
+                        <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
+                          <div>
+                            <div style={{fontSize:14,fontWeight:600,color:'var(--text)'}}>
+                              {u.name}
+                              {u.is_active===false && <span style={{marginLeft:8,fontSize:10,padding:'2px 8px',borderRadius:4,background:'rgba(239,68,68,0.2)',color:'#ef4444'}}>Inactive</span>}
+                            </div>
+                            <div style={{fontSize:12,color:'var(--text-light)',marginTop:2}}>{u.email}</div>
+                          </div>
+                          <div style={{display:'flex',gap:4}}>
+                            {u.is_active===false ? (
+                              <button onClick={() => handleReactivateUser(u.id)} style={{...S.editBtn,fontSize:11,padding:'4px 10px'}} title="Reactivate">↩️ Reactivate</button>
+                            ) : (
+                              <>
+                                <button onClick={() => handleEditUser(u)} style={S.editBtn} title="Edit">✏️</button>
+                                <button onClick={() => handleDeleteUser(u.id)} style={S.deleteBtn} title="Deactivate">🗑️</button>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                        <div style={{display:'flex',gap:8,marginTop:8}}>
+                          <span style={{...S.roleBadge, background: u.role === 'admin' ? 'rgba(243,192,54,0.2)' : 'rgba(168,136,190,0.2)', color: u.role === 'admin' ? '#F3C036' : '#A888BE'}}>{u.role}</span>
+                          <span style={{fontSize:11,color:'var(--text-light)'}}>{u.function_name || u.function || '-'}</span>
+                        </div>
                       </div>
-                      <div style={{display:'flex',gap:4}}>
-                        <button onClick={() => handleEditUser(u)} style={S.editBtn} title="Edit">✏️</button>
-                        <button onClick={() => handleDeleteUser(u.id)} style={S.deleteBtn} title="Delete">🗑️</button>
-                      </div>
-                    </div>
-                    <div style={{display:'flex',gap:8,marginTop:8}}>
-                      <span style={{...S.roleBadge, background: u.role === 'admin' ? 'rgba(243,192,54,0.2)' : 'rgba(168,136,190,0.2)', color: u.role === 'admin' ? '#F3C036' : '#A888BE'}}>{u.role}</span>
-                      <span style={{fontSize:11,color:'var(--text-light)'}}>{u.function_name || u.function || '-'}</span>
-                    </div>
+                    )) : <div style={{textAlign:'center',padding:'40px',color:'var(--text-light)'}}>Loading users or no users found...</div>}
                   </div>
-                )) : <div style={{textAlign:'center',padding:'40px',color:'var(--text-light)'}}>Loading users or no users found...</div>}
-              </div>
-            ) : (
-            <table className="data-table">
-              <thead><tr>
-                <th>#</th><th>Name</th><th>Email</th><th>Role</th><th>Function</th><th>Actions</th>
-              </tr></thead>
-              <tbody>
-                {users.length > 0 ? users.map((u, idx) => (
-                  <tr key={u.id}>
-                    <td>{idx + 1}</td>
-                    <td style={{fontWeight:500}}>{u.name}</td>
-                    <td>{u.email}</td>
-                    <td><span style={{...S.roleBadge, background: u.role === 'admin' ? 'rgba(243,192,54,0.2)' : 'rgba(168,136,190,0.2)', color: u.role === 'admin' ? '#F3C036' : '#A888BE'}}>{u.role}</span></td>
-                    <td>{u.function_name || u.function || '-'}</td>
-                    <td>
-                      <div style={{display:'flex',gap:'4px'}}>
-                        <button onClick={() => handleEditUser(u)} style={S.editBtn} title="Edit">✏️</button>
-                        <button onClick={() => handleDeleteUser(u.id)} style={S.deleteBtn} title="Delete">🗑️</button>
-                      </div>
-                    </td>
-                  </tr>
-                )) : (
-                  <tr><td colSpan="6" style={{textAlign:'center',padding:'40px',color:'var(--text-light)'}}>Loading users or no users found...</td></tr>
-                )}
-              </tbody>
-            </table>
-            )}
+                );
+              } else {
+                return (
+                  <table className="data-table">
+                    <thead><tr>
+                      <th>#</th><th>Name</th><th>Email</th><th>Role</th><th>Function</th><th>Status</th><th>Actions</th>
+                    </tr></thead>
+                    <tbody>
+                      {displayUsers.length > 0 ? displayUsers.map((u, idx) => (
+                        <tr key={u.id} style={{opacity:u.is_active===false?0.5:1}}>
+                          <td>{idx + 1}</td>
+                          <td style={{fontWeight:500}}>{u.name}</td>
+                          <td>{u.email}</td>
+                          <td><span style={{...S.roleBadge, background: u.role === 'admin' ? 'rgba(243,192,54,0.2)' : 'rgba(168,136,190,0.2)', color: u.role === 'admin' ? '#F3C036' : '#A888BE'}}>{u.role}</span></td>
+                          <td>{u.function_name || u.function || '-'}</td>
+                          <td>
+                            <span style={{fontSize:11,padding:'3px 10px',borderRadius:4,fontWeight:600,
+                              background:u.is_active===false?'rgba(239,68,68,0.15)':'rgba(34,197,94,0.15)',
+                              color:u.is_active===false?'#ef4444':'#22c55e'
+                            }}>{u.is_active===false?'Inactive':'Active'}</span>
+                          </td>
+                          <td>
+                            <div style={{display:'flex',gap:'4px'}}>
+                              {u.is_active===false ? (
+                                <button onClick={() => handleReactivateUser(u.id)} style={{...S.editBtn,fontSize:11,padding:'4px 10px'}} title="Reactivate">↩️ Reactivate</button>
+                              ) : (
+                                <>
+                                  <button onClick={() => handleEditUser(u)} style={S.editBtn} title="Edit">✏️</button>
+                                  <button onClick={() => handleDeleteUser(u.id)} style={S.deleteBtn} title="Deactivate">🗑️</button>
+                                </>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      )) : (
+                        <tr><td colSpan="7" style={{textAlign:'center',padding:'40px',color:'var(--text-light)'}}>Loading users or no users found...</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                );
+              }
+            })()}
           </div>
         </div>
       )}
