@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { activitiesAPI, usersAPI } from '../services/api';
-import hrPlanData from '../data/hrPlanData';
 import '../styles/dashboard.css';
 
 const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -28,7 +27,7 @@ function sortActivities(items) {
 const AdminPage = ({ user, onLogout }) => {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('activities');
-  const [activities, setActivities] = useState([...hrPlanData]);
+  const [activities, setActivities] = useState([]);
   const [users, setUsers] = useState([]);
   const [editItem, setEditItem] = useState(null);
   const [showForm, setShowForm] = useState(false);
