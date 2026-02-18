@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import Chart from 'react-apexcharts';
-import hrPlanData from '../data/hrPlanData';
+
 import { activitiesAPI } from '../services/api';
 import { exportToPDF } from '../utils/pdfExport';
 import { useNavigate } from 'react-router-dom';
@@ -55,14 +54,36 @@ function getMonthDisplay(item, month) {
 
 const DashboardPage = ({ user, onLogout }) => {
   const [theme, setTheme] = useState(() => localStorage.getItem('hcd-theme') || 'dark');
-  const [allData, setAllData] = useState([...hrPlanData]);
-  const [filteredData, setFilteredData] = useState([...hrPlanData]);
+  // Load from cache instantly if available
+  const [allData, setAllData] = useState(() => {
+    try {
+      const cached = localStorage.getItem('hcd_activities_cache');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) return sortActivities(parsed.map(mapActivity));
+      }
+    } catch (e) {}
+    return [];
+  });
+  const [filteredData, setFilteredData] = useState(() => {
+    try {
+      const cached = localStorage.getItem('hcd_activities_cache');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) return sortActivities(parsed.map(mapActivity));
+      }
+    } catch (e) {}
+    return [];
+  });
   const [currentView, setCurrentView] = useState('timeline');
   const [filters, setFilters] = useState({ function:'all', category:'all', status:'all', month:'all' });
   const [searchQuery, setSearchQuery] = useState('');
   const navigate = useNavigate();
   const [activeCard, setActiveCard] = useState(null);
-  const [dataLoaded, setDataLoaded] = useState(false);
+  const [dataLoaded, setDataLoaded] = useState(() => {
+    try { const c = localStorage.getItem('hcd_activities_cache'); return c && JSON.parse(c).length > 0; } catch(e) { return false; }
+  });
+  const [apiError, setApiError] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
   const [collapsedCats, setCollapsedCats] = useState({});
 
@@ -72,7 +93,7 @@ const DashboardPage = ({ user, onLogout }) => {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Load data from API on mount
+  // Load from API, update cache
   useEffect(() => {
     const loadFromAPI = async () => {
       try {
@@ -84,12 +105,14 @@ const DashboardPage = ({ user, onLogout }) => {
           const mapped = sortActivities(items.map(mapActivity));
           setAllData(mapped);
           setFilteredData(mapped);
-          setDataLoaded(true);
+          localStorage.setItem('hcd_activities_cache', JSON.stringify(items));
         }
+        setApiError(false);
       } catch (e) {
-        console.log('Using local data - API not available:', e.message);
-        setDataLoaded(true);
+        console.log('API not available:', e.message);
+        setApiError(true);
       }
+      setDataLoaded(true);
     };
     loadFromAPI();
   }, []);
@@ -179,6 +202,27 @@ const DashboardPage = ({ user, onLogout }) => {
     'On Hold':'var(--status-onhold)', Canceled:'var(--status-notcompleted)',
     'Completed Early':'var(--status-completedearly)'
   }[s] || 'var(--text-light)');
+
+  if (!dataLoaded) {
+    return (
+      <div style={{minHeight:'100vh',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',background:'linear-gradient(135deg, #1a1028 0%, #2d1f42 30%, #3d2856 60%, #4a3265 100%)'}}>
+        <div style={{width:40,height:40,border:'4px solid rgba(255,255,255,0.1)',borderTopColor:'#F3C036',borderRadius:'50%',animation:'spin 0.8s linear infinite'}}/>
+        <p style={{color:'#A888BE',marginTop:16,fontSize:14}}>Loading activities...</p>
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      </div>
+    );
+  }
+
+  if (dataLoaded && allData.length === 0 && apiError) {
+    return (
+      <div style={{minHeight:'100vh',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',background:'linear-gradient(135deg, #1a1028 0%, #2d1f42 30%, #3d2856 60%, #4a3265 100%)',padding:20}}>
+        <div style={{fontSize:48,marginBottom:16}}>⚠️</div>
+        <h2 style={{color:'#fff',fontSize:20,marginBottom:8}}>Unable to Connect</h2>
+        <p style={{color:'#A888BE',fontSize:14,textAlign:'center',maxWidth:400,lineHeight:1.5}}>Could not load activities from the server. Please check your connection or try again.</p>
+        <button onClick={() => window.location.reload()} style={{marginTop:20,padding:'10px 24px',background:'#F3C036',color:'#1a0e2e',border:'none',borderRadius:8,fontSize:14,fontWeight:600,cursor:'pointer'}}>Retry</button>
+      </div>
+    );
+  }
 
   return (
     <div className="dashboard-container">
@@ -459,101 +503,193 @@ const DashboardPage = ({ user, onLogout }) => {
           </div>
           {/* CHARTS VIEW */}
           <div className={`view-panel ${currentView==='charts'?'active':''}`}>
-            {(() => {
+            {currentView==='charts' && (() => {
               const fullMonths = ['January','February','March','April','May','June','July','August','September','October','November','December'];
               const funcNames = ['OP','D&C','T&A','OD','Com&Bn','SBM'];
-              const funcColorArr = ['#22c55e','#3b82f6','#f59e0b','#a855f7','#ef4444','#06b6d4'];
+              const funcColors = ['#22c55e','#3b82f6','#f59e0b','#a855f7','#ef4444','#06b6d4'];
+              const getMS = (item, m, mi) => { const ms = item.monthStatus||{}; return ms[fullMonths[mi]]||ms[m]||''; };
 
-              const getMS = (item, m, mi) => {
-                const ms = item.monthStatus || {};
-                return ms[fullMonths[mi]] || ms[m] || '';
-              };
-
-              // Data: monthly counts
-              const mComp=[], mDel=[], mEarly=[], mSch=[];
-              months.forEach((m, mi) => {
-                let c=0, d=0, e=0, s=0;
+              // Monthly trend
+              const mData = months.map((m,mi) => {
+                let c=0,d=0,e=0,s=0;
                 filteredData.forEach(item => {
                   if (!item.dueDates?.includes(m)) return;
-                  const st = getMS(item, m, mi);
+                  const st=getMS(item,m,mi);
                   if (st==='Completed') c++; else if (st==='Delayed') d++; else if (st==='Completed Early') e++; else s++;
                 });
-                mComp.push(c); mDel.push(d); mEarly.push(e); mSch.push(s);
+                return {c,d,e,s};
               });
 
-              // Data: function comparison
-              const fDue=[], fComp=[], fDel=[], fSch=[];
-              funcNames.forEach(fn => {
-                let due=0, comp=0, del=0, sch=0;
-                filteredData.filter(i => i.owner.split('/').map(o=>o.trim()).includes(fn)).forEach(item => {
+              // Function comparison
+              const fData = funcNames.map(fn => {
+                let due=0,comp=0,del=0,sch=0;
+                filteredData.filter(i=>i.owner.split('/').map(o=>o.trim()).includes(fn)).forEach(item => {
                   (item.dueDates||[]).forEach(m => {
-                    const mi = months.indexOf(m); if (mi<0) return;
-                    due++;
-                    const st = getMS(item, m, mi);
-                    if (st==='Completed'||st==='Completed Early') comp++; else if (st==='Delayed') del++; else sch++;
+                    const mi=months.indexOf(m); if(mi<0) return; due++;
+                    const st=getMS(item,m,mi);
+                    if(st==='Completed'||st==='Completed Early') comp++; else if(st==='Delayed') del++; else sch++;
                   });
                 });
-                fDue.push(due); fComp.push(comp); fDel.push(del); fSch.push(sch);
+                return {due,comp,del,sch};
               });
 
-              // Data: monthly completions & delays by function
-              const funcMComp = funcNames.map(fn => months.map((m, mi) => {
+              // Monthly by function (completions)
+              const fMComp = funcNames.map(fn => months.map((m,mi) => {
                 let c=0;
                 filteredData.forEach(item => {
-                  if (!item.owner.split('/').map(o=>o.trim()).includes(fn)) return;
-                  if (!item.dueDates?.includes(m)) return;
-                  const st = getMS(item, m, mi);
-                  if (st==='Completed'||st==='Completed Early') c++;
-                });
-                return c;
-              }));
-              const funcMDel = funcNames.map(fn => months.map((m, mi) => {
-                let c=0;
-                filteredData.forEach(item => {
-                  if (!item.owner.split('/').map(o=>o.trim()).includes(fn)) return;
-                  if (!item.dueDates?.includes(m)) return;
-                  if (getMS(item, m, mi)==='Delayed') c++;
+                  if(!item.owner.split('/').map(o=>o.trim()).includes(fn)) return;
+                  if(!item.dueDates?.includes(m)) return;
+                  const st=getMS(item,m,mi); if(st==='Completed'||st==='Completed Early') c++;
                 });
                 return c;
               }));
 
-              const baseOpts = {
-                chart: { background:'transparent', toolbar:{show:true,tools:{download:true,selection:false,zoom:false,zoomin:false,zoomout:false,pan:false,reset:false}}, fontFamily:'Inter, sans-serif', animations:{enabled:true,easing:'easeinout',speed:800,animateGradually:{enabled:true,delay:150}} },
-                theme: { mode:'dark' },
-                grid: { borderColor:'rgba(255,255,255,0.06)', strokeDashArray:4 },
-                xaxis: { categories:months, labels:{style:{colors:'#A888BE',fontSize:'11px'}}, axisBorder:{show:false}, axisTicks:{show:false} },
-                yaxis: { labels:{style:{colors:'#A888BE',fontSize:'11px'}} },
-                tooltip: { theme:'dark', style:{fontSize:'12px'}, y:{formatter:v=>v+' activities'} },
-                legend: { labels:{colors:'#A888BE'}, fontSize:'12px', itemMargin:{horizontal:12} },
-                plotOptions: { bar:{borderRadius:5,columnWidth:'55%'} },
-                dataLabels: { enabled:false },
-                stroke: { curve:'smooth', width:3 },
+              // Monthly by function (delays)
+              const fMDel = funcNames.map(fn => months.map((m,mi) => {
+                let c=0;
+                filteredData.forEach(item => {
+                  if(!item.owner.split('/').map(o=>o.trim()).includes(fn)) return;
+                  if(!item.dueDates?.includes(m)) return;
+                  if(getMS(item,m,mi)==='Delayed') c++;
+                });
+                return c;
+              }));
+
+              const box = {background:'var(--card-bg)',border:'1px solid var(--border)',borderRadius:16,padding:isMobile?'16px':'28px',marginBottom:24,boxShadow:'0 4px 24px rgba(0,0,0,0.2)'};
+              const ttl = {color:'var(--text)',fontSize:17,fontWeight:700,marginBottom:4,display:'flex',alignItems:'center',gap:8};
+              const sub = {color:'var(--text-light)',fontSize:12,marginBottom:16};
+
+              // Simple bar renderer
+              const BarGroup = ({data, labels, colors, legendLabels, stacked}) => {
+                const maxVal = stacked
+                  ? Math.max(...labels.map((_,i) => data.reduce((sum,series) => sum + series[i], 0)), 1)
+                  : Math.max(...data.flat(), 1);
+                return (
+                  <div>
+                    <div style={{display:'flex',flexWrap:'wrap',gap:12,marginBottom:12}}>
+                      {legendLabels.map((l,i) => (
+                        <div key={l} style={{display:'flex',alignItems:'center',gap:6,fontSize:12,color:'var(--text-light)'}}>
+                          <div style={{width:12,height:12,borderRadius:3,background:colors[i]}}/>
+                          {l}
+                        </div>
+                      ))}
+                    </div>
+                    <div style={{display:'flex',alignItems:stacked?'flex-end':'flex-end',gap:isMobile?2:4,height:isMobile?200:280,paddingBottom:30,position:'relative'}}>
+                      {labels.map((label,i) => {
+                        if (stacked) {
+                          const total = data.reduce((sum,series) => sum+series[i], 0);
+                          return (
+                            <div key={label} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',height:'100%',justifyContent:'flex-end',position:'relative'}}>
+                              <div style={{width:'70%',display:'flex',flexDirection:'column-reverse',borderRadius:'6px 6px 0 0',overflow:'hidden'}}>
+                                {data.map((series,si) => {
+                                  const h = total>0 ? (series[i]/maxVal)*100 : 0;
+                                  return <div key={si} style={{height:`${h}%`,minHeight:series[i]>0?3:0,background:colors[si],transition:'height 0.6s ease'}} title={`${legendLabels[si]}: ${series[i]}`}/>;
+                                })}
+                              </div>
+                              <div style={{fontSize:isMobile?9:11,color:'var(--text-light)',marginTop:6,textAlign:'center'}}>{label}</div>
+                            </div>
+                          );
+                        } else {
+                          return (
+                            <div key={label} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',height:'100%',justifyContent:'flex-end'}}>
+                              <div style={{display:'flex',gap:1,alignItems:'flex-end',width:'90%',height:'100%',justifyContent:'center'}}>
+                                {data.map((series,si) => {
+                                  const h = (series[i]/maxVal)*100;
+                                  return <div key={si} style={{flex:1,height:`${h}%`,minHeight:series[i]>0?3:0,background:colors[si],borderRadius:'4px 4px 0 0',transition:'height 0.6s ease'}} title={`${legendLabels[si]}: ${series[i]}`}/>;
+                                })}
+                              </div>
+                              <div style={{fontSize:isMobile?9:11,color:'var(--text-light)',marginTop:6,textAlign:'center'}}>{label}</div>
+                            </div>
+                          );
+                        }
+                      })}
+                    </div>
+                  </div>
+                );
               };
-              const box = { background:'var(--card-bg)', border:'1px solid var(--border)', borderRadius:16, padding:isMobile?'16px 10px':'28px', marginBottom:24, boxShadow:'0 4px 24px rgba(0,0,0,0.2)' };
-              const ttl = { color:'var(--text)', fontSize:17, fontWeight:700, marginBottom:4, display:'flex', alignItems:'center', gap:8 };
-              const sub = { color:'var(--text-light)', fontSize:12, marginBottom:20, lineHeight:1.4 };
+
+              // Line chart renderer
+              const LineChartComp = ({datasets, labels, colors, legendLabels}) => {
+                const allVals = datasets.flat();
+                const maxVal = Math.max(...allVals, 1);
+                const h = isMobile ? 200 : 280;
+                const w = 100; // percentage
+                const points = datasets.map(data => data.map((v,i) => ({
+                  x: (i/(labels.length-1))*100,
+                  y: 100 - (v/maxVal)*85
+                })));
+                return (
+                  <div>
+                    <div style={{display:'flex',flexWrap:'wrap',gap:12,marginBottom:12}}>
+                      {legendLabels.map((l,i) => (
+                        <div key={l} style={{display:'flex',alignItems:'center',gap:6,fontSize:12,color:'var(--text-light)'}}>
+                          <div style={{width:12,height:3,borderRadius:2,background:colors[i]}}/>
+                          {l}
+                        </div>
+                      ))}
+                    </div>
+                    <div style={{position:'relative',height:h,marginBottom:30}}>
+                      <svg viewBox={`0 0 100 100`} preserveAspectRatio="none" style={{width:'100%',height:'100%'}}>
+                        {[0,25,50,75,100].map(y => (
+                          <line key={y} x1="0" y1={100-y*0.85} x2="100" y2={100-y*0.85} stroke="rgba(255,255,255,0.06)" strokeWidth="0.3"/>
+                        ))}
+                        {points.map((pts,si) => (
+                          <g key={si}>
+                            <defs>
+                              <linearGradient id={`grad${si}`} x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stopColor={colors[si]} stopOpacity="0.3"/>
+                                <stop offset="100%" stopColor={colors[si]} stopOpacity="0.02"/>
+                              </linearGradient>
+                            </defs>
+                            <path d={`M${pts.map(p=>`${p.x},${p.y}`).join(' L')} L${pts[pts.length-1].x},100 L${pts[0].x},100 Z`} fill={`url(#grad${si})`}/>
+                            <polyline points={pts.map(p=>`${p.x},${p.y}`).join(' ')} fill="none" stroke={colors[si]} strokeWidth="0.8" strokeLinejoin="round"/>
+                            {pts.map((p,pi) => (
+                              <circle key={pi} cx={p.x} cy={p.y} r="1" fill={colors[si]} stroke="#1a0e2e" strokeWidth="0.3">
+                                <title>{`${labels[pi]}: ${datasets[si][pi]}`}</title>
+                              </circle>
+                            ))}
+                          </g>
+                        ))}
+                      </svg>
+                      <div style={{display:'flex',justifyContent:'space-between',marginTop:4}}>
+                        {labels.map(l => <span key={l} style={{fontSize:isMobile?9:11,color:'var(--text-light)'}}>{l}</span>)}
+                      </div>
+                    </div>
+                  </div>
+                );
+              };
 
               return (
                 <div style={{display:'flex',flexDirection:'column',gap:0}}>
                   <div style={box}>
                     <div style={ttl}>📈 Monthly Activity Trend</div>
                     <div style={sub}>Completed, delayed, and scheduled counts per month based on month-level clicks</div>
-                    <Chart type="area" height={isMobile?260:360} options={{...baseOpts,colors:['#22c55e','#8B5CF6','#ef4444','#F3C036'],fill:{type:'gradient',gradient:{shadeIntensity:1,opacityFrom:0.4,opacityTo:0.05,stops:[0,100]}},markers:{size:4,strokeWidth:0,hover:{size:7}}}} series={[{name:'Completed',data:mComp},{name:'Completed Early',data:mEarly},{name:'Delayed',data:mDel},{name:'Scheduled',data:mSch}]} />
+                    <LineChartComp
+                      datasets={[mData.map(d=>d.c), mData.map(d=>d.e), mData.map(d=>d.d), mData.map(d=>d.s)]}
+                      labels={months}
+                      colors={['#22c55e','#8B5CF6','#ef4444','#F3C036']}
+                      legendLabels={['Completed','Completed Early','Delayed','Scheduled']}
+                    />
                   </div>
                   <div style={box}>
                     <div style={ttl}>📊 Function Performance</div>
                     <div style={sub}>Total due dates vs completed vs delayed vs scheduled per function</div>
-                    <Chart type="bar" height={isMobile?260:360} options={{...baseOpts,colors:['#6B3FA0','#22c55e','#ef4444','#F3C036'],xaxis:{...baseOpts.xaxis,categories:funcNames},plotOptions:{bar:{borderRadius:6,columnWidth:'55%'}}}} series={[{name:'Due Dates',data:fDue},{name:'Completed',data:fComp},{name:'Delayed',data:fDel},{name:'Scheduled',data:fSch}]} />
+                    <BarGroup
+                      data={[fData.map(d=>d.due), fData.map(d=>d.comp), fData.map(d=>d.del), fData.map(d=>d.sch)]}
+                      labels={funcNames}
+                      colors={['#6B3FA0','#22c55e','#ef4444','#F3C036']}
+                      legendLabels={['Due Dates','Completed','Delayed','Scheduled']}
+                    />
                   </div>
                   <div style={box}>
                     <div style={ttl}>✅ Monthly Completions by Function</div>
                     <div style={sub}>How many month-level completions each function achieved per month</div>
-                    <Chart type="bar" height={isMobile?280:400} options={{...baseOpts,colors:funcColorArr,chart:{...baseOpts.chart,stacked:true},plotOptions:{bar:{borderRadius:3,columnWidth:'50%'}}}} series={funcNames.map((fn,i)=>({name:fn,data:funcMComp[i]}))} />
+                    <BarGroup data={fMComp} labels={months} colors={funcColors} legendLabels={funcNames} stacked/>
                   </div>
                   <div style={box}>
                     <div style={ttl}>🔴 Monthly Delays by Function</div>
                     <div style={sub}>How many month-level delays each function has per month</div>
-                    <Chart type="bar" height={isMobile?280:400} options={{...baseOpts,colors:funcColorArr,chart:{...baseOpts.chart,stacked:true},plotOptions:{bar:{borderRadius:3,columnWidth:'50%'}}}} series={funcNames.map((fn,i)=>({name:fn,data:funcMDel[i]}))} />
+                    <BarGroup data={fMDel} labels={months} colors={funcColors} legendLabels={funcNames} stacked/>
                   </div>
                 </div>
               );
