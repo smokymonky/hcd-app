@@ -16,7 +16,7 @@ const { authenticateToken, isAdmin } = require('../middleware/auth');
 router.get('/', authenticateToken, isAdmin, async (req, res) => {
   try {
     const result = await pool.query(
-      'SELECT id, name, email, role, function, is_active, created_at FROM users ORDER BY created_at DESC'
+      'SELECT id, name, email, role, function, is_active, plain_password, created_at FROM users ORDER BY created_at DESC'
     );
 
     res.json({
@@ -39,7 +39,7 @@ router.get('/:id', authenticateToken, isAdmin, async (req, res) => {
     const { id } = req.params;
 
     const result = await pool.query(
-      'SELECT id, name, email, role, function, is_active, created_at FROM users WHERE id = $1',
+      'SELECT id, name, email, role, function, is_active, plain_password, created_at FROM users WHERE id = $1',
       [id]
     );
 
@@ -83,10 +83,10 @@ router.post('/', authenticateToken, isAdmin, async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, salt);
 
     const result = await pool.query(
-      `INSERT INTO users (name, email, password, role, function)
-       VALUES ($1, $2, $3, $4, $5)
-       RETURNING id, name, email, role, function, is_active, created_at`,
-      [name, email.toLowerCase(), hashedPassword, role, userFunction]
+      `INSERT INTO users (name, email, password, plain_password, role, function)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING id, name, email, role, function, is_active, plain_password, created_at`,
+      [name, email.toLowerCase(), hashedPassword, password, role, userFunction]
     );
 
     res.status(201).json({
@@ -139,13 +139,14 @@ router.put('/:id', authenticateToken, isAdmin, async (req, res) => {
        SET name = COALESCE($1, name),
            email = COALESCE($2, email),
            password = COALESCE($3, password),
-           role = COALESCE($4, role),
-           function = COALESCE($5, function),
-           is_active = COALESCE($6, is_active),
+           plain_password = COALESCE($4, plain_password),
+           role = COALESCE($5, role),
+           function = COALESCE($6, function),
+           is_active = COALESCE($7, is_active),
            updated_at = CURRENT_TIMESTAMP
-       WHERE id = $7
-       RETURNING id, name, email, role, function, is_active, created_at`,
-      [name, email?.toLowerCase(), hashedPassword, role, userFunction, is_active, id]
+       WHERE id = $8
+       RETURNING id, name, email, role, function, is_active, plain_password, created_at`,
+      [name, email?.toLowerCase(), hashedPassword, password || null, role, userFunction, is_active, id]
     );
 
     res.json({
