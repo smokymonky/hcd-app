@@ -615,7 +615,7 @@ const AdminPage = ({ user, onLogout }) => {
                     <label style={S.fieldLabel}>{formType === 'create-user' ? 'Password *' : 'New Password (leave blank to keep current)'}</label>
                     <div style={{position:'relative'}}>
                       <input style={S.fieldInput} type={editItem._showPass ? 'text' : 'password'} value={editItem.password || ''} onChange={e => setEditItem({...editItem, password: e.target.value})} placeholder={formType === 'edit-user' ? 'Enter new password or leave blank' : 'Enter password'} />
-                      <button type="button" onClick={() => setEditItem({...editItem, _showPass: !editItem._showPass})} style={{position:'absolute',right:8,top:'50%',transform:'translateY(-50)',background:'none',border:'none',color:'var(--text-light)',cursor:'pointer',fontSize:16,padding:4}}>{editItem._showPass ? '🙈' : '👁️'}</button>
+                      <button type="button" onClick={() => setEditItem({...editItem, _showPass: !editItem._showPass})} style={{position:'absolute',right:10,top:'50%',transform:'translateY(-50%)',background:'none',border:'none',color:'var(--text-light)',cursor:'pointer',fontSize:16,padding:'4px 6px',lineHeight:1}}>{editItem._showPass ? '🙈' : '👁️'}</button>
                     </div>
                     {formType === 'edit-user' && editItem.plain_password && (
                       <div style={{marginTop:6,padding:'8px 12px',background:'rgba(243,192,54,0.1)',border:'1px solid rgba(243,192,54,0.2)',borderRadius:6,fontSize:12,color:'#F3C036',display:'flex',alignItems:'center',gap:8}}>
