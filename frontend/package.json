@@ -7,8 +7,6 @@
     "react-dom": "^18.2.0",
     "react-router-dom": "^6.21.0",
     "react-scripts": "5.0.1",
-    "apexcharts": "^4.3.0",
-    "react-apexcharts": "^1.9.0",
     "axios": "^1.6.2"
   },
   "scripts": {
@@ -28,10 +26,5 @@
       "last 1 firefox version",
       "last 1 safari version"
     ]
-  },
-  "overrides": {
-    "react-apexcharts": {
-      "apexcharts": "^4.3.0"
-    }
   }
 }
