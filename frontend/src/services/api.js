@@ -20,6 +20,16 @@ async function request(path, options = {}) {
   });
   const data = await response.json();
   if (!response.ok) {
+    // If token is invalid/expired, auto-logout and redirect to login
+    if ((response.status === 401 || response.status === 403) && path !== '/auth/login') {
+      const errorMsg = data.error || '';
+      if (errorMsg.includes('expired') || errorMsg.includes('Invalid') || errorMsg.includes('No token')) {
+        localStorage.removeItem('hcd_token');
+        localStorage.removeItem('hcd_user');
+        window.location.href = '/login';
+        throw new Error('Session expired. Please login again.');
+      }
+    }
     throw new Error(data.error || data.message || 'Request failed');
   }
   return data;
