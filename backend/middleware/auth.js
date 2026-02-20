@@ -29,7 +29,7 @@ const checkPermission = (permission) => {
   return async (req, res, next) => {
     try {
       const result = await pool.query(
-        'SELECT * FROM role_permissions WHERE role = $1',
+        'SELECT * FROM role_permissions WHERE LOWER(role) = LOWER($1)',
         [req.user.role]
       );
 
