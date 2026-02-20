@@ -74,9 +74,13 @@ const AdminPage = ({ user, onLogout }) => {
       let items = [];
       if (data && data.activities) items = data.activities;
       else if (Array.isArray(data)) items = data;
-      if (items.length > 0) setActivities(sortActivities(items.map(mapActivity)));
+      if (items.length > 0) {
+        setActivities(sortActivities(items.map(mapActivity)));
+        // Update dashboard cache with fresh data
+        localStorage.setItem('hcd_activities_cache', JSON.stringify(items));
+      }
     } catch (e) {
-      console.log('Using local data - API not available:', e.message);
+      console.log('API not available:', e.message);
     }
   };
 
@@ -133,7 +137,6 @@ const AdminPage = ({ user, onLogout }) => {
         await activitiesAPI.update(editItem.id, apiData);
         showMessage('Activity updated successfully!');
       }
-      localStorage.removeItem('hcd_activities_cache');
       await loadActivities();
       setShowForm(false);
       setEditItem(null);
@@ -148,7 +151,6 @@ const AdminPage = ({ user, onLogout }) => {
     try {
       await activitiesAPI.delete(id);
       showMessage('Activity deleted successfully!');
-      localStorage.removeItem('hcd_activities_cache');
       await loadActivities();
     } catch (e) {
       showMessage('Error: ' + e.message, 'error');
@@ -160,7 +162,7 @@ const AdminPage = ({ user, onLogout }) => {
     showMessage(`Status changed to ${newStatus}`);
     try {
       await activitiesAPI.updateStatus(item.id, newStatus, item.monthStatus || item.month_status || {});
-      localStorage.removeItem('hcd_activities_cache');
+      loadActivities();
     } catch (e) {
       showMessage('Error: Failed to save status - ' + e.message, 'error');
     }
@@ -187,7 +189,7 @@ const AdminPage = ({ user, onLogout }) => {
     showMessage(`${month} → ${newStatus}`);
     try {
       await activitiesAPI.updateStatus(item.id, item.status, ms);
-      localStorage.removeItem('hcd_activities_cache');
+      loadActivities();
     } catch (e) {
       showMessage('Error: Failed to save - ' + e.message, 'error');
     }
