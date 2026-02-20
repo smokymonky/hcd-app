@@ -27,7 +27,13 @@ function sortActivities(items) {
 const AdminPage = ({ user, onLogout }) => {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('activities');
-  const [activities, setActivities] = useState([]);
+  const [activities, setActivities] = useState(() => {
+    const cached = localStorage.getItem('hcd_activities_cache');
+    if (cached) {
+      try { return sortActivities(JSON.parse(cached).map(a => ({ ...a, activity: a.name || a.activity || '', dueDates: a.due_dates || a.dueDates || [], monthStatus: a.month_status || a.monthStatus || {} }))); } catch(e) {}
+    }
+    return [];
+  });
   const [users, setUsers] = useState([]);
   const [editItem, setEditItem] = useState(null);
   const [showForm, setShowForm] = useState(false);
