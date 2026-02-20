@@ -60,10 +60,10 @@ const AdminPage = ({ user, onLogout }) => {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Try to load from API, fallback to local data
+  // Load both on mount, refresh when tab changes
   useEffect(() => {
     loadActivities();
-    if (activeTab === 'users') loadUsers();
+    loadUsers();
   }, [activeTab]);
 
   // Map API fields to frontend fields
