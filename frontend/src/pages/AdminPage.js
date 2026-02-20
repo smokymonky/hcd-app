@@ -133,6 +133,7 @@ const AdminPage = ({ user, onLogout }) => {
         await activitiesAPI.update(editItem.id, apiData);
         showMessage('Activity updated successfully!');
       }
+      localStorage.removeItem('hcd_activities_cache');
       await loadActivities();
       setShowForm(false);
       setEditItem(null);
@@ -147,6 +148,7 @@ const AdminPage = ({ user, onLogout }) => {
     try {
       await activitiesAPI.delete(id);
       showMessage('Activity deleted successfully!');
+      localStorage.removeItem('hcd_activities_cache');
       await loadActivities();
     } catch (e) {
       showMessage('Error: ' + e.message, 'error');
@@ -154,20 +156,19 @@ const AdminPage = ({ user, onLogout }) => {
   };
 
   const handleStatusChange = async (item, newStatus) => {
-    // Update local state immediately
     setActivities(prev => prev.map(a => a.id === item.id ? { ...a, status: newStatus } : a));
     showMessage(`Status changed to ${newStatus}`);
     try {
       await activitiesAPI.updateStatus(item.id, newStatus, item.monthStatus || item.month_status || {});
+      localStorage.removeItem('hcd_activities_cache');
     } catch (e) {
-      console.log('API update failed:', e.message);
+      showMessage('Error: Failed to save status - ' + e.message, 'error');
     }
   };
 
   const handleMonthToggle = async (item, month) => {
     const ms = { ...(item.monthStatus || item.month_status || {}) };
     const current = ms[month] || '';
-    // Cycle: (empty/Scheduled) → Completed → Delayed → Completed Early → (empty)
     let newStatus;
     if (!current || current === 'Scheduled') {
       ms[month] = 'Completed';
@@ -182,13 +183,13 @@ const AdminPage = ({ user, onLogout }) => {
       delete ms[month];
       newStatus = 'Scheduled';
     }
-    // Update local state immediately so UI reflects change
     setActivities(prev => prev.map(a => a.id === item.id ? { ...a, monthStatus: { ...ms }, month_status: { ...ms } } : a));
     showMessage(`${month} → ${newStatus}`);
     try {
       await activitiesAPI.updateStatus(item.id, item.status, ms);
+      localStorage.removeItem('hcd_activities_cache');
     } catch (e) {
-      console.log('API update failed:', e.message);
+      showMessage('Error: Failed to save - ' + e.message, 'error');
     }
   };
 
