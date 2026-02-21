@@ -30,10 +30,11 @@ function sortActivities(items) {
 
 // Map API fields to frontend fields
 function mapActivity(a) {
+  const raw = a.due_dates || a.dueDates || [];
   return {
     ...a,
     activity: a.name || a.activity || '',
-    dueDates: a.due_dates || a.dueDates || [],
+    dueDates: [...raw].sort((x, y) => months.indexOf(x) - months.indexOf(y)),
     monthStatus: a.month_status || a.monthStatus || {},
   };
 }
