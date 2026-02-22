@@ -1,482 +1,527 @@
-// chartsReportExport.js - HCD Performance Analytics Report — Direct PDF Download
-// 4-page PDF report: Cover → YTD Progress → Function Scorecard → Key Insights
-// Uses html2canvas + jsPDF auto-download (matches annual plan UX)
+// chartsReportExport.js — HCD Performance Analytics Report
+// 4-page A4 PDF: Cover → YTD Progress → Function Scorecard → Key Insights
+// Uses jsPDF direct drawing (same mechanics as pdfExport.js — instant download)
 // SOURCE OF TRUTH: full_report_preview.html
-// NO PREVIEW — click button → generates PDF → auto-downloads
+// Always uses current month + allData (unfiltered)
 
 const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const fullMonths = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 const funcNames = ['OP','D&C','T&A','OD','Com&Bn','SBM'];
 const funcFullNames = { OP:'Operations', 'D&C':'Development & Career', 'T&A':'Talent Acquisition', OD:'Organization Design', 'Com&Bn':'Compensation & Benefits', SBM:'Strategy & Business Mgmt' };
 const catDefs = [
-  { key: 'Activities/Programs/Projects', label: 'Activities / Programs / Projects', shortLabel: 'Activities/Programs', icon: '📋', color: '#1e293b' },
-  { key: 'Maintenance Projects', label: 'Maintenance Projects', shortLabel: 'Maintenance Projects', icon: '🔧', color: '#64748b' },
-  { key: 'Reports', label: 'Reports', shortLabel: 'Reports', icon: '📊', color: '#cbd5e1' },
+  { key: 'Activities/Programs/Projects', label: 'Activities / Programs / Projects', shortLabel: 'Activities/Programs', icon: 'P', color: [30,41,59] },
+  { key: 'Maintenance Projects', label: 'Maintenance Projects', shortLabel: 'Maintenance', icon: 'M', color: [100,116,139] },
+  { key: 'Reports', label: 'Reports', shortLabel: 'Reports', icon: 'R', color: [203,213,225] },
 ];
-const ownerBadgeColors = { OP:{bg:'#dcfce7',c:'#16a34a'}, 'D&C':{bg:'#dbeafe',c:'#2563eb'}, 'T&A':{bg:'#fef3c7',c:'#92400e'}, OD:{bg:'#f3e8ff',c:'#7c3aed'}, 'Com&Bn':{bg:'#fee2e2',c:'#dc2626'}, SBM:{bg:'#cffafe',c:'#0e7490'}, ALL:{bg:'#f1f5f9',c:'#64748b'} };
+const ownerColors = {
+  OP:{bg:[220,252,231],c:[22,163,74]}, 'D&C':{bg:[219,234,254],c:[37,99,235]}, 'T&A':{bg:[254,243,199],c:[146,64,14]},
+  OD:{bg:[243,232,255],c:[124,58,237]}, 'Com&Bn':{bg:[254,226,226],c:[220,38,38]}, SBM:{bg:[207,250,254],c:[14,116,144]},
+  ALL:{bg:[241,245,249],c:[100,116,139]}
+};
 
-function getOwnerBadge(owner) {
-  const f = owner.split('/')[0].trim();
-  const c = ownerBadgeColors[f] || ownerBadgeColors.ALL;
-  return `<span style="display:inline-block;padding:2px 7px;border-radius:6px;font-size:9px;font-weight:600;background:${c.bg};color:${c.c}">${owner}</span>`;
-}
-
-// ============================
-// DATA COMPUTATION (Logic A1)
-// ============================
 function computeData(allData) {
   const now = new Date();
   const cmi = now.getMonth();
-  const cms = months[cmi];
-  const cmf = fullMonths[cmi];
-  const nms = months[(cmi + 1) % 12];
-
+  const cms = months[cmi], cmf = fullMonths[cmi], nms = months[(cmi+1)%12];
   const totalAct = allData.length;
-  const compAct = allData.filter(i => i.status === 'Completed' || i.status === 'Completed Early').length;
-  const overallRate = totalAct > 0 ? (compAct / totalAct) * 100 : 0;
+  const compAct = allData.filter(i => i.status==='Completed'||i.status==='Completed Early').length;
+  const overallRate = totalAct > 0 ? (compAct/totalAct)*100 : 0;
 
   const catStats = catDefs.map(cat => {
-    const items = allData.filter(i => i.category === cat.key);
-    const t = items.length;
-    const c = items.filter(i => i.status === 'Completed' || i.status === 'Completed Early').length;
-    const d = items.filter(i => i.status === 'Delayed').length;
-    return { ...cat, total: t, completed: c, delayed: d, rate: t > 0 ? (c / t) * 100 : 0 };
+    const items = allData.filter(i => i.category===cat.key);
+    const t=items.length, c=items.filter(i=>i.status==='Completed'||i.status==='Completed Early').length, dd=items.filter(i=>i.status==='Delayed').length;
+    return {...cat, total:t, completed:c, delayed:dd, rate: t>0?(c/t)*100:0};
   });
 
-  const monthData = months.map((m, mi) => {
-    let due = 0, done = 0, delayed = 0;
+  const monthData = months.map((m,mi) => {
+    let due=0,done=0,delayed=0;
     allData.forEach(item => {
-      if (!(item.dueDates || []).includes(m)) return;
+      if(!(item.dueDates||[]).includes(m)) return;
       due++;
-      const ms = item.monthStatus || {};
-      const st = ms[m] || ms[fullMonths[mi]] || '';
-      if (st === 'Completed' || st === 'Completed Early') done++;
-      else if (st === 'Delayed') delayed++;
+      const ms=item.monthStatus||{};
+      const st=ms[m]||ms[fullMonths[mi]]||'';
+      if(st==='Completed'||st==='Completed Early') done++;
+      else if(st==='Delayed') delayed++;
     });
-    return { m, due, done, delayed, past: mi < cmi, current: mi === cmi, future: mi > cmi };
+    return {m,due,done,delayed,past:mi<cmi,current:mi===cmi,future:mi>cmi};
   });
 
-  const dueThroughCurrent = monthData.slice(0, cmi + 1).reduce((s, d) => s + d.due, 0);
-  const totalDone = monthData.reduce((s, d) => s + d.done, 0);
-  const totalDue = monthData.reduce((s, d) => s + d.due, 0);
-  const actualPct = totalDue > 0 ? (totalDone / totalDue) * 100 : 0;
-  const expectedPct = totalDue > 0 ? (dueThroughCurrent / totalDue) * 100 : 0;
+  const dueThroughCurrent = monthData.slice(0,cmi+1).reduce((s,d)=>s+d.due,0);
+  const totalDone = monthData.reduce((s,d)=>s+d.done,0);
+  const totalDue = monthData.reduce((s,d)=>s+d.due,0);
+  const actualPct = totalDue>0?(totalDone/totalDue)*100:0;
+  const expectedPct = totalDue>0?(dueThroughCurrent/totalDue)*100:0;
   const gap = expectedPct - actualPct;
 
-  // Risk Radar
-  const highRisk = [], medRisk = [], watchRisk = [];
+  const highRisk=[],medRisk=[],watchRisk=[];
   allData.forEach(item => {
-    const dd = item.dueDates || [];
-    const ms = item.monthStatus || {};
+    const dd=item.dueDates||[], ms=item.monthStatus||{};
     dd.forEach(m => {
-      const mi = months.indexOf(m);
-      if (mi < cmi && mi >= 0) {
-        const st = ms[m] || ms[fullMonths[mi]] || '';
-        if (st !== 'Completed' && st !== 'Completed Early' && !highRisk.find(r => r.id === item.id && r.dm === m))
-          highRisk.push({ id: item.id, name: item.activity, owner: item.owner, dm: m });
+      const mi=months.indexOf(m);
+      if(mi<cmi&&mi>=0) {
+        const st=ms[m]||ms[fullMonths[mi]]||'';
+        if(st!=='Completed'&&st!=='Completed Early'&&!highRisk.find(r=>r.id===item.id&&r.dm===m))
+          highRisk.push({id:item.id,name:item.activity,owner:item.owner,dm:m});
       }
     });
-    if (dd.includes(cms)) {
-      const st = ms[cms] || ms[cmf] || '';
-      if (!st || st === 'Scheduled') if (!medRisk.find(r => r.id === item.id))
-        medRisk.push({ id: item.id, name: item.activity, owner: item.owner, dm: cms });
-    }
-    if (dd.includes(nms)) {
-      const st = ms[nms] || ms[fullMonths[(cmi+1)%12]] || '';
-      if (!st || st === 'Scheduled') if (!watchRisk.find(r => r.id === item.id))
-        watchRisk.push({ id: item.id, name: item.activity, owner: item.owner, dm: nms });
-    }
+    if(dd.includes(cms)){const st=ms[cms]||ms[cmf]||'';if(!st||st==='Scheduled')if(!medRisk.find(r=>r.id===item.id))medRisk.push({id:item.id,name:item.activity,owner:item.owner,dm:cms});}
+    if(dd.includes(nms)){const st=ms[nms]||ms[fullMonths[(cmi+1)%12]]||'';if(!st||st==='Scheduled')if(!watchRisk.find(r=>r.id===item.id))watchRisk.push({id:item.id,name:item.activity,owner:item.owner,dm:nms});}
   });
 
-  // Scorecard
   const scorecard = catDefs.map(cat => {
-    const ci = allData.filter(i => i.category === cat.key);
-    const fs = funcNames.map(fn => {
-      const fi = ci.filter(i => i.owner.split('/').map(o => o.trim()).includes(fn));
-      const t = fi.length, c = fi.filter(i => i.status === 'Completed' || i.status === 'Completed Early').length;
-      const d = fi.filter(i => i.status === 'Delayed').length;
-      return { fn, total: t, completed: c, delayed: d, rate: t > 0 ? (c / t) * 100 : 0 };
-    }).filter(f => f.total > 0).sort((a, b) => b.rate - a.rate || b.completed - a.completed || a.total - b.total);
-    return { ...cat, fs };
+    const ci=allData.filter(i=>i.category===cat.key);
+    const fs=funcNames.map(fn=>{
+      const fi=ci.filter(i=>i.owner.split('/').map(o=>o.trim()).includes(fn));
+      const t=fi.length,c=fi.filter(i=>i.status==='Completed'||i.status==='Completed Early').length,dd=fi.filter(i=>i.status==='Delayed').length;
+      return {fn,total:t,completed:c,delayed:dd,rate:t>0?(c/t)*100:0};
+    }).filter(f=>f.total>0).sort((a,b)=>b.rate-a.rate||b.completed-a.completed||a.total-b.total);
+    return {...cat,fs};
   });
 
-  // Workload
-  const wts = { 'Activities/Programs/Projects': 3, 'Maintenance Projects': 2, 'Reports': 1 };
-  const workload = funcNames.map(fn => {
-    let p = 0, m = 0, r = 0;
-    allData.forEach(item => {
-      if (!item.owner.split('/').map(o => o.trim()).includes(fn)) return;
-      if (item.category === 'Activities/Programs/Projects') p++;
-      else if (item.category === 'Maintenance Projects') m++;
-      else if (item.category === 'Reports') r++;
-    });
-    return { fn, p, m, r, pw: p*3, mw: m*2, rw: r*1, w: p*3 + m*2 + r*1 };
-  }).sort((a, b) => b.w - a.w);
-  const totalW = workload.reduce((s, d) => s + d.w, 0);
+  const wts={'Activities/Programs/Projects':3,'Maintenance Projects':2,'Reports':1};
+  const workload=funcNames.map(fn=>{
+    let p=0,m=0,r=0;
+    allData.forEach(item=>{if(!item.owner.split('/').map(o=>o.trim()).includes(fn))return;if(item.category==='Activities/Programs/Projects')p++;else if(item.category==='Maintenance Projects')m++;else if(item.category==='Reports')r++;});
+    return {fn,p,m,r,pw:p*3,mw:m*2,rw:r*1,w:p*3+m*2+r*1};
+  }).sort((a,b)=>b.w-a.w);
+  const totalW=workload.reduce((s,d)=>s+d.w,0);
 
-  // Insights
-  const funcOv = funcNames.map(fn => {
-    const fi = allData.filter(i => i.owner.split('/').map(o => o.trim()).includes(fn));
-    const t = fi.length, c = fi.filter(i => i.status === 'Completed' || i.status === 'Completed Early').length;
-    let md = 0, mdu = 0;
-    fi.forEach(item => { (item.dueDates||[]).forEach(m => { const mi=months.indexOf(m); if(mi<0) return; mdu++; const ms=item.monthStatus||{}; const st=ms[m]||ms[fullMonths[mi]]||''; if(st==='Completed'||st==='Completed Early') md++; }); });
-    return { fn, total: t, completed: c, rate: t > 0 ? (c / t) * 100 : 0, md, mdu };
+  const funcOv=funcNames.map(fn=>{
+    const fi=allData.filter(i=>i.owner.split('/').map(o=>o.trim()).includes(fn));
+    const t=fi.length,c=fi.filter(i=>i.status==='Completed'||i.status==='Completed Early').length;
+    let md=0,mdu=0;
+    fi.forEach(item=>{(item.dueDates||[]).forEach(m=>{const mi=months.indexOf(m);if(mi<0)return;mdu++;const ms=item.monthStatus||{};const st=ms[m]||ms[fullMonths[mi]]||'';if(st==='Completed'||st==='Completed Early')md++;});});
+    return {fn,total:t,completed:c,rate:t>0?(c/t)*100:0,md,mdu};
   });
-  const top = [...funcOv].sort((a, b) => b.rate - a.rate || b.completed - a.completed)[0];
-  const worst = [...funcOv].sort((a, b) => a.rate - b.rate || a.completed - b.completed)[0];
+  const top=[...funcOv].sort((a,b)=>b.rate-a.rate||b.completed-a.completed)[0];
+  const worst=[...funcOv].sort((a,b)=>a.rate-b.rate||a.completed-b.completed)[0];
 
-  const futureW = months.map((m, mi) => {
-    if (mi <= cmi) return { m, w: 0 };
-    let w = 0; allData.forEach(item => { if (!(item.dueDates||[]).includes(m)) return; w += wts[item.category]||1; });
-    return { m, w };
-  }).filter(d => d.w > 0).sort((a, b) => b.w - a.w);
-  const busiest = futureW[0] || { m: 'N/A', w: 0 };
+  const futureW=months.map((m,mi)=>{if(mi<=cmi)return{m,w:0};let w=0;allData.forEach(item=>{if(!(item.dueDates||[]).includes(m))return;w+=wts[item.category]||1;});return{m,w};}).filter(d=>d.w>0).sort((a,b)=>b.w-a.w);
+  const busiest=futureW[0]||{m:'N/A',w:0};
 
-  const dueThroughNext = monthData.slice(0, cmi + 2).reduce((s, d) => s + d.due, 0);
-  const needed = Math.max(0, Math.ceil(dueThroughNext * (expectedPct / 100)) - totalDone);
+  const dueThroughNext=monthData.slice(0,cmi+2).reduce((s,d)=>s+d.due,0);
+  const needed=Math.max(0,Math.ceil(dueThroughNext*(expectedPct/100))-totalDone);
 
-  return { cmi, cms, cmf, nms, totalAct, compAct, overallRate, catStats, monthData,
-    dueThroughCurrent, totalDone, totalDue, actualPct, expectedPct, gap,
-    highRisk, medRisk, watchRisk, scorecard, workload, totalW,
-    funcOv, top, worst, busiest, needed };
+  return {cmi,cms,cmf,nms,totalAct,compAct,overallRate,catStats,monthData,dueThroughCurrent,totalDone,totalDue,actualPct,expectedPct,gap,highRisk,medRisk,watchRisk,scorecard,workload,totalW,funcOv,top,worst,busiest,needed};
 }
 
-// ============================
-// GENERATE RECOMMENDATIONS
-// ============================
 function genRecs(d) {
-  const recs = [];
-  if (d.highRisk.length > 0) recs.push(`<strong>Close overdue items immediately.</strong> Month-level due dates from past months remain incomplete. Schedule a review meeting with responsible function heads to confirm status and update records.`);
-  const cd = d.monthData[d.cmi]; if (cd && cd.due > 0 && cd.done < cd.due) recs.push(`<strong>Prioritize ${d.cmf} due dates.</strong> ${cd.due} month-level due dates are in ${d.cmf} with ${cd.done} completion${cd.done!==1?'s':''} recorded. Focus on quick wins that can be completed before month end.`);
-  if (d.worst && d.worst.completed === 0) recs.push(`<strong>Activate ${d.worst.fn} function.</strong> ${funcFullNames[d.worst.fn]} has 0% progress with no activities completed. Identify blockers and assign accountability for upcoming deliverables.`);
-  if (d.busiest.w > 0) { const bf = fullMonths[months.indexOf(d.busiest.m)]||d.busiest.m; recs.push(`<strong>Plan ahead for ${bf} peak.</strong> ${bf} has the highest weighted workload (${d.busiest.w} pts). Begin preparation early to distribute effort evenly and avoid a bottleneck.`); }
-  if (recs.length < 2) recs.push(`<strong>Maintain momentum.</strong> Continue tracking month-level completions and ensure all teams are updating their progress regularly in the system.`);
-  return recs.slice(0, 4);
+  const recs=[];
+  if(d.highRisk.length>0) recs.push({b:'Close overdue items immediately.',t:' Month-level due dates from past months remain incomplete. Schedule a review with function heads.'});
+  const cd=d.monthData[d.cmi];
+  if(cd&&cd.due>0&&cd.done<cd.due) recs.push({b:`Prioritize ${d.cmf} due dates.`,t:` ${cd.due} due dates in ${d.cmf} with ${cd.done} completed. Focus on quick wins before month end.`});
+  if(d.worst&&d.worst.completed===0) recs.push({b:`Activate ${d.worst.fn} function.`,t:` ${funcFullNames[d.worst.fn]} has 0% progress. Identify blockers and assign accountability.`});
+  if(d.busiest.w>0){const bf=fullMonths[months.indexOf(d.busiest.m)]||d.busiest.m;recs.push({b:`Plan ahead for ${bf} peak.`,t:` ${bf} has the highest weighted workload (${d.busiest.w} pts). Begin preparation early.`});}
+  if(recs.length<2) recs.push({b:'Maintain momentum.',t:' Continue tracking month-level completions and ensure all teams update progress regularly.'});
+  return recs.slice(0,4);
 }
 
-// ============================
-// BUILD HTML PAGES
-// ============================
-function buildPages(allData) {
-  const d = computeData(allData);
-  const now = new Date();
-  const reportDate = now.toLocaleDateString('en-US', { year:'numeric', month:'long', day:'numeric' });
-  const reportMonth = now.toLocaleDateString('en-US', { year:'numeric', month:'long' });
-  const ringPct = d.overallRate;
-  const ringCirc = 2 * Math.PI * 14;
-  const ringOff = ringCirc - (ringPct / 100) * ringCirc;
+function rr(doc,x,y,w,h,r,fc,sc){if(fc)doc.setFillColor(...fc);if(sc){doc.setDrawColor(...sc);doc.setLineWidth(0.3);}doc.roundedRect(x,y,w,h,r,r,fc&&sc?'FD':fc?'F':'S');}
 
-  const fmtRate = (r) => r > 0 ? `<span style="font-weight:700;font-size:12px;color:#22c55e">${r.toFixed(r<10?1:0)}%</span>` : `<span style="font-weight:700;font-size:12px;color:#ccc">0%</span>`;
-  const badge = (v, type) => `<span style="display:inline-flex;align-items:center;justify-content:center;min-width:26px;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;background:${type==='g'?'#dcfce7':'#fee2e2'};color:${type==='g'?'#16a34a':'#dc2626'}">${v}</span>`;
-  const rankStyle = (i) => i===0?'background:#FEF9C3;color:#A16207':i===1?'background:#F1F5F9;color:#475569':i===2?'background:#FED7AA;color:#9A3412':'background:#F3E8FF;color:#7C3AED';
-  const rankEmoji = (i) => i===0?'🥇':i===1?'🥈':i===2?'🥉':(i+1);
+export async function exportChartsReport(allData) {
+  if(!window.jspdf){const s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';document.head.appendChild(s);await new Promise(r=>s.onload=r);}
 
-  const pageStyle = `width:694px;min-height:980px;background:#fafafa;position:relative;overflow:hidden;font-family:'DM Sans','Inter',sans-serif;`;
-  const footerStyle = `padding:16px 40px;display:flex;justify-content:space-between;align-items:center;border-top:1px solid #ece6f3;font-size:10px;color:#aaa;position:absolute;bottom:0;left:0;right:0;`;
-  const sectionStyle = `padding:24px 32px;`;
-  const sectionNextStyle = `padding:0 32px 24px;`;
-  const labelStyle = `font-size:10px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;`;
-  const subStyle = `font-size:12px;color:#999;margin-bottom:18px;line-height:1.4;`;
-  const thStyle = `background:#1a0e2e;color:#fff;font-size:10px;font-weight:600;padding:10px 12px;text-align:left;`;
-  const tdStyle = `padding:9px 12px;font-size:11px;color:#333;border-bottom:1px solid #f5f2f8;`;
-  const tdEven = `background:#faf8fc;`;
-  const tableStyle = `width:100%;border-collapse:separate;border-spacing:0;border-radius:10px;overflow:hidden;border:1px solid #ece6f3;`;
+  const d=computeData(allData);
+  const{jsPDF}=window.jspdf;
+  const doc=new jsPDF('p','mm','a4');
+  const pw=210,ph=297;
+  const now=new Date();
+  const reportDate=now.toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'});
+  const reportMonth=now.toLocaleDateString('en-US',{year:'numeric',month:'long'});
 
-  // ═══════ PAGE 1: COVER ═══════
-  const page1 = `<div style="${pageStyle}background:linear-gradient(160deg,#1a0e2e 0%,#2d1845 40%,#3d2460 70%,#4a3070 100%);min-height:980px;">
-    <div style="position:absolute;top:-120px;right:-120px;width:500px;height:500px;background:radial-gradient(circle,rgba(243,192,54,0.12) 0%,transparent 70%);border-radius:50%;"></div>
-    <div style="position:absolute;bottom:-100px;left:-100px;width:400px;height:400px;background:radial-gradient(circle,rgba(139,92,246,0.08) 0%,transparent 70%);border-radius:50%;"></div>
-    <div style="padding:44px 50px 30px;display:flex;justify-content:space-between;align-items:flex-start;position:relative;z-index:1;">
-      <div><div style="color:#fff;font-size:16px;font-weight:700;">AbdulLatif Jameel Finance</div><div style="color:#A888BE;font-size:12px;font-weight:500;margin-top:4px;">Human Capital Department</div></div>
-      <div style="background:rgba(243,192,54,0.12);border:1px solid rgba(243,192,54,0.25);color:#F3C036;padding:5px 16px;border-radius:20px;font-size:9px;font-weight:600;letter-spacing:1.5px;">CONFIDENTIAL</div>
-    </div>
-    <div style="flex:1;display:flex;flex-direction:column;justify-content:center;padding:0 50px;position:relative;z-index:1;min-height:700px;">
-      <div style="color:#F3C036;font-size:12px;font-weight:600;letter-spacing:4px;text-transform:uppercase;margin-bottom:18px;">Annual Plan 2026</div>
-      <div style="color:#fff;font-size:44px;font-weight:700;line-height:1.1;margin-bottom:16px;">HCD Performance<br><span style="color:#F3C036;">Analytics Report</span></div>
-      <div style="color:#A888BE;font-size:18px;font-weight:500;">${reportMonth}</div>
-    </div>
-    <div style="padding:24px 50px;display:flex;justify-content:space-between;align-items:center;border-top:1px solid rgba(255,255,255,0.06);position:relative;z-index:1;">
-      <div style="color:#A888BE;font-size:10px;">Generated from HCD Application • For internal use only</div>
-      <div style="color:#fff;font-size:11px;font-weight:600;">${reportDate}</div>
-    </div>
-  </div>`;
-
-  // ═══════ PAGE 2: YTD PROGRESS ═══════
-  const monthTimeline = d.monthData.map(md => {
-    const cellStyle = md.current ? `flex:1;display:flex;flex-direction:column;align-items:center;padding:12px 3px 10px;position:relative;background:#faf5ff;border:2px solid #8B5CF6;border-radius:10px;margin:-2px;z-index:2;box-shadow:0 4px 16px rgba(139,92,246,0.15);`
-      : md.past ? `flex:1;display:flex;flex-direction:column;align-items:center;padding:12px 3px 10px;position:relative;background:#fafafa;border-radius:8px;`
-      : `flex:1;display:flex;flex-direction:column;align-items:center;padding:12px 3px 10px;position:relative;border-radius:8px;`;
-    const nameColor = md.current ? '#8B5CF6' : md.past ? '#555' : '#888';
-    const countColor = md.future ? '#ccc' : '#1a0e2e';
-    const doneText = md.future ? '—' : md.done > 0 ? `${md.done} done` : '0 done';
-    const delText = md.future ? '—' : md.delayed > 0 ? `${md.delayed} delayed` : '0 delayed';
-    const doneColor = md.done > 0 && !md.future ? '#22c55e' : '#ddd';
-    const delColor = md.delayed > 0 && !md.future ? '#ef4444' : '#ddd';
-    const barDone = md.due > 0 && !md.future ? `<div style="height:100%;background:#22c55e;width:${(md.done/md.due)*100}%"></div><div style="height:100%;background:#ef4444;width:${(md.delayed/md.due)*100}%"></div>` : '';
-    return `<div style="${cellStyle}">
-      ${md.current ? `<div style="position:absolute;top:-10px;left:50%;transform:translateX(-50%);background:#8B5CF6;color:#fff;font-size:7px;font-weight:700;letter-spacing:1px;padding:2px 8px;border-radius:10px;text-transform:uppercase;">NOW</div>` : ''}
-      <div style="font-size:10px;font-weight:600;color:${nameColor};margin-bottom:4px;">${md.m}</div>
-      <div style="font-size:18px;font-weight:700;color:${countColor};line-height:1;margin-bottom:4px;">${md.due}</div>
-      <div style="font-size:8px;font-weight:600;color:${doneColor};margin-bottom:1px;min-height:11px;">${doneText}</div>
-      <div style="font-size:8px;font-weight:600;color:${delColor};margin-bottom:4px;min-height:11px;">${delText}</div>
-      <div style="width:80%;height:4px;background:#eee;border-radius:3px;overflow:hidden;display:flex;">${barDone}<div style="height:100%;background:#eee;flex:1;"></div></div>
-    </div>`;
-  }).join('');
-
-  const riskGroup = (items, icon, title, headerBg, borderColor, titleColor, countBg, countColor, overflowColor, maxItems) => {
-    if (items.length === 0) return '';
-    const shown = items.slice(0, maxItems);
-    const overflow = items.length > maxItems ? `<div style="font-size:10px;color:${overflowColor};font-weight:600;margin-left:12px;margin-top:2px;">+ ${items.length - maxItems} more</div>` : '';
-    return `<div style="margin-bottom:14px;">
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;padding:7px 12px;border-radius:8px;background:${headerBg};border-left:4px solid ${borderColor};">
-        <div style="font-size:13px;">${icon}</div><div style="font-size:11px;font-weight:700;color:${titleColor};flex:1;">${title}</div>
-        <div style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;background:${countBg};color:${countColor};">${items.length}</div>
-      </div>
-      <div style="display:flex;flex-direction:column;gap:4px;margin-left:16px;">
-        ${shown.map(r => `<div style="display:flex;align-items:center;gap:8px;padding:7px 12px;background:#faf8fc;border:1px solid #ece6f3;border-radius:8px;font-size:10px;">
-          <div style="flex:1;font-weight:600;color:#1a0e2e;">${r.name}</div>${getOwnerBadge(r.owner)}<div style="font-size:9px;color:#888;min-width:50px;text-align:right;">Due: ${r.dm}</div>
-        </div>`).join('')}
-        ${overflow}
-      </div>
-    </div>`;
+  const C={
+    DARK:[26,14,46],DARK2:[45,24,69],DARK3:[61,36,96],DARK4:[74,48,112],
+    WHITE:[255,255,255],GOLD:[243,192,54],PURPLE_L:[168,136,190],
+    BG:[250,250,250],CBG:[250,248,252],BDR:[236,230,243],
+    GRN:[34,197,94],GRN_BG:[220,252,231],GRN_D:[22,163,74],
+    RED:[239,68,68],RED_BG:[254,226,226],RED_D:[220,38,38],
+    AMB:[245,158,11],AMB_BG:[255,251,235],AMB_D:[146,64,14],
+    ORG:[249,115,22],ORG_BG:[255,247,237],ORG_D:[154,52,18],
+    VIO:[139,92,246],VIO_BG:[243,232,255],VIO_D:[124,58,237],
+    SLT:[100,116,139],GRY:[136,136,136],GRY_L:[204,204,204],
+    TXT:[26,14,46],TXS:[102,102,102],TXL:[153,153,153],
+    TH:[26,14,46],TE:[250,248,252],
+    NAV:[30,41,59],STL:[100,116,139],SIL:[203,213,225],
   };
 
-  const riskContent = (d.highRisk.length === 0 && d.medRisk.length === 0 && d.watchRisk.length === 0)
-    ? `<div style="text-align:center;padding:24px;background:#f0fdf4;border-radius:12px;border:1px solid #bbf7d0;"><div style="font-size:24px;margin-bottom:8px;">✅</div><div style="font-size:13px;font-weight:600;color:#166534;">All Clear — No Risks Detected</div></div>`
-    : riskGroup(d.highRisk, '🔴', 'High Risk — Overdue', '#fef2f2', '#ef4444', '#991b1b', '#fee2e2', '#dc2626', '#991b1b', 5)
-      + riskGroup(d.medRisk, '🟡', 'Medium — Due This Month, Not Started', '#fffbeb', '#f59e0b', '#92400e', '#fef3c7', '#d97706', '#92400e', 5)
-      + riskGroup(d.watchRisk, '🟠', 'Watch — Due Next Month, Not Started', '#fff7ed', '#f97316', '#9a3412', '#ffedd5', '#ea580c', '#9a3412', 5);
+  const oc=(o)=>{const f=o.split('/')[0].trim();return ownerColors[f]||ownerColors.ALL;};
+  const mx=14,mw=pw-28;
 
-  const warningCallout = d.gap > 0
-    ? `<div style="display:flex;align-items:flex-start;gap:10px;padding:12px 16px;border-radius:10px;border:1px solid #fed7aa;background:#fff7ed;margin-top:8px;">
-        <div style="font-size:16px;flex-shrink:0;">⚠️</div>
-        <div style="font-size:11px;line-height:1.5;color:#9a3412;"><strong style="color:#ea580c;">${d.gap.toFixed(1)}% below expected pace.</strong> Only <strong>${d.totalDone}</strong> month-level completion${d.totalDone!==1?'s':''} recorded out of <strong>${d.dueThroughCurrent}</strong> due dates through ${d.cmf}.</div>
-      </div>`
-    : `<div style="display:flex;align-items:flex-start;gap:10px;padding:12px 16px;border-radius:10px;border:1px solid #bbf7d0;background:#f0fdf4;margin-top:8px;">
-        <div style="font-size:16px;flex-shrink:0;">✅</div>
-        <div style="font-size:11px;line-height:1.5;color:#166534;"><strong style="color:#16a34a;">On track!</strong> Actual completion rate is meeting or exceeding the expected pace.</div>
-      </div>`;
+  // ═══════ PAGE 1: COVER ═══════
+  doc.setFillColor(...C.DARK);doc.rect(0,0,pw,ph,'F');
+  doc.setFillColor(45,24,69);doc.rect(0,ph*0.35,pw,ph*0.25,'F');
+  doc.setFillColor(61,36,96);doc.rect(0,ph*0.55,pw,ph*0.2,'F');
+  doc.setFillColor(74,48,112);doc.rect(0,ph*0.7,pw,ph*0.3,'F');
 
-  const recoveryCallout = (d.needed > 0 && d.gap > 0)
-    ? `<div style="display:flex;align-items:flex-start;gap:10px;padding:12px 16px;border-radius:10px;border:1px solid #bfdbfe;background:#f0f4ff;margin-top:8px;">
-        <div style="font-size:16px;flex-shrink:0;">💡</div>
-        <div style="font-size:11px;line-height:1.5;color:#1e40af;">To get back on track by end of ${fullMonths[(d.cmi+1)%12]}, <strong style="color:#2563eb;">approximately ${d.needed} more month-level completion${d.needed!==1?'s':''}</strong> need to be recorded.</div>
-      </div>` : '';
+  doc.setTextColor(...C.WHITE);doc.setFontSize(13);doc.setFont('helvetica','bold');
+  doc.text('AbdulLatif Jameel Finance',22,28);
+  doc.setTextColor(...C.PURPLE_L);doc.setFontSize(9);doc.setFont('helvetica','normal');
+  doc.text('Human Capital Department',22,34);
 
-  const page2 = `<div style="${pageStyle}">
-    <div style="${sectionStyle}">
-      <div style="${labelStyle}">Overall Completion Rate</div>
-      <div style="display:flex;align-items:center;gap:24px;margin-bottom:20px;padding-bottom:16px;border-bottom:1px solid #f0ecf5;">
-        <svg width="90" height="90" viewBox="0 0 36 36"><circle cx="18" cy="18" r="14" fill="none" stroke="#f0ecf5" stroke-width="5"/><circle cx="18" cy="18" r="14" fill="none" stroke="#22c55e" stroke-width="5" stroke-linecap="round" stroke-dasharray="${ringCirc}" stroke-dashoffset="${ringOff}" transform="rotate(-90 18 18)"/><text x="18" y="19" text-anchor="middle" font-size="7" font-weight="700" fill="#1a0e2e">${ringPct.toFixed(1)}%</text><text x="18" y="24" text-anchor="middle" font-size="3.5" fill="#888">Complete</text></svg>
-        <div><div style="font-size:38px;font-weight:700;color:#22c55e;line-height:1;">${ringPct.toFixed(1)}%</div><div style="font-size:12px;color:#888;margin-top:4px;line-height:1.4;">${d.compAct} of ${d.totalAct} activities completed across all functions YTD</div></div>
-      </div>
-      <table style="${tableStyle}"><thead><tr><th style="${thStyle}">Category</th><th style="${thStyle}">Total</th><th style="${thStyle}">Completed</th><th style="${thStyle}">Delayed</th><th style="${thStyle}">Rate</th></tr></thead><tbody>
-        ${d.catStats.map((c, i) => `<tr><td style="${tdStyle}${i%2===1?tdEven:''}"><span style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:6px;font-size:13px;margin-right:8px;vertical-align:middle;background:#e2e8f0;">${c.icon}</span><span style="font-weight:600;color:#1a0e2e;vertical-align:middle;">${c.shortLabel}</span></td><td style="${tdStyle}${i%2===1?tdEven:''}"><strong>${c.total}</strong></td><td style="${tdStyle}${i%2===1?tdEven:''}">${badge(c.completed,'g')}</td><td style="${tdStyle}${i%2===1?tdEven:''}">${badge(c.delayed,'r')}</td><td style="${tdStyle}${i%2===1?tdEven:''}">${fmtRate(c.rate)}</td></tr>`).join('')}
-      </tbody></table>
-    </div>
-    <div style="${sectionNextStyle}">
-      <div style="${labelStyle}">Expected vs Actual (${reportMonth})</div>
-      <div style="${subStyle}">Due date entries per month and how many were completed at month level — Activity Due Through <strong>${d.cms}</strong>: <strong>${d.dueThroughCurrent}</strong></div>
-      <div style="display:flex;gap:0;margin-bottom:24px;">${monthTimeline}</div>
-      <div style="margin-top:32px;">
-        <div style="height:26px;background:#f0ecf5;border-radius:10px;position:relative;overflow:visible;">
-          <div style="height:100%;border-radius:10px;display:flex;align-items:center;padding-left:10px;font-size:10px;font-weight:700;color:#fff;position:relative;z-index:1;min-width:44px;width:${Math.max(d.actualPct,3)}%;background:linear-gradient(90deg,#22c55e,#4ade80);">${d.actualPct.toFixed(1)}%</div>
-          <div style="position:absolute;top:-26px;bottom:-6px;width:3px;background:#1a0e2e;border-radius:2px;z-index:2;left:${d.expectedPct}%;"><div style="position:absolute;top:0;left:50%;transform:translateX(-50%);background:#1a0e2e;color:#fff;font-size:8px;font-weight:600;padding:3px 8px;border-radius:4px;white-space:nowrap;">${d.expectedPct.toFixed(1)}%</div></div>
-        </div>
-        <div style="display:flex;gap:16px;margin-top:8px;font-size:10px;color:#888;">
-          <div style="display:flex;align-items:center;gap:5px;"><div style="width:8px;height:8px;border-radius:3px;background:linear-gradient(90deg,#22c55e,#4ade80);"></div> Actual: ${d.actualPct.toFixed(1)}%</div>
-          <div style="display:flex;align-items:center;gap:5px;"><div style="width:8px;height:8px;border-radius:3px;background:#1a0e2e;"></div> Expected pace</div>
-          <div style="display:flex;align-items:center;gap:5px;"><div style="width:8px;height:8px;border-radius:3px;background:#f0ecf5;"></div> Remaining</div>
-        </div>
-      </div>
-      ${warningCallout}${recoveryCallout}
-    </div>
-    <div style="${sectionNextStyle}">
-      <div style="${labelStyle}">🚨 Risk Radar</div>
-      <div style="${subStyle}">Activities requiring attention</div>
-      ${riskContent}
-    </div>
-    <div style="${footerStyle}"><span>HCD Performance Analytics Report — ${reportMonth}</span><span>Page 2 of 4</span></div>
-  </div>`;
+  rr(doc,pw-55,22,38,10,5,[50,30,70],[243,192,54]);
+  doc.setTextColor(...C.GOLD);doc.setFontSize(6.5);doc.setFont('helvetica','bold');
+  doc.text('CONFIDENTIAL',pw-36,28.5,{align:'center'});
 
-  // ═══════ PAGE 3: FUNCTION SCORECARD ═══════
-  const scorecardHTML = d.scorecard.map(cat => {
-    const totalInCat = cat.fs.reduce((s, f) => s + f.total, 0);
-    const countColor = cat.color === '#cbd5e1' ? '#64748b' : cat.color;
-    return `<div style="margin-bottom:20px;">
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;padding:7px 12px;border-radius:8px;border-left:4px solid ${cat.color};background:#f1f5f9;">
-        <div style="font-size:15px;">${cat.icon}</div><div style="font-size:12px;font-weight:700;color:#1a0e2e;flex:1;">${cat.label}</div>
-        <div style="font-size:10px;font-weight:600;padding:2px 10px;border-radius:10px;background:#e2e8f0;color:${countColor};">${totalInCat} activities</div>
-      </div>
-      <table style="${tableStyle}"><thead><tr><th style="${thStyle}width:35px;">Rank</th><th style="${thStyle}">Function</th><th style="${thStyle}width:55px;">Total</th><th style="${thStyle}width:75px;">Completed</th><th style="${thStyle}width:65px;">Delayed</th><th style="${thStyle}width:60px;">Rate</th></tr></thead><tbody>
-        ${cat.fs.map((f, i) => `<tr><td style="${tdStyle}${i%2===1?tdEven:''}"><span style="display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;font-size:10px;font-weight:700;${rankStyle(i)};">${rankEmoji(i)}</span></td><td style="${tdStyle}${i%2===1?tdEven:''}"><strong>${f.fn}</strong></td><td style="${tdStyle}${i%2===1?tdEven:''}"><strong>${f.total}</strong></td><td style="${tdStyle}${i%2===1?tdEven:''}">${badge(f.completed,'g')}</td><td style="${tdStyle}${i%2===1?tdEven:''}">${badge(f.delayed,'r')}</td><td style="${tdStyle}${i%2===1?tdEven:''}">${fmtRate(f.rate)}</td></tr>`).join('')}
-      </tbody></table>
-    </div>`;
-  }).join('');
+  doc.setTextColor(...C.GOLD);doc.setFontSize(9);doc.setFont('helvetica','bold');
+  doc.text('ANNUAL PLAN 2026',22,115,{charSpace:2});
+  doc.setTextColor(...C.WHITE);doc.setFontSize(30);doc.setFont('helvetica','bold');
+  doc.text('HCD Performance',22,133);
+  doc.setTextColor(...C.GOLD);
+  doc.text('Analytics Report',22,148);
+  doc.setTextColor(...C.PURPLE_L);doc.setFontSize(14);doc.setFont('helvetica','normal');
+  doc.text(reportMonth,22,162);
 
-  const page3 = `<div style="${pageStyle}">
-    <div style="${sectionStyle}">
-      <div style="${labelStyle}">🏆 Function Scorecard</div>
-      <div style="${subStyle}">Functions ranked by completion rate — separated by category</div>
-      ${scorecardHTML}
-    </div>
-    <div style="${footerStyle}"><span>HCD Performance Analytics Report — ${reportMonth}</span><span>Page 3 of 4</span></div>
-  </div>`;
+  doc.setDrawColor(...C.PURPLE_L);doc.setLineWidth(0.1);doc.line(22,ph-22,pw-22,ph-22);
+  doc.setTextColor(...C.PURPLE_L);doc.setFontSize(7.5);doc.setFont('helvetica','normal');
+  doc.text('Generated from HCD Application \u2022 For internal use only',22,ph-14);
+  doc.setTextColor(...C.WHITE);doc.setFontSize(8);doc.setFont('helvetica','bold');
+  doc.text(reportDate,pw-22,ph-14,{align:'right'});
 
-  // ═══════ PAGE 4: KEY INSIGHTS ═══════
-  const insightCard = (icon, title, topColor, iconBg, badgeBg, badgeColor, badgeText, value, valueColor, detail) => `<div style="border:1px solid #ece6f3;border-radius:12px;padding:16px;position:relative;overflow:hidden;">
-    <div style="position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,${topColor});"></div>
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;"><div style="width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px;background:${iconBg};">${icon}</div><div style="font-size:9px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:0.3px;">${title}</div></div>
-    ${badgeText ? `<div style="display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:7px;font-size:11px;font-weight:700;margin-bottom:6px;background:${badgeBg};color:${badgeColor};">${badgeText}</div>` : ''}
-    <div style="font-size:18px;font-weight:700;line-height:1.2;margin-bottom:5px;color:${valueColor};">${value}</div>
-    <div style="font-size:10px;color:#666;line-height:1.5;">${detail}</div>
-  </div>`;
+  // ═══════ PAGE 2: YTD PROGRESS ═══════
+  doc.addPage();doc.setFillColor(...C.BG);doc.rect(0,0,pw,ph,'F');
+  let y=14;
 
-  const workloadBars = d.workload.map(w => `<div style="display:flex;align-items:center;gap:10px;">
-    <div style="width:70px;font-size:10px;font-weight:600;color:#1a0e2e;display:flex;align-items:center;gap:5px;flex-shrink:0;">${w.fn}</div>
-    <div style="flex:1;height:20px;background:#f0ecf5;border-radius:6px;overflow:hidden;display:flex;">
-      ${w.pw>0?`<div style="height:100%;width:${(w.pw/w.w)*100}%;background:#1e293b;display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:700;color:#fff;">${w.pw}</div>`:''}
-      ${w.mw>0?`<div style="height:100%;width:${(w.mw/w.w)*100}%;background:#64748b;display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:700;color:#fff;">${w.mw}</div>`:''}
-      ${w.rw>0?`<div style="height:100%;width:${(w.rw/w.w)*100}%;background:#cbd5e1;display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:700;color:#475569;">${w.rw}</div>`:''}
-    </div>
-    <div style="min-width:50px;text-align:right;font-size:11px;font-weight:700;color:#1a0e2e;">${w.w} <span style="font-size:9px;font-weight:500;color:#999;">pts</span></div>
-  </div>`).join('');
+  // Overall Completion
+  doc.setTextColor(...C.GRY);doc.setFontSize(7.5);doc.setFont('helvetica','bold');
+  doc.text('OVERALL COMPLETION RATE',mx,y);y+=5;
 
-  const recs = genRecs(d);
-  const recsHTML = recs.map((r, i) => `<div style="display:flex;align-items:flex-start;gap:9px;padding:10px 12px;background:#faf8fc;border:1px solid #ece6f3;border-radius:9px;">
-    <div style="width:20px;height:20px;border-radius:50%;background:#1a0e2e;color:#F3C036;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px;">${i+1}</div>
-    <div style="font-size:11px;color:#333;line-height:1.5;">${r}</div>
-  </div>`).join('');
+  // Ring placeholder
+  doc.setDrawColor(240,236,245);doc.setLineWidth(2.2);doc.circle(mx+11,y+10,9,'S');
+  if(d.overallRate>0){doc.setDrawColor(...C.GRN);doc.setLineWidth(2.2);/* arc not supported, show text */}
+  doc.setTextColor(...C.TXT);doc.setFontSize(7.5);doc.setFont('helvetica','bold');
+  doc.text(`${d.overallRate.toFixed(1)}%`,mx+11,y+11,{align:'center'});
+  doc.setTextColor(...C.GRY);doc.setFontSize(4.5);doc.setFont('helvetica','normal');
+  doc.text('Complete',mx+11,y+14.5,{align:'center'});
 
-  const topPctStr = d.top.rate.toFixed(1);
-  const worstPctStr = d.worst.rate.toFixed(0);
-  const busiestFull = fullMonths[months.indexOf(d.busiest.m)] || d.busiest.m;
-  const topWPct = d.totalW > 0 ? ((d.workload[0]?.w / d.totalW) * 100).toFixed(1) : '0';
+  doc.setTextColor(...C.GRN);doc.setFontSize(22);doc.setFont('helvetica','bold');
+  doc.text(`${d.overallRate.toFixed(1)}%`,mx+28,y+9);
+  doc.setTextColor(...C.GRY);doc.setFontSize(8);doc.setFont('helvetica','normal');
+  doc.text(`${d.compAct} of ${d.totalAct} activities completed across all functions YTD`,mx+28,y+15);
+  y+=23;
+  doc.setDrawColor(...C.BDR);doc.setLineWidth(0.3);doc.line(mx,y,mx+mw,y);y+=3;
 
-  const page4 = `<div style="${pageStyle}">
-    <div style="${sectionStyle}">
-      <div style="${labelStyle}">💡 Key Insights & Recommendations</div>
-      <div style="${subStyle}">Findings based on current data — highlights what's working, what's at risk, and recommended next steps</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:18px;">
-        ${insightCard('🏆','Top Performer','#22c55e,#4ade80','#dcfce7','#dcfce7','#16a34a',`${funcFullNames[d.top.fn]} (${d.top.fn})`,`${topPctStr}% completion`,'#16a34a',`${d.top.completed>0?'Leading with':'Highest activity count:'} <strong style="color:#1a0e2e">${d.top.completed} of ${d.top.total}</strong> activities completed.`)}
-        ${insightCard('⚠️','Most At Risk','#ef4444,#f87171','#fee2e2','#fee2e2','#dc2626',`${funcFullNames[d.worst.fn]} (${d.worst.fn})`,`${worstPctStr}% completion`,'#dc2626',`<strong style="color:#1a0e2e">${d.worst.completed} of ${d.worst.mdu}</strong> due dates completed. ${d.worst.completed===0?'No activities in progress.':''}`)}
-        ${insightCard('📅','Busiest Month Ahead','#F3C036,#fbbf24','#fef9c3','','','',`${busiestFull} — ${d.busiest.w} weighted pts`,'#a16207',`Highest weighted workload ahead. Planning should begin early to avoid bottleneck.`)}
-        ${insightCard('⚖️','Workload Distribution','#8B5CF6,#a78bfa','#f3e8ff','','','',`${d.workload[0]?.fn} carries ${topWPct}%`,'#7c3aed',`${d.workload[0]?.fn} has highest weighted workload: <strong style="color:#1a0e2e">${d.workload[0]?.w} pts</strong>. ${d.workload.length>1?`${d.workload[d.workload.length-1].fn} has lightest at ${d.workload[d.workload.length-1].w} pts.`:''}`)}
-      </div>
-      <div style="margin-bottom:18px;">
-        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:3px;">
-          <div style="font-size:12px;font-weight:700;color:#1a0e2e;display:flex;align-items:center;gap:6px;">⚖️ Function Workload Balance</div>
-          <div style="font-size:8px;color:#bbb;background:#faf8fc;padding:3px 8px;border-radius:5px;border:1px solid #ece6f3;">Weights: 📋 ×3 · 🔧 ×2 · 📊 ×1</div>
-        </div>
-        <div style="font-size:10px;color:#999;margin-bottom:12px;">Weighted workload per function — showing category composition</div>
-        <div style="display:flex;flex-direction:column;gap:8px;">${workloadBars}</div>
-        <div style="display:flex;gap:14px;margin-top:10px;padding-top:8px;border-top:1px solid #f0ecf5;">
-          <div style="display:flex;align-items:center;gap:5px;font-size:9px;color:#888;"><div style="width:8px;height:8px;border-radius:3px;background:#1e293b;"></div> 📋 Programs (×3)</div>
-          <div style="display:flex;align-items:center;gap:5px;font-size:9px;color:#888;"><div style="width:8px;height:8px;border-radius:3px;background:#64748b;"></div> 🔧 Maintenance (×2)</div>
-          <div style="display:flex;align-items:center;gap:5px;font-size:9px;color:#888;"><div style="width:8px;height:8px;border-radius:3px;background:#cbd5e1;"></div> 📊 Reports (×1)</div>
-        </div>
-      </div>
-      <div style="background:#fff;border:1px solid #ece6f3;border-radius:12px;padding:20px 22px;">
-        <div style="font-size:12px;font-weight:700;color:#1a0e2e;margin-bottom:3px;display:flex;align-items:center;gap:6px;">🎯 Action Recommendations</div>
-        <div style="font-size:10px;color:#888;margin-bottom:14px;">Priority actions for this month based on current data</div>
-        <div style="display:flex;flex-direction:column;gap:7px;">${recsHTML}</div>
-      </div>
-    </div>
-    <div style="${footerStyle}"><span>HCD Performance Analytics Report — ${reportMonth}</span><span>Page 4 of 4</span></div>
-  </div>`;
+  // Category table
+  const cW=[mw*0.38,mw*0.14,mw*0.18,mw*0.15,mw*0.15];
+  const cX=[mx,mx+cW[0],mx+cW[0]+cW[1],mx+cW[0]+cW[1]+cW[2],mx+cW[0]+cW[1]+cW[2]+cW[3]];
 
-  return [page1, page2, page3, page4];
-}
+  rr(doc,mx,y,mw,6.5,2,C.TH);
+  doc.setTextColor(...C.WHITE);doc.setFontSize(6.5);doc.setFont('helvetica','bold');
+  doc.text('Category',cX[0]+3,y+4.2);doc.text('Total',cX[1]+cW[1]/2,y+4.2,{align:'center'});
+  doc.text('Completed',cX[2]+cW[2]/2,y+4.2,{align:'center'});doc.text('Delayed',cX[3]+cW[3]/2,y+4.2,{align:'center'});
+  doc.text('Rate',cX[4]+cW[4]/2,y+4.2,{align:'center'});y+=6.5;
 
-// ============================
-// MAIN EXPORT FUNCTION
-// ============================
-export async function exportChartsReport(allData) {
-  // Show loading toast
-  const toast = document.createElement('div');
-  toast.style.cssText = 'position:fixed;top:20px;left:50%;transform:translateX(-50%);z-index:99999;background:#1a0e2e;color:#F3C036;padding:14px 28px;border-radius:12px;font-family:Inter,sans-serif;font-size:14px;font-weight:600;box-shadow:0 8px 32px rgba(0,0,0,0.4);border:1px solid rgba(243,192,54,0.3);display:flex;align-items:center;gap:10px;';
-  toast.innerHTML = '<div style="width:18px;height:18px;border:3px solid rgba(243,192,54,0.3);border-top-color:#F3C036;border-radius:50%;animation:crspin 0.8s linear infinite;"></div> Generating HCD Analytics PDF...';
-  const style = document.createElement('style');
-  style.textContent = '@keyframes crspin { to { transform: rotate(360deg); } }';
-  document.head.appendChild(style);
-  document.body.appendChild(toast);
+  d.catStats.forEach((cat,i)=>{
+    const rh=6.5;
+    if(i%2===1){doc.setFillColor(...C.TE);doc.rect(mx,y,mw,rh,'F');}
+    doc.setDrawColor(...C.BDR);doc.setLineWidth(0.15);doc.line(mx,y+rh,mx+mw,y+rh);
 
-  try {
-    // Load DM Sans font
-    if (!document.querySelector('link[href*="DM+Sans"]')) {
-      const link = document.createElement('link');
-      link.href = 'https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&display=swap';
-      link.rel = 'stylesheet';
-      document.head.appendChild(link);
-      await new Promise(r => setTimeout(r, 500));
+    rr(doc,cX[0]+2,y+1.2,4,4,1,[226,232,240]);
+    doc.setTextColor(...C.TXT);doc.setFontSize(5);doc.setFont('helvetica','bold');
+    doc.text(cat.icon,cX[0]+4,y+4,{align:'center'});
+    doc.setFontSize(7);doc.setFont('helvetica','bold');
+    doc.text(cat.shortLabel,cX[0]+8,y+4.2);
+
+    doc.setTextColor(...C.TXT);doc.setFontSize(7.5);doc.setFont('helvetica','bold');
+    doc.text(String(cat.total),cX[1]+cW[1]/2,y+4.2,{align:'center'});
+
+    rr(doc,cX[2]+cW[2]/2-6,y+1,12,4.5,2,C.GRN_BG);
+    doc.setTextColor(...C.GRN_D);doc.setFontSize(7);doc.setFont('helvetica','bold');
+    doc.text(String(cat.completed),cX[2]+cW[2]/2,y+4,{align:'center'});
+
+    rr(doc,cX[3]+cW[3]/2-5,y+1,10,4.5,2,C.RED_BG);
+    doc.setTextColor(...C.RED_D);doc.setFontSize(7);
+    doc.text(String(cat.delayed),cX[3]+cW[3]/2,y+4,{align:'center'});
+
+    const rc=cat.rate>0?C.GRN:C.GRY_L;
+    doc.setTextColor(...rc);doc.setFontSize(7.5);doc.setFont('helvetica','bold');
+    doc.text(`${cat.rate>0?cat.rate.toFixed(cat.rate<10?1:0):'0'}%`,cX[4]+cW[4]/2,y+4.2,{align:'center'});
+    y+=rh;
+  });
+  y+=6;
+
+  // Expected vs Actual
+  doc.setTextColor(...C.GRY);doc.setFontSize(7.5);doc.setFont('helvetica','bold');
+  doc.text(`EXPECTED VS ACTUAL (${d.cmf.toUpperCase()} 2026)`,mx,y);y+=4;
+  doc.setTextColor(...C.TXS);doc.setFontSize(6.5);doc.setFont('helvetica','normal');
+  doc.text(`Due date entries per month — Activity Due Through `,mx,y);
+  const tw1=doc.getTextWidth(`Due date entries per month — Activity Due Through `);
+  doc.setFont('helvetica','bold');doc.text(`${d.cms}: ${d.dueThroughCurrent}`,mx+tw1,y);
+  y+=5;
+
+  // Monthly timeline
+  const mcW=mw/12;
+  d.monthData.forEach((md,mi)=>{
+    const cx=mx+mi*mcW,ccx=cx+mcW/2;
+    if(md.current){
+      doc.setDrawColor(...C.VIO);doc.setLineWidth(0.4);doc.setFillColor(250,245,255);
+      doc.roundedRect(cx+0.3,y,mcW-0.6,26,1.5,1.5,'FD');
+      rr(doc,ccx-4.5,y-2,9,3.5,1.5,C.VIO);
+      doc.setTextColor(...C.WHITE);doc.setFontSize(3.5);doc.setFont('helvetica','bold');
+      doc.text('NOW',ccx,y,{align:'center'});
+    } else if(md.past){
+      doc.setFillColor(250,250,250);doc.rect(cx+0.3,y,mcW-0.6,26,'F');
     }
 
-    // Load html2canvas
-    if (!window.html2canvas) {
-      const s = document.createElement('script');
-      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
-      document.head.appendChild(s);
-      await new Promise(r => s.onload = r);
+    doc.setTextColor(md.current?139:md.past?85:136,md.current?92:md.past?85:136,md.current?246:md.past?85:136);
+    doc.setFontSize(5.5);doc.setFont('helvetica','bold');doc.text(md.m,ccx,y+4.5,{align:'center'});
+
+    doc.setTextColor(md.future?204:26,md.future?204:14,md.future?204:46);
+    doc.setFontSize(10);doc.setFont('helvetica','bold');doc.text(String(md.due),ccx,y+11,{align:'center'});
+
+    if(!md.future){
+      doc.setTextColor(md.done>0?34:221,md.done>0?197:221,md.done>0?94:221);
+      doc.setFontSize(4);doc.setFont('helvetica','bold');
+      doc.text(md.done>0?`${md.done} done`:'0 done',ccx,y+14.5,{align:'center'});
+      doc.setTextColor(md.delayed>0?239:221,md.delayed>0?68:221,md.delayed>0?68:221);
+      doc.text(md.delayed>0?`${md.delayed} delayed`:'0 delayed',ccx,y+17.5,{align:'center'});
+    } else {
+      doc.setTextColor(221,221,221);doc.setFontSize(4);doc.setFont('helvetica','bold');
+      doc.text('\u2014',ccx,y+14.5,{align:'center'});doc.text('\u2014',ccx,y+17.5,{align:'center'});
     }
 
-    // Load jsPDF
-    if (!window.jspdf) {
-      const s = document.createElement('script');
-      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
-      document.head.appendChild(s);
-      await new Promise(r => s.onload = r);
+    const bY=y+20,bW=mcW-3,bH=1.2;
+    rr(doc,cx+1.5,bY,bW,bH,0.4,[238,238,238]);
+    if(md.due>0&&!md.future){
+      if(md.done>0){doc.setFillColor(...C.GRN);doc.rect(cx+1.5,bY,bW*(md.done/md.due),bH,'F');}
+      if(md.delayed>0){doc.setFillColor(...C.RED);doc.rect(cx+1.5+bW*(md.done/md.due),bY,bW*(md.delayed/md.due),bH,'F');}
     }
+  });
+  y+=30;
 
-    // Build pages HTML
-    const pages = buildPages(allData);
+  // Progress bar
+  rr(doc,mx,y,mw,5.5,2,[240,236,245]);
+  const aW=Math.max(mw*d.actualPct/100,7);
+  doc.setFillColor(34,197,94);doc.roundedRect(mx,y,aW,5.5,2,2,'F');
+  doc.setTextColor(...C.WHITE);doc.setFontSize(5.5);doc.setFont('helvetica','bold');
+  doc.text(`${d.actualPct.toFixed(1)}%`,mx+2.5,y+3.8);
+  const eX=mx+mw*d.expectedPct/100;
+  doc.setFillColor(...C.TXT);doc.rect(eX-0.4,y-4.5,0.8,5.5+5.5,'F');
+  rr(doc,eX-7,y-6,14,3.5,1,C.TXT);
+  doc.setTextColor(...C.WHITE);doc.setFontSize(4.5);doc.setFont('helvetica','bold');
+  doc.text(`${d.expectedPct.toFixed(1)}%`,eX,y-3.5,{align:'center'});
+  y+=8;
 
-    // Create hidden container
-    const container = document.createElement('div');
-    container.style.cssText = 'position:fixed;left:-9999px;top:0;z-index:-1;';
-    document.body.appendChild(container);
+  let lx=mx;
+  [[C.GRN,`Actual: ${d.actualPct.toFixed(1)}%`],[C.TXT,'Expected pace'],[[240,236,245],'Remaining']].forEach(([c,t])=>{
+    rr(doc,lx,y,2,2,0.5,c);doc.setTextColor(...C.GRY);doc.setFontSize(5.5);doc.setFont('helvetica','normal');
+    doc.text(t,lx+3.5,y+1.5);lx+=doc.getTextWidth(t)+7;
+  });
+  y+=5;
 
-    const { jsPDF } = window.jspdf;
-    const doc = new jsPDF('p', 'mm', 'a4');
-    const pageWidth = 210;
-
-    for (let i = 0; i < pages.length; i++) {
-      // Create page div
-      const pageDiv = document.createElement('div');
-      pageDiv.innerHTML = pages[i];
-      const pageEl = pageDiv.firstElementChild;
-      container.appendChild(pageEl);
-
-      // Wait for rendering
-      await new Promise(r => setTimeout(r, 200));
-
-      // Capture
-      const canvas = await window.html2canvas(pageEl, {
-        scale: 2, useCORS: true, backgroundColor: null,
-        width: pageEl.offsetWidth, height: pageEl.offsetHeight,
-      });
-
-      const imgData = canvas.toDataURL('image/png');
-      const imgHeight = (canvas.height * pageWidth) / canvas.width;
-
-      if (i > 0) doc.addPage();
-      doc.addImage(imgData, 'PNG', 0, 0, pageWidth, Math.min(imgHeight, 297));
-
-      container.removeChild(pageEl);
-    }
-
-    // Clean up
-    document.body.removeChild(container);
-
-    // Auto-download
-    const monthName = fullMonths[new Date().getMonth()];
-    doc.save(`HCD_Analytics_${monthName}_2026.pdf`);
-
-  } catch (err) {
-    console.error('HCD Analytics PDF export error:', err);
-    alert('Error generating PDF. Please try again.');
+  // Callouts
+  if(d.gap>0){
+    rr(doc,mx,y,mw,10,2,[255,247,237],[254,215,170]);
+    doc.setTextColor(234,88,12);doc.setFontSize(6.5);doc.setFont('helvetica','bold');
+    doc.text(`${d.gap.toFixed(1)}% below expected pace.`,mx+4,y+4);
+    doc.setTextColor(154,52,18);doc.setFont('helvetica','normal');
+    doc.text(`Only ${d.totalDone} completion${d.totalDone!==1?'s':''} recorded out of ${d.dueThroughCurrent} due dates through ${d.cmf}.`,mx+4,y+8);
+    y+=12;
+  } else {
+    rr(doc,mx,y,mw,8,2,[240,253,244],[187,247,208]);
+    doc.setTextColor(22,163,74);doc.setFontSize(6.5);doc.setFont('helvetica','bold');
+    doc.text('On track!',mx+4,y+4);
+    doc.setFont('helvetica','normal');doc.text('Completion rate is meeting or exceeding expected pace.',mx+4,y+7);
+    y+=10;
   }
 
-  // Remove toast
-  document.body.removeChild(toast);
-  document.head.removeChild(style);
+  if(d.needed>0&&d.gap>0){
+    rr(doc,mx,y,mw,10,2,[240,244,255],[191,219,254]);
+    doc.setTextColor(30,64,175);doc.setFontSize(6.5);doc.setFont('helvetica','normal');
+    doc.text(`To get back on track by end of ${fullMonths[(d.cmi+1)%12]},`,mx+4,y+4);
+    doc.setFont('helvetica','bold');
+    doc.text(`approximately ${d.needed} more completion${d.needed!==1?'s':''} need to be recorded.`,mx+4,y+8);
+    y+=12;
+  }
+  y+=2;
+
+  // Risk Radar
+  doc.setTextColor(...C.GRY);doc.setFontSize(7.5);doc.setFont('helvetica','bold');
+  doc.text('RISK RADAR',mx,y);y+=3.5;
+  doc.setTextColor(...C.TXS);doc.setFontSize(6.5);doc.setFont('helvetica','normal');
+  doc.text('Activities requiring attention',mx,y);y+=4;
+
+  const drawRG=(items,bgC,bdC,ttC,cBg,cC,title,maxS)=>{
+    if(!items.length)return;
+    rr(doc,mx,y,mw,5.5,1.5,bgC);doc.setFillColor(...bdC);doc.rect(mx,y,1,5.5,'F');
+    doc.setTextColor(...ttC);doc.setFontSize(6.5);doc.setFont('helvetica','bold');doc.text(title,mx+4,y+3.7);
+    rr(doc,mx+mw-10,y+0.8,8,3.8,2,cBg);doc.setTextColor(...cC);doc.setFontSize(6);doc.setFont('helvetica','bold');
+    doc.text(String(items.length),mx+mw-6,y+3.5,{align:'center'});
+    y+=7;
+    items.slice(0,maxS).forEach(r=>{
+      rr(doc,mx+3,y,mw-3,5,1.5,C.CBG,C.BDR);
+      doc.setTextColor(...C.TXT);doc.setFontSize(6);doc.setFont('helvetica','bold');
+      let nm=r.name;if(nm.length>40)nm=nm.substring(0,38)+'..';
+      doc.text(nm,mx+6,y+3.3);
+      const occ=oc(r.owner);const ol=r.owner.length>10?r.owner.substring(0,10):r.owner;
+      const ow=doc.getTextWidth(ol)+3;
+      rr(doc,mx+mw-18-ow,y+0.8,ow+2,3.4,1.2,occ.bg);
+      doc.setTextColor(...occ.c);doc.setFontSize(5);doc.setFont('helvetica','bold');
+      doc.text(ol,mx+mw-17-ow/2,y+3.2,{align:'center'});
+      doc.setTextColor(...C.GRY);doc.setFontSize(5);doc.setFont('helvetica','normal');
+      doc.text(`Due: ${r.dm}`,mx+mw-4,y+3.2,{align:'right'});
+      y+=5.5;
+    });
+    if(items.length>maxS){doc.setTextColor(...ttC);doc.setFontSize(5.5);doc.setFont('helvetica','bold');doc.text(`+ ${items.length-maxS} more`,mx+6,y+1);y+=3;}
+    y+=2;
+  };
+
+  if(!d.highRisk.length&&!d.medRisk.length&&!d.watchRisk.length){
+    rr(doc,mx,y,mw,12,3,[240,253,244],[187,247,208]);
+    doc.setTextColor(22,101,52);doc.setFontSize(8);doc.setFont('helvetica','bold');
+    doc.text('All Clear \u2014 No Risks Detected',mx+mw/2,y+7.5,{align:'center'});
+  } else {
+    drawRG(d.highRisk,[254,242,242],C.RED,[153,27,27],C.RED_BG,C.RED_D,'High Risk \u2014 Overdue',5);
+    drawRG(d.medRisk,C.AMB_BG,C.AMB,[146,64,14],[254,243,199],[217,119,6],'Medium \u2014 Due This Month, Not Started',5);
+    drawRG(d.watchRisk,C.ORG_BG,C.ORG,[154,52,18],[255,237,213],[234,88,12],'Watch \u2014 Due Next Month, Not Started',4);
+  }
+
+  doc.setTextColor(...C.GRY_L);doc.setFontSize(6.5);doc.setFont('helvetica','normal');
+  doc.setDrawColor(...C.BDR);doc.line(mx,ph-11,mx+mw,ph-11);
+  doc.text(`HCD Performance Analytics Report \u2014 ${reportMonth}`,mx,ph-7);
+  doc.text('Page 2 of 4',mx+mw,ph-7,{align:'right'});
+
+  // ═══════ PAGE 3: FUNCTION SCORECARD ═══════
+  doc.addPage();doc.setFillColor(...C.BG);doc.rect(0,0,pw,ph,'F');
+  y=14;
+  doc.setTextColor(...C.GRY);doc.setFontSize(7.5);doc.setFont('helvetica','bold');
+  doc.text('FUNCTION SCORECARD',mx,y);y+=3.5;
+  doc.setTextColor(...C.TXS);doc.setFontSize(6.5);doc.setFont('helvetica','normal');
+  doc.text('Functions ranked by completion rate \u2014 separated by category',mx,y);y+=6;
+
+  d.scorecard.forEach(cat=>{
+    const tot=cat.fs.reduce((s,f)=>s+f.total,0);
+    rr(doc,mx,y,mw,6,1.5,[241,245,249]);doc.setFillColor(...cat.color);doc.rect(mx,y,1,6,'F');
+    doc.setTextColor(...C.TXT);doc.setFontSize(7.5);doc.setFont('helvetica','bold');doc.text(cat.label,mx+4,y+4);
+    rr(doc,mx+mw-20,y+1,18,4,2,[226,232,240]);
+    doc.setTextColor(...C.SLT);doc.setFontSize(5.5);doc.setFont('helvetica','bold');
+    doc.text(`${tot} activities`,mx+mw-11,y+3.7,{align:'center'});
+    y+=8;
+
+    rr(doc,mx,y,mw,6,1.2,C.TH);
+    doc.setTextColor(...C.WHITE);doc.setFontSize(6);doc.setFont('helvetica','bold');
+    doc.text('Rank',mx+5,y+4);doc.text('Function',mx+18,y+4);
+    doc.text('Total',mx+65,y+4,{align:'center'});doc.text('Completed',mx+90,y+4,{align:'center'});
+    doc.text('Delayed',mx+115,y+4,{align:'center'});doc.text('Rate',mx+140,y+4,{align:'center'});
+    y+=6.5;
+
+    cat.fs.forEach((f,i)=>{
+      const rh=6;
+      if(i%2===1){doc.setFillColor(...C.TE);doc.rect(mx,y,mw,rh,'F');}
+      doc.setDrawColor(...C.BDR);doc.setLineWidth(0.1);doc.line(mx,y+rh,mx+mw,y+rh);
+
+      const rc=i===0?[[254,249,195],[161,98,7]]:i===1?[[241,245,249],[71,85,105]]:i===2?[[254,215,170],[154,52,18]]:[[243,232,255],[124,58,237]];
+      doc.setFillColor(...rc[0]);doc.circle(mx+5,y+3,2.3,'F');
+      doc.setTextColor(...rc[1]);doc.setFontSize(5.5);doc.setFont('helvetica','bold');
+      doc.text(String(i+1),mx+5,y+3.8,{align:'center'});
+
+      doc.setTextColor(...C.TXT);doc.setFontSize(7);doc.setFont('helvetica','bold');doc.text(f.fn,mx+18,y+4);
+      doc.text(String(f.total),mx+65,y+4,{align:'center'});
+
+      rr(doc,mx+82,y+0.7,14,4.2,2,C.GRN_BG);doc.setTextColor(...C.GRN_D);doc.setFontSize(6.5);
+      doc.text(String(f.completed),mx+89,y+3.6,{align:'center'});
+
+      rr(doc,mx+108,y+0.7,12,4.2,2,C.RED_BG);doc.setTextColor(...C.RED_D);doc.setFontSize(6.5);
+      doc.text(String(f.delayed),mx+114,y+3.6,{align:'center'});
+
+      const clr=f.rate>0?C.GRN:C.GRY_L;doc.setTextColor(...clr);doc.setFontSize(7);
+      doc.text(`${f.rate>0?f.rate.toFixed(f.rate<10?1:0):'0'}%`,mx+140,y+4,{align:'center'});
+      y+=rh;
+    });
+    y+=5;
+  });
+
+  doc.setTextColor(...C.GRY_L);doc.setFontSize(6.5);doc.setFont('helvetica','normal');
+  doc.setDrawColor(...C.BDR);doc.line(mx,ph-11,mx+mw,ph-11);
+  doc.text(`HCD Performance Analytics Report \u2014 ${reportMonth}`,mx,ph-7);
+  doc.text('Page 3 of 4',mx+mw,ph-7,{align:'right'});
+
+  // ═══════ PAGE 4: KEY INSIGHTS ═══════
+  doc.addPage();doc.setFillColor(...C.BG);doc.rect(0,0,pw,ph,'F');
+  y=14;
+  doc.setTextColor(...C.GRY);doc.setFontSize(7.5);doc.setFont('helvetica','bold');
+  doc.text('KEY INSIGHTS & RECOMMENDATIONS',mx,y);y+=3.5;
+  doc.setTextColor(...C.TXS);doc.setFontSize(6.5);doc.setFont('helvetica','normal');
+  doc.text("What's working, what's at risk, and recommended next steps",mx,y);y+=6;
+
+  const cW2=(mw-4)/2,cH2=32;
+  const drawIC=(x,yy,topC,title,badgeC,badgeTxt,val,valC,detail)=>{
+    rr(doc,x,yy,cW2,cH2,2,[255,255,255],C.BDR);
+    doc.setFillColor(...topC);doc.rect(x,yy,cW2,0.8,'F');
+    doc.setTextColor(...C.GRY);doc.setFontSize(5);doc.setFont('helvetica','bold');
+    doc.text(title.toUpperCase(),x+4,yy+6);
+    if(badgeTxt){rr(doc,x+4,yy+8,Math.min(doc.getTextWidth(badgeTxt)+5,cW2-8),4,1.2,badgeC);
+    doc.setTextColor(...valC);doc.setFontSize(5.5);doc.setFont('helvetica','bold');doc.text(badgeTxt,x+6.5,yy+10.8);}
+    doc.setTextColor(...valC);doc.setFontSize(10);doc.setFont('helvetica','bold');
+    doc.text(val,x+4,yy+(badgeTxt?18:14));
+    doc.setTextColor(...C.TXS);doc.setFontSize(5.5);doc.setFont('helvetica','normal');
+    const dl=doc.splitTextToSize(detail,cW2-8);doc.text(dl.slice(0,3),x+4,yy+(badgeTxt?22:18));
+  };
+
+  const bFull=fullMonths[months.indexOf(d.busiest.m)]||d.busiest.m;
+  const twPct=d.totalW>0?((d.workload[0]?.w/d.totalW)*100).toFixed(1):'0';
+
+  drawIC(mx,y,C.GRN,'Top Performer',C.GRN_BG,`${funcFullNames[d.top.fn]} (${d.top.fn})`,`${d.top.rate.toFixed(1)}% completion`,C.GRN_D,`${d.top.completed} of ${d.top.total} activities completed.`);
+  drawIC(mx+cW2+4,y,C.RED,'Most At Risk',C.RED_BG,`${funcFullNames[d.worst.fn]} (${d.worst.fn})`,`${d.worst.rate.toFixed(0)}% completion`,C.RED_D,`${d.worst.completed} of ${d.worst.mdu} due dates completed. ${d.worst.completed===0?'No activities in progress.':''}`);
+  y+=cH2+3;
+  drawIC(mx,y,C.GOLD,'Busiest Month Ahead',null,null,`${bFull} \u2014 ${d.busiest.w} wt pts`,C.AMB_D,'Highest weighted workload ahead. Planning should begin early to avoid bottleneck.');
+  drawIC(mx+cW2+4,y,C.VIO,'Workload Distribution',null,null,`${d.workload[0]?.fn} carries ${twPct}%`,C.VIO_D,`${d.workload[0]?.fn}: ${d.workload[0]?.w} pts highest. ${d.workload[d.workload.length-1]?.fn}: ${d.workload[d.workload.length-1]?.w} pts lightest.`);
+  y+=cH2+5;
+
+  // Workload bars
+  doc.setTextColor(...C.TXT);doc.setFontSize(7.5);doc.setFont('helvetica','bold');
+  doc.text('Function Workload Balance',mx,y);
+  doc.setTextColor(...C.TXL);doc.setFontSize(5);doc.setFont('helvetica','normal');
+  doc.text('Weights: Programs x3 | Maintenance x2 | Reports x1',mx+mw,y,{align:'right'});
+  y+=3;doc.setTextColor(...C.TXS);doc.setFontSize(6);doc.text('Weighted workload per function',mx,y);y+=4;
+
+  const mxW=d.workload[0]?.w||1;
+  d.workload.forEach(w=>{
+    doc.setTextColor(...C.TXT);doc.setFontSize(6);doc.setFont('helvetica','bold');doc.text(w.fn,mx,y+2.8);
+    const bX=mx+20,bWt=mw-40,bH=4.5;
+    rr(doc,bX,y,bWt,bH,1.2,[240,236,245]);
+    const tbW=bWt*(w.w/mxW);let bxx=bX;
+    if(w.pw>0){const sw=tbW*(w.pw/w.w);doc.setFillColor(...C.NAV);doc.rect(bxx,y,sw,bH,'F');if(sw>5){doc.setTextColor(...C.WHITE);doc.setFontSize(4);doc.setFont('helvetica','bold');doc.text(String(w.pw),bxx+sw/2,y+3,{align:'center'});}bxx+=sw;}
+    if(w.mw>0){const sw=tbW*(w.mw/w.w);doc.setFillColor(...C.STL);doc.rect(bxx,y,sw,bH,'F');if(sw>5){doc.setTextColor(...C.WHITE);doc.setFontSize(4);doc.setFont('helvetica','bold');doc.text(String(w.mw),bxx+sw/2,y+3,{align:'center'});}bxx+=sw;}
+    if(w.rw>0){const sw=tbW*(w.rw/w.w);doc.setFillColor(...C.SIL);doc.rect(bxx,y,sw,bH,'F');if(sw>5){doc.setTextColor(71,85,105);doc.setFontSize(4);doc.setFont('helvetica','bold');doc.text(String(w.rw),bxx+sw/2,y+3,{align:'center'});}}
+    doc.setTextColor(...C.TXT);doc.setFontSize(6.5);doc.setFont('helvetica','bold');
+    doc.text(`${w.w}`,mx+mw-4,y+3,{align:'right'});
+    doc.setTextColor(...C.TXL);doc.setFontSize(5);doc.setFont('helvetica','normal');
+    doc.text('pts',mx+mw,y+3,{align:'right'});
+    y+=6;
+  });
+
+  y+=1;doc.setDrawColor(...C.BDR);doc.line(mx,y,mx+mw,y);y+=2.5;
+  lx=mx;
+  [[C.NAV,'Programs (x3)'],[C.STL,'Maintenance (x2)'],[C.SIL,'Reports (x1)']].forEach(([c,t])=>{
+    rr(doc,lx,y,2,2,0.5,c);doc.setTextColor(...C.GRY);doc.setFontSize(5);doc.setFont('helvetica','normal');
+    doc.text(t,lx+3.5,y+1.5);lx+=doc.getTextWidth(t)+9;
+  });
+  y+=6;
+
+  // Recommendations
+  doc.setDrawColor(...C.BDR);doc.line(mx,y,mx+mw,y);y+=4;
+  doc.setTextColor(...C.TXT);doc.setFontSize(7.5);doc.setFont('helvetica','bold');
+  doc.text('Action Recommendations',mx,y);y+=3;
+  doc.setTextColor(...C.GRY);doc.setFontSize(5.5);doc.setFont('helvetica','normal');
+  doc.text('Priority actions for this month based on current data',mx,y);y+=4;
+
+  genRecs(d).forEach((rec,i)=>{
+    rr(doc,mx,y,mw,10,2,C.CBG,C.BDR);
+    doc.setFillColor(...C.TXT);doc.circle(mx+4.5,y+5,2.5,'F');
+    doc.setTextColor(...C.GOLD);doc.setFontSize(6);doc.setFont('helvetica','bold');
+    doc.text(String(i+1),mx+4.5,y+5.8,{align:'center'});
+    doc.setTextColor(...C.TXT);doc.setFontSize(6.5);doc.setFont('helvetica','bold');
+    doc.text(rec.b,mx+10,y+4);
+    doc.setTextColor(51,51,51);doc.setFontSize(6);doc.setFont('helvetica','normal');
+    const rl=doc.splitTextToSize(rec.t.trim(),mw-13);doc.text(rl.slice(0,2),mx+10,y+7.5);
+    y+=11;
+  });
+
+  doc.setTextColor(...C.GRY_L);doc.setFontSize(6.5);doc.setFont('helvetica','normal');
+  doc.setDrawColor(...C.BDR);doc.line(mx,ph-11,mx+mw,ph-11);
+  doc.text(`HCD Performance Analytics Report \u2014 ${reportMonth}`,mx,ph-7);
+  doc.text('Page 4 of 4',mx+mw,ph-7,{align:'right'});
+
+  // SAVE
+  doc.save(`HCD_Analytics_${fullMonths[now.getMonth()]}_2026.pdf`);
 }
