@@ -2,7 +2,7 @@
 // Universal Workflow Engine — module-agnostic helper
 // =============================================
 // Used by:
-//   - backend/routes/workflow.js (admin-approve, admin-reject, history)
+//   - backend/routes/workflow.js (admin-approve, admin-reject, admin-reopen, history)
 //   - backend/routes/dashboards.js (save draft, submit)
 //
 // Design (see audit v5.1 Section 6.7 + 6.8):
@@ -58,6 +58,11 @@ const STATUS_VALUES = [
 // actors: which role(s) may initiate this transition (besides admin, who
 // can always force a transition to 'approved' or 'rejected' via override).
 // Roles are LOWERCASE to match the LOWER() pattern in checkPermission.
+//
+// Admin-reopen transitions (approved->draft, published->draft) are
+// distinct from the admin approve/reject override. They are explicit
+// admin actions exposed via POST /api/workflow/admin-reopen, requiring
+// a reason, and always audited via workflow_history.
 // =============================================
 const ALLOWED_TRANSITIONS = {
   draft: [
@@ -81,10 +86,11 @@ const ALLOWED_TRANSITIONS = {
     { toState: 'draft', actors: ['owner', 'admin'] }   // resume editing
   ],
   approved: [
-    { toState: 'published', actors: ['admin'] }         // publish step deferred — no Phase 0 endpoint
+    { toState: 'published', actors: ['admin'] },        // publish step deferred — no Phase 0 endpoint
+    { toState: 'draft',     actors: ['admin'] }         // admin-reopen (POST /api/workflow/admin-reopen)
   ],
   published: [
-    // terminal in Phase 0 — no transitions out
+    { toState: 'draft', actors: ['admin'] }             // admin-reopen (POST /api/workflow/admin-reopen)
   ]
 };
 
