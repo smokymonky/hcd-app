@@ -7,7 +7,7 @@ const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcryptjs');
 const pool = require('../config/database');
-const { authenticateToken, isAdmin } = require('../middleware/auth');
+const { authenticateToken, isAdmin, autoAssignModuleForUser } = require('../middleware/auth');
 
 // =============================================
 // GET /api/users
@@ -89,9 +89,21 @@ router.post('/', authenticateToken, isAdmin, async (req, res) => {
       [name, email.toLowerCase(), hashedPassword, password, role, userFunction]
     );
 
+    const newUser = result.rows[0];
+
+    // PHASE 0: auto-assign dashboard module access based on user's function.
+    // Best-effort — never blocks user creation. autoAssignModuleForUser
+    // is no-throw (returns {mapped:false, reason} on errors). Users with
+    // function values not in FUNCTION_TO_MODULE_MAP (OD, Com&Bn, ALL,
+    // multi-function, null) get moduleAutoAssigned:null — admin must
+    // assign module access manually via user_module_access.
+    const moduleResult = await autoAssignModuleForUser(newUser.id, newUser.function);
+
     res.status(201).json({
       message: 'User created successfully',
-      user: result.rows[0]
+      user: newUser,
+      moduleAutoAssigned: moduleResult.moduleCode,
+      moduleAssignDetail: moduleResult
     });
 
   } catch (err) {
