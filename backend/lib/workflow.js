@@ -59,6 +59,10 @@ const STATUS_VALUES = [
 // can always force a transition to 'approved' or 'rejected' via override).
 // Roles are LOWERCASE to match the LOWER() pattern in checkPermission.
 //
+// NOTE: creation (null -> 'draft') is NOT listed here — it's handled as
+// a special case in validateTransition because creation is not a transition
+// between two existing states; it's the act of bringing a row into existence.
+//
 // Admin-reopen transitions (approved->draft, published->draft) are
 // distinct from the admin approve/reject override. They are explicit
 // admin actions exposed via POST /api/workflow/admin-reopen, requiring
@@ -99,7 +103,8 @@ const ALLOWED_TRANSITIONS = {
 //   actorRole: lowercase role string ('admin','function_head',...)
 //   actorIsOwner: boolean — true if the actor is the submission's created_by
 //                 (used for 'owner' actor matches on draft->submitted and
-//                  rejected->draft transitions)
+//                  rejected->draft transitions, and for the creation
+//                  special case null->draft)
 // Returns: { valid: bool, reason: string }
 // =============================================
 const validateTransition = (fromState, toState, actorRole, actorIsOwner = false) => {
@@ -114,9 +119,24 @@ const validateTransition = (fromState, toState, actorRole, actorIsOwner = false)
   }
 
   const role = (actorRole || '').toLowerCase();
+  const isAdmin = role === 'admin';
+
+  // Creation special case: null -> 'draft' is the initial save of a brand-new
+  // submission. ALLOWED_TRANSITIONS does not list this (there is no 'null' key)
+  // because creation is not a transition between two states, it is the act of
+  // bringing the row into existence. Allowed for the row's owner (the user
+  // creating it) and for admin. Anyone else cannot create on behalf of others.
+  if (fromState === null && toState === 'draft') {
+    if (isAdmin || actorIsOwner) {
+      return { valid: true, reason: 'creation' };
+    }
+    return {
+      valid: false,
+      reason: `Only the submission owner or admin may create a new submission. Role '${role}' may not initiate creation.`
+    };
+  }
 
   // Admin override: admin can transition from any non-terminal state to approved or rejected
-  const isAdmin = role === 'admin';
   if (isAdmin && (toState === 'approved' || toState === 'rejected')) {
     if (fromState === 'approved' || fromState === 'published') {
       return { valid: false, reason: `Cannot override terminal state '${fromState}'` };
