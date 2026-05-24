@@ -10,6 +10,8 @@ require('dotenv').config();
 const authRoutes = require('./routes/auth');
 const activitiesRoutes = require('./routes/activities');
 const usersRoutes = require('./routes/users');
+const dashboardsRoutes = require('./routes/dashboards');
+const workflowRoutes = require('./routes/workflow');
 
 // Import database initializer
 const initDatabase = require('./config/initDatabase');
@@ -47,6 +49,8 @@ app.get('/api/health', (req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/activities', activitiesRoutes);
 app.use('/api/users', usersRoutes);
+app.use('/api/dashboards', dashboardsRoutes);
+app.use('/api/workflow', workflowRoutes);
 
 // =============================================
 // Error Handling
