@@ -84,7 +84,6 @@ export default function HubPage({ user, onLogout }) {
       });
 
     return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Resolve the entry for the current category (Level 2)
