@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ICON_PATHS } from '../../config/moduleConfig';
+import { ICON_PATHS } from '../config/moduleConfig';
 
 // =============================================
 // HubTile
