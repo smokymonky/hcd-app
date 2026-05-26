@@ -8,9 +8,9 @@ import {
   getShellEntry,
 } from '../config/moduleConfig';
 import { dashboardsAPI } from '../services/api';
-import HubTile from '../components/hub/HubTile';
-import UserIdentityCard from '../components/hub/UserIdentityCard';
-import AccessDeniedModal from '../components/hub/AccessDeniedModal';
+import HubTile from '../hub/HubTile';
+import UserIdentityCard from '../hub/UserIdentityCard';
+import AccessDeniedModal from '../hub/AccessDeniedModal';
 
 // =============================================
 // HubPage
