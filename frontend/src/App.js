@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
 import AdminPage from './pages/AdminPage';
+import HubPage from './pages/HubPage';
 
 function App() {
   const [user, setUser] = useState(null);
@@ -26,6 +27,7 @@ function App() {
     localStorage.removeItem('hcd_token');
     localStorage.removeItem('hcd_user');
     localStorage.removeItem('hcd_permissions');
+    localStorage.removeItem('hcd_my_dashboard_access');
     setUser(null);
   };
 
@@ -46,6 +48,12 @@ function App() {
         <Route path="/login" element={user ? <Navigate to="/dashboard" /> : <LoginPage setUser={setUser} />} />
         <Route path="/dashboard" element={user ? <DashboardPage user={user} onLogout={handleLogout} /> : <Navigate to="/login" />} />
         <Route path="/admin" element={isAdmin ? <AdminPage user={user} onLogout={handleLogout} /> : <Navigate to={user ? "/dashboard" : "/login"} />} />
+        {/* HUB — Phase 1. Both /hub (Level 1) and /hub/:categoryId (Level 2)
+            served by the same HubPage component (Rule 13 #1, #7).
+            Login still routes to /dashboard (Annual Plan) — Phase 7 flips the
+            cutover to /hub. Hub exists but is unlinked from login flow until then. */}
+        <Route path="/hub" element={user ? <HubPage user={user} onLogout={handleLogout} /> : <Navigate to="/login" />} />
+        <Route path="/hub/:categoryId" element={user ? <HubPage user={user} onLogout={handleLogout} /> : <Navigate to="/login" />} />
         <Route path="*" element={<Navigate to={user ? "/dashboard" : "/login"} />} />
       </Routes>
     </BrowserRouter>
