@@ -76,3 +76,77 @@ export const usersAPI = {
   }),
   delete: (id) => request(`/users/${id}`, { method: 'DELETE' }),
 };
+
+// =============================================
+// Dashboards (Phase 1+)
+// =============================================
+// Generic helpers around /api/dashboards endpoints. Phase 1 only
+// uses getMyAccess(); the rest are exported for Phases 2-6 to use
+// without re-adding helpers.
+// =============================================
+export const dashboardsAPI = {
+  // GET /api/dashboards/my-access
+  // Returns array of dashboard modules the current user can access.
+  // For admin: all active modules with access_level='admin'.
+  // For others: rows from user_module_access joined with dashboard_modules.
+  // Tolerates optional fields the backend may add later (lastViewed,
+  // favorited, pinned, etc. — Rule 13 #6).
+  getMyAccess: () => request('/dashboards/my-access'),
+
+  // GET /api/dashboards/modules — full list (any authed user)
+  listModules: () => request('/dashboards/modules'),
+
+  // GET /api/dashboards/:moduleCode/submissions?year=&status=
+  listSubmissions: (moduleCode, filters = {}) => {
+    const params = new URLSearchParams();
+    Object.entries(filters).forEach(([k, v]) => { if (v != null && v !== '') params.append(k, v); });
+    const qs = params.toString();
+    return request(`/dashboards/${encodeURIComponent(moduleCode)}/submissions${qs ? '?' + qs : ''}`);
+  },
+
+  // GET /api/dashboards/submissions/:id
+  getSubmission: (submissionId) => request(`/dashboards/submissions/${submissionId}`),
+
+  // POST /api/dashboards/:moduleCode/submissions
+  saveSubmission: (moduleCode, payload) => request(
+    `/dashboards/${encodeURIComponent(moduleCode)}/submissions`,
+    { method: 'POST', body: JSON.stringify(payload) }
+  ),
+
+  // POST /api/dashboards/submissions/:id/submit
+  submitSubmission: (submissionId) => request(
+    `/dashboards/submissions/${submissionId}/submit`,
+    { method: 'POST', body: JSON.stringify({}) }
+  ),
+
+  // GET /api/dashboards/:moduleCode/published?year=&month=
+  getPublished: (moduleCode, year, month) => request(
+    `/dashboards/${encodeURIComponent(moduleCode)}/published?year=${year}&month=${month}`
+  ),
+
+  // GET /api/dashboards/:moduleCode/trends?field_key=&year=
+  getTrends: (moduleCode, fieldKey, year) => request(
+    `/dashboards/${encodeURIComponent(moduleCode)}/trends?field_key=${encodeURIComponent(fieldKey)}&year=${year}`
+  ),
+
+  // GET /api/dashboards/pending-approval (admin only)
+  getPendingApproval: () => request('/dashboards/pending-approval'),
+};
+
+// =============================================
+// Workflow (Phase 1+ — admin/review actions)
+// =============================================
+export const workflowAPI = {
+  adminApprove: (target_type, target_id, reason) => request('/workflow/admin-approve', {
+    method: 'POST', body: JSON.stringify({ target_type, target_id, reason })
+  }),
+  adminReject: (target_type, target_id, reason) => request('/workflow/admin-reject', {
+    method: 'POST', body: JSON.stringify({ target_type, target_id, reason })
+  }),
+  adminReopen: (target_type, target_id, reason) => request('/workflow/admin-reopen', {
+    method: 'POST', body: JSON.stringify({ target_type, target_id, reason })
+  }),
+  getHistory: (target_type, target_id) =>
+    request(`/workflow/history?target_type=${encodeURIComponent(target_type)}&target_id=${target_id}`),
+  listTargets: () => request('/workflow/targets'),
+};
