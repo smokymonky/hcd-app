@@ -4,6 +4,7 @@ import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
 import AdminPage from './pages/AdminPage';
 import HubPage from './pages/HubPage';
+import HROpsPage from './pages/HROpsPage';
 
 function App() {
   const [user, setUser] = useState(null);
@@ -54,6 +55,13 @@ function App() {
             cutover to /hub. Hub exists but is unlinked from login flow until then. */}
         <Route path="/hub" element={user ? <HubPage user={user} onLogout={handleLogout} /> : <Navigate to="/login" />} />
         <Route path="/hub/:categoryId" element={user ? <HubPage user={user} onLogout={handleLogout} /> : <Navigate to="/login" />} />
+        {/* HR OPERATIONS MODULE — Phase 2A. Path-based routing (Rule 13 #1, #7):
+              /hub/dashboards/HR_OPS         → defaults to Data Entry inside HROpsPage
+              /hub/dashboards/HR_OPS/:view   → :view ∈ {entry, snapshot}
+            Future extension to /HR_OPS/snapshot/:year/:month is a route-line away
+            when historical month deep-linking becomes a workflow need. */}
+        <Route path="/hub/dashboards/HR_OPS" element={user ? <HROpsPage user={user} onLogout={handleLogout} /> : <Navigate to="/login" />} />
+        <Route path="/hub/dashboards/HR_OPS/:view" element={user ? <HROpsPage user={user} onLogout={handleLogout} /> : <Navigate to="/login" />} />
         <Route path="*" element={<Navigate to={user ? "/dashboard" : "/login"} />} />
       </Routes>
     </BrowserRouter>
