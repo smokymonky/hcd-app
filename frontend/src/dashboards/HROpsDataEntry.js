@@ -6,9 +6,16 @@ import {
   computeField,
   computeSectionHeaderTotal,
   formatValue,
+  buildYearOptions,
+  buildMonthOptions,
 } from '../config/hrOpsFields';
 import { dashboardsAPI } from '../services/api';
 import StatusBadge from './StatusBadge';
+import Dropdown from './Dropdown';
+
+// SYSTEM_START_YEAR re-imported as constant for inline hint text.
+// Source of truth lives in config/hrOpsFields.js (Rule 13).
+import { SYSTEM_START_YEAR } from '../config/hrOpsFields';
 
 // =============================================
 // HROpsDataEntry
@@ -44,6 +51,7 @@ export default function HROpsDataEntry({
   month,
   variant = 'full',
   onStatusChange,   // (newStatus) → void — parent updates its state badge
+  onPeriodChange,   // (year, month) → void — parent navigates via URL (Phase 2A Extension)
 }) {
   // Submission state
   const [submission, setSubmission] = useState(null);
@@ -214,8 +222,43 @@ export default function HROpsDataEntry({
   // Build a synthetic numeric values map for computed fields (parse-once)
   // Note: we pass the raw string map to computeField; helpers in COMPUTERS
   // parse to number themselves. This keeps the form simple.
+
+  // Period selector options — Rule 13 (config-driven year list with
+  // SYSTEM_START_YEAR floor). Month list is always all 12 — Entry view
+  // allows submission for any month within the floor.
+  const yearOptions = buildYearOptions();
+  const monthOptions = buildMonthOptions();
+
+  function handlePeriodChange(nextYear, nextMonth) {
+    if (typeof onPeriodChange === 'function') {
+      onPeriodChange(Number(nextYear), Number(nextMonth));
+    }
+  }
+
   return (
     <div style={styles.canvas}>
+      {/* Period selector (Phase 2A Extension) — historical entry */}
+      <div style={styles.periodSelector}>
+        <span style={styles.periodSelectorLabel}>ENTERING</span>
+        <Dropdown
+          label="Year"
+          value={String(year)}
+          options={yearOptions}
+          onChange={(v) => handlePeriodChange(v, month)}
+          width={120}
+        />
+        <Dropdown
+          label="Month"
+          value={String(month)}
+          options={monthOptions}
+          onChange={(v) => handlePeriodChange(year, v)}
+          width={150}
+        />
+        <span style={styles.periodSelectorHint}>
+          Year list begins {SYSTEM_START_YEAR} (system start).
+        </span>
+      </div>
+
       {/* Status banners */}
       {renderStatusBanner(status, latestRejection)}
 
@@ -627,6 +670,27 @@ const styles = {
     padding: '0 48px',
     animation: 'hrFadeInUp 0.5s 0.05s ease both',
   },
+
+  // Period selector strip (Phase 2A Extension)
+  periodSelector: {
+    background: 'rgba(255,255,255,0.03)',
+    border: '1px solid rgba(255,255,255,0.1)',
+    backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
+    borderRadius: 16,
+    padding: '16px 20px',
+    marginBottom: 18,
+    display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap',
+  },
+  periodSelectorLabel: {
+    fontSize: 11, fontWeight: 700,
+    color: 'rgba(255,255,255,0.5)',
+    letterSpacing: '1.5px', textTransform: 'uppercase',
+  },
+  periodSelectorHint: {
+    fontSize: 11, color: 'rgba(255,255,255,0.4)',
+    marginLeft: 'auto', fontStyle: 'italic',
+  },
+
   loading: {
     minHeight: 300,
     display: 'flex',
