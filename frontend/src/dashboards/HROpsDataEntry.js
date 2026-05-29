@@ -13,10 +13,6 @@ import { dashboardsAPI } from '../services/api';
 import StatusBadge from './StatusBadge';
 import Dropdown from './Dropdown';
 
-// SYSTEM_START_YEAR re-imported as constant for inline hint text.
-// Source of truth lives in config/hrOpsFields.js (Rule 13).
-import { SYSTEM_START_YEAR } from '../config/hrOpsFields';
-
 // =============================================
 // HROpsDataEntry
 // =============================================
@@ -254,9 +250,6 @@ export default function HROpsDataEntry({
           onChange={(v) => handlePeriodChange(year, v)}
           width={150}
         />
-        <span style={styles.periodSelectorHint}>
-          Year list begins {SYSTEM_START_YEAR} (system start).
-        </span>
       </div>
 
       {/* Status banners */}
@@ -664,7 +657,6 @@ function FieldCell({ field, values, onChange, readOnly }) {
 const styles = {
   canvas: {
     position: 'relative',
-    zIndex: 5,
     maxWidth: 1100,
     margin: '24px auto 0',
     padding: '0 48px',
@@ -672,7 +664,14 @@ const styles = {
   },
 
   // Period selector strip (Phase 2A Extension)
+  // BUG 1 FIX: explicit position:relative + high zIndex lifts the entire
+  // strip ABOVE sibling section cards (which create their own stacking
+  // contexts via backdropFilter). Without this, the dropdown panel's
+  // zIndex was constrained inside periodSelector's local context and
+  // appeared behind sections in DOM source order.
   periodSelector: {
+    position: 'relative',
+    zIndex: 100,
     background: 'rgba(255,255,255,0.03)',
     border: '1px solid rgba(255,255,255,0.1)',
     backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
@@ -685,10 +684,6 @@ const styles = {
     fontSize: 11, fontWeight: 700,
     color: 'rgba(255,255,255,0.5)',
     letterSpacing: '1.5px', textTransform: 'uppercase',
-  },
-  periodSelectorHint: {
-    fontSize: 11, color: 'rgba(255,255,255,0.4)',
-    marginLeft: 'auto', fontStyle: 'italic',
   },
 
   loading: {
