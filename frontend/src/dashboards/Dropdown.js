@@ -240,7 +240,13 @@ const styles = {
     position: 'absolute',
     top: 'calc(100% + 6px)',
     left: 0,
-    zIndex: 50,
+    // BUG 1 FIX (Phase 2A Extension follow-up): bump from 50 to 1000.
+    // 50 was getting trapped behind sibling section cards in HROpsDataEntry
+    // canvas (sections create their own stacking contexts via backdropFilter).
+    // 1000 is well above any conceivable in-page content. Combined with the
+    // parent container's explicit zIndex (periodSelector etc.) lifting the
+    // dropdown's whole stacking context above sibling stacking contexts.
+    zIndex: 1000,
     minWidth: '100%',
     background: 'rgba(26,16,40,0.96)',
     backdropFilter: 'blur(20px)',
