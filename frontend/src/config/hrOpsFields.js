@@ -499,3 +499,42 @@ export function evaluateTarget(field, rawValue) {
     message: `${formatValue({ ...field, dataType: field.dataType }, magnitude)} ${word} ${formatValue(field, target)} target`,
   };
 }
+
+// =============================================
+// SYSTEM_START_YEAR + buildYearOptions (Phase 2A Extension)
+// =============================================
+// The HR Dashboards system began operating in 2026. There is no data
+// for any prior year, and no legitimate workflow requires entering
+// data for years before the system existed. The Year dropdown floors
+// here, preventing phantom historical entry.
+//
+// Rule 13: declared as a constant so future modules (TA, L&D, HR_SYS)
+// inherit the same floor without redeclaring. When Phase 8 admin UI
+// allows per-module overrides, this becomes a default that can be
+// shadowed by per-module config — but the FORM components still call
+// buildYearOptions() with whatever floor applies.
+// =============================================
+export const SYSTEM_START_YEAR = 2026;
+
+// Returns descending list of year strings: [currentYear+1, currentYear, ..., systemStart].
+// Always includes one year forward so users can prep next year's first
+// submission in late December without the dropdown blocking them.
+export function buildYearOptions(systemStart = SYSTEM_START_YEAR, refDate = new Date()) {
+  const current = refDate.getFullYear();
+  const top = current + 1;
+  const floor = Math.min(systemStart, current);   // safety if system start ever falls after current
+  const years = [];
+  for (let y = top; y >= floor; y--) years.push(String(y));
+  return years.map((y) => ({ value: y, label: y }));
+}
+
+// Month options — all 12 months, always selectable in Entry view.
+// (Snapshot view applies its own "Not yet published" mask on top of this.)
+export const MONTH_NAMES_FULL = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
+
+export function buildMonthOptions() {
+  return MONTH_NAMES_FULL.map((label, i) => ({ value: String(i + 1), label }));
+}
