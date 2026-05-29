@@ -55,13 +55,16 @@ function App() {
             cutover to /hub. Hub exists but is unlinked from login flow until then. */}
         <Route path="/hub" element={user ? <HubPage user={user} onLogout={handleLogout} /> : <Navigate to="/login" />} />
         <Route path="/hub/:categoryId" element={user ? <HubPage user={user} onLogout={handleLogout} /> : <Navigate to="/login" />} />
-        {/* HR OPERATIONS MODULE — Phase 2A. Path-based routing (Rule 13 #1, #7):
-              /hub/dashboards/HR_OPS         → defaults to Data Entry inside HROpsPage
-              /hub/dashboards/HR_OPS/:view   → :view ∈ {entry, snapshot}
-            Future extension to /HR_OPS/snapshot/:year/:month is a route-line away
-            when historical month deep-linking becomes a workflow need. */}
+        {/* HR OPERATIONS MODULE — Phase 2A + Extension. Path-based routing (Rule 13 #1, #7):
+              /hub/dashboards/HR_OPS                       → defaults to Data Entry, current month
+              /hub/dashboards/HR_OPS/:view                 → :view ∈ {entry, snapshot}, current month
+              /hub/dashboards/HR_OPS/entry/:year/:month    → entry for specific month (historical or future)
+              /hub/dashboards/HR_OPS/snapshot/:year/:month → snapshot for specific published month
+            Year is floored to SYSTEM_START_YEAR (2026) in config/hrOpsFields.js. */}
         <Route path="/hub/dashboards/HR_OPS" element={user ? <HROpsPage user={user} onLogout={handleLogout} /> : <Navigate to="/login" />} />
         <Route path="/hub/dashboards/HR_OPS/:view" element={user ? <HROpsPage user={user} onLogout={handleLogout} /> : <Navigate to="/login" />} />
+        <Route path="/hub/dashboards/HR_OPS/entry/:year/:month" element={user ? <HROpsPage user={user} onLogout={handleLogout} /> : <Navigate to="/login" />} />
+        <Route path="/hub/dashboards/HR_OPS/snapshot/:year/:month" element={user ? <HROpsPage user={user} onLogout={handleLogout} /> : <Navigate to="/login" />} />
         <Route path="*" element={<Navigate to={user ? "/dashboard" : "/login"} />} />
       </Routes>
     </BrowserRouter>
