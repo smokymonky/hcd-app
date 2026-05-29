@@ -5,40 +5,47 @@ import HROpsSnapshot from '../dashboards/HROpsSnapshot';
 import StatusBadge from '../dashboards/StatusBadge';
 import UserIdentityCard from '../hub/UserIdentityCard';
 import { dashboardsAPI } from '../services/api';
+import { SYSTEM_START_YEAR } from '../config/hrOpsFields';
 
 // =============================================
 // HROpsPage
 // =============================================
-// Phase 2A module page. Wraps:
-//   - Top strip (logo + UserIdentityCard + Logout) — same as Hub
-//   - Breadcrumb: Hub / HR Dashboards / HR Operations
-//   - Module title + period badge + status badge
-//   - Tab navigation: Data Entry ↔ Snapshot
-//   - The selected view (HROpsDataEntry or HROpsSnapshot)
-//   - Q1 banner: when user is in Entry view + current month, surface
-//     unresolved rejected prior month with one-click "Open" jump
+// Phase 2A + Extension. URL is the single source of truth for view,
+// year, and month. Component reads params, defaults intelligently when
+// absent, and passes year/month down to HROpsDataEntry as props.
 //
-// Routes (App.js):
-//   /hub/dashboards/HR_OPS                  → defaults to entry
-//   /hub/dashboards/HR_OPS/entry            → entry view
-//   /hub/dashboards/HR_OPS/snapshot         → snapshot view
+// Supported URL shapes:
+//   /hub/dashboards/HR_OPS                       → defaults: entry, current month
+//   /hub/dashboards/HR_OPS/entry                 → entry, current month
+//   /hub/dashboards/HR_OPS/snapshot              → snapshot, latest published
+//   /hub/dashboards/HR_OPS/entry/:year/:month    → entry, specific historical month
+//   /hub/dashboards/HR_OPS/snapshot/:year/:month → snapshot, specific published month
 //
-// Access:
-//   Entry view is for users with HR_OPS module access at 'owner' or
-//   'admin' level. Snapshot view is for any HR_OPS access level
-//   ('viewer' or higher). Backend enforces strictly; the UI checks
-//   here are advisory to render the right empty state.
+// Permissions: Entry view for users with HR_OPS module access at 'owner'
+// or 'admin' level. Snapshot view for any HR_OPS access level. Backend
+// enforces strictly; UI checks here are advisory.
 // =============================================
 
 export default function HROpsPage({ user, onLogout }) {
   const navigate = useNavigate();
-  const { view: viewParam } = useParams();
-  const view = viewParam === 'snapshot' ? 'snapshot' : 'entry';
+  const params = useParams();
 
+  // ---------- DERIVE VIEW + YEAR + MONTH FROM URL ----------
+  // Route param names depend on which route matched. React Router gives us
+  // whichever was matched. We normalize defensively.
   const now = useMemo(() => new Date(), []);
-  const [year] = useState(now.getFullYear());
-  const [month] = useState(now.getMonth() + 1);
+  const view = resolveView(params);
+  const { year, month } = resolvePeriod(params, now);
 
+  // Sanity floor: if a URL hands us /entry/2024/3 (before SYSTEM_START_YEAR),
+  // redirect to the floor year + same month. We never RENDER below floor.
+  useEffect(() => {
+    if (year < SYSTEM_START_YEAR) {
+      navigate(`/hub/dashboards/HR_OPS/${view}/${SYSTEM_START_YEAR}/${month}`, { replace: true });
+    }
+  }, [year, month, view, navigate]);
+
+  // State
   const [currentStatus, setCurrentStatus] = useState('empty');
   const [rejectedPrior, setRejectedPrior] = useState(null);   // { year, month, id } or null
   const [accessLevel, setAccessLevel] = useState(null);        // 'admin' | 'owner' | 'viewer' | null
@@ -48,10 +55,9 @@ export default function HROpsPage({ user, onLogout }) {
     document.body.setAttribute('data-theme', 'dark');
   }, []);
 
-  // Resolve user's HR_OPS access level (so we can disable Entry tab for viewers)
+  // Resolve user's HR_OPS access level (cache-first, then refresh).
   useEffect(() => {
     let cancelled = false;
-    // First: read from cached my-access (Hub already populates this)
     const cached = localStorage.getItem('hcd_my_dashboard_access');
     let level = null;
     if (cached) {
@@ -64,57 +70,71 @@ export default function HROpsPage({ user, onLogout }) {
       } catch (_) { /* ignore */ }
     }
     if (level) setAccessLevel(level);
-    // Always refresh from server
     dashboardsAPI.getMyAccess()
       .then((rows) => {
         if (cancelled) return;
         const row = (rows || []).find((m) => m.code === 'HR_OPS');
         setAccessLevel(row ? row.access_level : null);
-        // Update cache
         localStorage.setItem('hcd_my_dashboard_access', JSON.stringify(rows || []));
       })
       .catch((err) => {
         console.error('[HROpsPage] getMyAccess failed:', err);
-        // Rule 5: keep previously cached value, don't blank UI silently
       });
     return () => { cancelled = true; };
   }, []);
 
-  // Q1 — check for unresolved rejected prior month
+  // Q1 — check for unresolved rejected prior month.
+  // Re-runs whenever year changes (e.g. user switches periods via dropdown).
+  // We check for rejected submissions in `year` AND `year - 1` to catch
+  // the January-of-new-year edge case.
   useEffect(() => {
     let cancelled = false;
-    // Look for any rejected submission for HR_OPS in the current year
-    // (and prior year if January, optional — keep simple for Phase 2A).
-    dashboardsAPI.listSubmissions('HR_OPS', { year, status: 'rejected' })
-      .then((rows) => {
+    const yearsToCheck = [year, year - 1].filter((y) => y >= SYSTEM_START_YEAR);
+    Promise.all(
+      yearsToCheck.map((y) => dashboardsAPI.listSubmissions('HR_OPS', { year: y, status: 'rejected' }))
+    )
+      .then((results) => {
         if (cancelled) return;
-        const list = Array.isArray(rows) ? rows : [];
-        // Find any rejected submission BEFORE current month
-        const priors = list.filter((r) =>
+        // Flatten and find prior-to-current
+        const all = [].concat(...results.map((r) => Array.isArray(r) ? r : []));
+        const priors = all.filter((r) =>
           (r.year < year) || (r.year === year && r.month < month)
         );
         if (priors.length === 0) {
           setRejectedPrior(null);
         } else {
-          // Surface the most recent one
           priors.sort((a, b) => (b.year - a.year) || (b.month - a.month));
           setRejectedPrior(priors[0]);
         }
       })
       .catch((err) => {
         console.error('[HROpsPage] rejected-prior check failed:', err);
-        // Non-fatal — banner just won't appear
       });
     return () => { cancelled = true; };
   }, [year, month]);
 
   // ---------- HANDLERS ----------
+  // setView preserves year/month when switching tabs IF the URL had them.
+  // When URL is /entry (no year/month) → tab switch goes to /snapshot
+  // (also without year/month, defaulting to "latest published" in Snapshot).
   function setView(next) {
-    if (next === 'snapshot') {
-      navigate('/hub/dashboards/HR_OPS/snapshot');
+    const hasExplicitPeriod = params.year && params.month;
+    if (hasExplicitPeriod) {
+      navigate(`/hub/dashboards/HR_OPS/${next}/${year}/${month}`);
     } else {
-      navigate('/hub/dashboards/HR_OPS/entry');
+      navigate(`/hub/dashboards/HR_OPS/${next}`);
     }
+  }
+
+  // Called by HROpsDataEntry's period dropdowns. Updates URL — that
+  // triggers re-render with new year/month props, which re-fetches data.
+  function handleEntryPeriodChange(newYear, newMonth) {
+    navigate(`/hub/dashboards/HR_OPS/entry/${newYear}/${newMonth}`);
+  }
+
+  // Called by HROpsSnapshot's period dropdowns (same pattern).
+  function handleSnapshotPeriodChange(newYear, newMonth) {
+    navigate(`/hub/dashboards/HR_OPS/snapshot/${newYear}/${newMonth}`);
   }
 
   function handleLogout() {
@@ -122,23 +142,21 @@ export default function HROpsPage({ user, onLogout }) {
     navigate('/login');
   }
 
+  // Q1 banner — N2 fix: navigate to the actual rejected month's entry view.
   function openRejectedPrior() {
-    // For Phase 2A, the user just acknowledges the banner — actually
-    // navigating to a specific prior-month entry requires year/month
-    // routing on this page. We capture the requirement for a Phase 2A
-    // follow-up; for now, scroll to the form (current month) and
-    // surface a message asking them to switch period manually once
-    // the period-picker UI is added in Phase 4.
-    // TODO Phase 4: add /hub/dashboards/HR_OPS/entry/:year/:month route.
-    setView('entry');
-    // Soft visual cue: highlight banner briefly (CSS handles via :target eventually)
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    if (!rejectedPrior) return;
+    navigate(`/hub/dashboards/HR_OPS/entry/${rejectedPrior.year}/${rejectedPrior.month}`);
   }
 
   // ---------- RENDER ----------
-  // Q1 banner: only show on Entry view of current month when prior rejected
-  // exists AND user is not already viewing that rejected month.
-  const showRejectedBanner = view === 'entry' && !!rejectedPrior;
+  // Smart-relevance banner (Principle 6B.9):
+  // Show only on Entry view AND only when user is NOT already on the
+  // rejected month. If they ARE on it, the Rejected state UI already
+  // surfaces the rejection reason; the banner would be redundant.
+  const onRejectedMonthAlready = rejectedPrior
+    && rejectedPrior.year === year
+    && rejectedPrior.month === month;
+  const showRejectedBanner = view === 'entry' && !!rejectedPrior && !onRejectedMonthAlready;
 
   // Tab access: viewers see only Snapshot
   const canSeeEntry = accessLevel === 'admin' || accessLevel === 'owner';
@@ -239,7 +257,7 @@ export default function HROpsPage({ user, onLogout }) {
         </div>
       </div>
 
-      {/* Q1 banner */}
+      {/* Q1 banner — smart-relevance hidden when user is on the rejected month */}
       {showRejectedBanner && (
         <div style={styles.bannerResume}>
           <span style={styles.bannerIcon}>↻</span>
@@ -266,15 +284,26 @@ export default function HROpsPage({ user, onLogout }) {
       {/* VIEW */}
       {view === 'entry' && canSeeEntry && (
         <HROpsDataEntry
+          /* Rerender (and refetch) whenever year+month change — keyed on URL */
+          key={`entry-${year}-${month}`}
           user={user}
           year={year}
           month={month}
           variant="full"
           onStatusChange={setCurrentStatus}
+          onPeriodChange={handleEntryPeriodChange}
         />
       )}
       {view === 'snapshot' && (
-        <HROpsSnapshot user={user} variant="full" />
+        <HROpsSnapshot
+          /* Rerender when URL period changes (or when URL had no period — pass null) */
+          key={`snapshot-${params.year || 'auto'}-${params.month || 'auto'}`}
+          user={user}
+          urlYear={params.year ? Number(params.year) : null}
+          urlMonth={params.month ? Number(params.month) : null}
+          variant="full"
+          onPeriodChange={handleSnapshotPeriodChange}
+        />
       )}
 
       <div style={styles.footer}>Human Capital Hub</div>
@@ -283,8 +312,40 @@ export default function HROpsPage({ user, onLogout }) {
 }
 
 // =============================================
-// Helpers
+// URL → state helpers
 // =============================================
+// React Router gives us only the params that matched. We normalize the
+// `:view` param and resolve year/month, defaulting to current month
+// when not in URL.
+
+function resolveView(params) {
+  // Routes:
+  //   /HR_OPS                            → no params, default to entry
+  //   /HR_OPS/:view                      → params.view = 'entry' | 'snapshot'
+  //   /HR_OPS/entry/:year/:month         → no `view` param, derive from path
+  //   /HR_OPS/snapshot/:year/:month      → no `view` param, derive from path
+  if (params.view === 'snapshot') return 'snapshot';
+  if (params.view === 'entry') return 'entry';
+  // Period-bearing routes don't use :view — we know from window.location
+  if (typeof window !== 'undefined' && window.location && window.location.pathname) {
+    if (window.location.pathname.includes('/HR_OPS/snapshot/')) return 'snapshot';
+    if (window.location.pathname.includes('/HR_OPS/entry/')) return 'entry';
+  }
+  return 'entry';
+}
+
+function resolvePeriod(params, now) {
+  const py = parseInt(params.year, 10);
+  const pm = parseInt(params.month, 10);
+  const hasValidYear = Number.isFinite(py) && py >= SYSTEM_START_YEAR;
+  const hasValidMonth = Number.isFinite(pm) && pm >= 1 && pm <= 12;
+  if (hasValidYear && hasValidMonth) {
+    return { year: py, month: pm };
+  }
+  // Defaults: current year + current month (1-indexed)
+  return { year: now.getFullYear(), month: now.getMonth() + 1 };
+}
+
 function monthName(m) {
   return ['', 'January', 'February', 'March', 'April', 'May', 'June',
     'July', 'August', 'September', 'October', 'November', 'December'][m] || '';
