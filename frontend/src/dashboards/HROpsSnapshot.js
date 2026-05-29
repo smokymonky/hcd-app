@@ -30,17 +30,32 @@ const MONTH_NAMES = [
   'July', 'August', 'September', 'October', 'November', 'December',
 ];
 
-export default function HROpsSnapshot({ user, variant = 'full' }) {
+export default function HROpsSnapshot({
+  user,
+  variant = 'full',
+  urlYear = null,        // Phase 2A Extension: URL-driven year (null = use default)
+  urlMonth = null,       // Phase 2A Extension: URL-driven month (null = use default)
+  onPeriodChange,        // (year, month) → void — parent navigates via URL
+}) {
   // Available published periods: { year: [1..12 month numbers] }
   const [available, setAvailable] = useState({});
-  const [selectedYear, setSelectedYear] = useState(null);
-  const [selectedMonth, setSelectedMonth] = useState(null);   // 1..12
+  const [selectedYear, setSelectedYear] = useState(urlYear);
+  const [selectedMonth, setSelectedMonth] = useState(urlMonth);   // 1..12
 
   // Published submission detail
   const [snapshot, setSnapshot] = useState(null);
   const [values, setValues] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+
+  // Phase 2A Extension: if parent passes urlYear/urlMonth (from URL params),
+  // those are the source of truth. Internal selection mirrors them.
+  useEffect(() => {
+    if (urlYear !== null && urlMonth !== null) {
+      setSelectedYear(urlYear);
+      setSelectedMonth(urlMonth);
+    }
+  }, [urlYear, urlMonth]);
 
   // ---------- DISCOVER PUBLISHED PERIODS ----------
   // List all published submissions to populate Year + Month dropdowns.
@@ -56,7 +71,9 @@ export default function HROpsSnapshot({ user, variant = 'full' }) {
           byYear[r.year].push(r.month);
         }
         setAvailable(byYear);
-        // Default selection: most recent year + month
+        // If URL provided period, don't override — user wants this specific period.
+        if (urlYear !== null && urlMonth !== null) return;
+        // Otherwise default selection: most recent year + month
         const years = Object.keys(byYear).map(Number).sort((a, b) => b - a);
         if (years.length === 0) {
           setSelectedYear(null);
@@ -76,7 +93,9 @@ export default function HROpsSnapshot({ user, variant = 'full' }) {
         setLoading(false);
       });
     return () => { cancelled = true; };
-  }, []);
+    // Intentionally runs only on mount. urlYear/urlMonth are handled by the
+    // separate sync effect above.
+  }, [urlYear, urlMonth]);
 
   // ---------- LOAD SELECTED PUBLISHED MONTH ----------
   useEffect(() => {
@@ -175,14 +194,30 @@ export default function HROpsSnapshot({ user, variant = 'full' }) {
           label="Year"
           value={selectedYear ? String(selectedYear) : ''}
           options={yearOptions}
-          onChange={(v) => setSelectedYear(Number(v))}
+          onChange={(v) => {
+            const nextY = Number(v);
+            // Phase 2A Extension: prefer URL-driven navigation
+            if (typeof onPeriodChange === 'function' && selectedMonth) {
+              onPeriodChange(nextY, selectedMonth);
+            } else {
+              setSelectedYear(nextY);
+            }
+          }}
           width={120}
         />
         <Dropdown
           label="Month"
           value={selectedMonth ? String(selectedMonth) : ''}
           options={monthOptions}
-          onChange={(v) => setSelectedMonth(Number(v))}
+          onChange={(v) => {
+            const nextM = Number(v);
+            // Phase 2A Extension: prefer URL-driven navigation
+            if (typeof onPeriodChange === 'function' && selectedYear) {
+              onPeriodChange(selectedYear, nextM);
+            } else {
+              setSelectedMonth(nextM);
+            }
+          }}
           width={150}
         />
         {snapshot?.submission && (
