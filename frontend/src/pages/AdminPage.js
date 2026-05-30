@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { activitiesAPI, usersAPI } from '../services/api';
+import TargetsManager from '../dashboards/TargetsManager';
 import '../styles/dashboard.css';
 
 const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -48,6 +49,7 @@ const AdminPage = ({ user, onLogout }) => {
     const theme = localStorage.getItem('hcd-theme') || 'dark';
     document.body.setAttribute('data-theme', theme);
   }, []);
+
   // Filters
   const [adminSearch, setAdminSearch] = useState('');
   const [adminFilterFunc, setAdminFilterFunc] = useState('all');
@@ -60,7 +62,10 @@ const AdminPage = ({ user, onLogout }) => {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Load both on mount, refresh when tab changes
+  // Load both on mount, refresh when tab changes.
+  // PHASE 2B: 'targets' tab manages its own data fetching inside TargetsManager,
+  // so this loader does no extra work for that tab (activities + users still
+  // re-fetched on tab change for fresh data when admin returns to those tabs).
   useEffect(() => {
     loadActivities();
     loadUsers();
@@ -297,7 +302,8 @@ const AdminPage = ({ user, onLogout }) => {
 
       {/* Message */}
       {message.text && (
-        <div style={{...S.message, background: message.type === 'error' ? 'rgba(239,68,68,0.1)' : 'rgba(34,197,94,0.1)', borderColor: message.type === 'error' ? 'rgba(239,68,68,0.3)' : 'rgba(34,197,94,0.3)', color: message.type === 'error' ? '#ef4444' : '#22c55e'}}>
+        <div style={{...S.message, background: message.type === 'error' ?
+          'rgba(239,68,68,0.1)' : 'rgba(34,197,94,0.1)', borderColor: message.type === 'error' ? 'rgba(239,68,68,0.3)' : 'rgba(34,197,94,0.3)', color: message.type === 'error' ? '#ef4444' : '#22c55e'}}>
           {message.type === 'error' ? '⚠️' : '✅'} {message.text}
         </div>
       )}
@@ -306,6 +312,7 @@ const AdminPage = ({ user, onLogout }) => {
       <div style={S.tabs}>
         <button style={{...S.tab, ...(activeTab==='activities'?S.tabActive:{})}} onClick={()=>setActiveTab('activities')}>📋 Activities ({activities.length})</button>
         <button style={{...S.tab, ...(activeTab==='users'?S.tabActive:{})}} onClick={()=>setActiveTab('users')}>👥 Users</button>
+        <button style={{...S.tab, ...(activeTab==='targets'?S.tabActive:{})}} onClick={()=>setActiveTab('targets')}>🎯 Targets</button>
       </div>
 
       {/* Activities Tab */}
@@ -549,6 +556,13 @@ const AdminPage = ({ user, onLogout }) => {
               }
             })()}
           </div>
+        </div>
+      )}
+
+      {/* Targets Tab (Phase 2B) */}
+      {activeTab === 'targets' && (
+        <div className="view-section" style={{padding:'16px', overflow:'visible'}}>
+          <TargetsManager />
         </div>
       )}
 
