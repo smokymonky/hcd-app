@@ -150,3 +150,46 @@ export const workflowAPI = {
     request(`/workflow/history?target_type=${encodeURIComponent(target_type)}&target_id=${target_id}`),
   listTargets: () => request('/workflow/targets'),
 };
+
+// =============================================
+// Targets (Phase 2B — admin-only)
+// =============================================
+// CRUD against /api/targets for the field_targets table.
+// All endpoints are admin-gated on the backend.
+//
+// Frontend callers:
+//   - TargetsManager.js (admin UI inside AdminPage Targets tab)
+//   - HROpsPage.js hydration on mount (reads active targets to merge
+//     into FIELDS before rendering Entry/Snapshot)
+// =============================================
+export const targetsAPI = {
+  // GET /api/targets[?module=HR_OPS]
+  // Admin endpoint — returns ACTIVE + SOFT-DELETED rows.
+  // The hydration path (non-admin readers in theory don't get here in
+  // Phase 2B because module access bypasses admin only for admins, but
+  // we always pass through the same endpoint; if a non-admin somehow
+  // calls it the backend will 403 and HROpsPage will continue with
+  // inline seed-only targets).
+  list: (moduleCode) => {
+    const qs = moduleCode ? `?module=${encodeURIComponent(moduleCode)}` : '';
+    return request(`/targets${qs}`);
+  },
+
+  // POST /api/targets
+  // Body: { module, field_key, target_value, direction, tolerance?, label? }
+  create: (payload) => request('/targets', {
+    method: 'POST', body: JSON.stringify(payload)
+  }),
+
+  // PUT /api/targets/:id
+  // Body: any subset of { target_value, direction, tolerance, label, is_active }
+  // - Setting is_active=true on a soft-deleted target = RESTORE flow
+  // - Module + field_key are immutable post-creation
+  update: (id, payload) => request(`/targets/${id}`, {
+    method: 'PUT', body: JSON.stringify(payload)
+  }),
+
+  // DELETE /api/targets/:id
+  // SOFT-delete only: sets is_active=false, deleted_by, deleted_at.
+  remove: (id) => request(`/targets/${id}`, { method: 'DELETE' }),
+};
