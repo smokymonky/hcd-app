@@ -4,8 +4,8 @@ import HROpsDataEntry from '../dashboards/HROpsDataEntry';
 import HROpsSnapshot from '../dashboards/HROpsSnapshot';
 import StatusBadge from '../dashboards/StatusBadge';
 import UserIdentityCard from '../hub/UserIdentityCard';
-import { dashboardsAPI } from '../services/api';
-import { SYSTEM_START_YEAR } from '../config/hrOpsFields';
+import { dashboardsAPI, targetsAPI } from '../services/api';
+import { SYSTEM_START_YEAR, applyTargetsToFields } from '../config/hrOpsFields';
 
 // =============================================
 // HROpsPage
@@ -24,6 +24,12 @@ import { SYSTEM_START_YEAR } from '../config/hrOpsFields';
 // Permissions: Entry view for users with HR_OPS module access at 'owner'
 // or 'admin' level. Snapshot view for any HR_OPS access level. Backend
 // enforces strictly; UI checks here are advisory.
+//
+// PHASE 2B: targets hydration. On mount, fetches active targets via
+// GET /api/targets?module=HR_OPS and merges into FIELDS' `target` property
+// BEFORE rendering HROpsDataEntry / HROpsSnapshot. Child components remain
+// unchanged — they still read `field.target` from the FIELDS array. This
+// is the parent-level hydration step required by Option C (seed + hydrate).
 // =============================================
 
 export default function HROpsPage({ user, onLogout }) {
@@ -49,6 +55,12 @@ export default function HROpsPage({ user, onLogout }) {
   const [currentStatus, setCurrentStatus] = useState('empty');
   const [rejectedPrior, setRejectedPrior] = useState(null);   // { year, month, id } or null
   const [accessLevel, setAccessLevel] = useState(null);        // 'admin' | 'owner' | 'viewer' | null
+
+  // PHASE 2B — Targets hydration gate. Children render only after this is true.
+  // Fail-open: if the API call fails, we still proceed (children render with
+  // cleared inline targets — better than blocking the whole module on a
+  // targets-config call failing).
+  const [targetsHydrated, setTargetsHydrated] = useState(false);
 
   // Theme
   useEffect(() => {
@@ -79,6 +91,37 @@ export default function HROpsPage({ user, onLogout }) {
       })
       .catch((err) => {
         console.error('[HROpsPage] getMyAccess failed:', err);
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  // PHASE 2B — Hydrate FIELDS.target from /api/targets on mount.
+  // This MUST complete before HROpsDataEntry / HROpsSnapshot render — they
+  // read field.target during render and we want the DB version, not the
+  // inline seed. applyTargetsToFields() clears inline targets first then
+  // applies DB-driven active rows.
+  //
+  // Fail-open: if the API call fails (network, auth, server error), we
+  // log + flip hydrated to true anyway so the user isn't stuck on a
+  // loading screen. Children render with cleared targets (no indicators)
+  // which is a graceful degradation rather than a hard failure.
+  useEffect(() => {
+    let cancelled = false;
+    targetsAPI.list('HR_OPS')
+      .then((rows) => {
+        if (cancelled) return;
+        applyTargetsToFields(Array.isArray(rows) ? rows : []);
+        setTargetsHydrated(true);
+      })
+      .catch((err) => {
+        // Fail-open: log and continue. Children render with no inline targets.
+        console.error('[HROpsPage] targets hydration failed — proceeding without target indicators:', err);
+        if (!cancelled) {
+          // Defensively still clear inline targets so behavior is deterministic
+          // (no "stale inline target showing even though API said no targets").
+          applyTargetsToFields([]);
+          setTargetsHydrated(true);
+        }
       });
     return () => { cancelled = true; };
   }, []);
@@ -177,6 +220,7 @@ export default function HROpsPage({ user, onLogout }) {
         @keyframes hrFloat1 { 0%,100% { transform: translate(0,0);} 50% { transform: translate(20px,-15px);} }
         @keyframes hrFloat2 { 0%,100% { transform: translate(0,0);} 50% { transform: translate(-15px,20px);} }
         @keyframes hrFadeInUp { from { opacity:0; transform: translateY(20px);} to { opacity:1; transform: translateY(0);} }
+        @keyframes hrSpin { to { transform: rotate(360deg); } }
       `}</style>
 
       {/* TOP STRIP */}
@@ -281,8 +325,17 @@ export default function HROpsPage({ user, onLogout }) {
         </div>
       )}
 
-      {/* VIEW */}
-      {view === 'entry' && canSeeEntry && (
+      {/* PHASE 2B — gate render on targets hydration. Tiny shimmer until done. */}
+      {!targetsHydrated && (
+        <div style={styles.hydrationSpinnerWrap}>
+          <div style={styles.spinner} />
+        </div>
+      )}
+
+      {/* VIEW — only render once targets are hydrated, so Snapshot's
+          Saudization indicator + Entry's target evaluations come from the
+          DB (not stale inline seed) on the very first frame. */}
+      {targetsHydrated && view === 'entry' && canSeeEntry && (
         <HROpsDataEntry
           /* Rerender (and refetch) whenever year+month change — keyed on URL */
           key={`entry-${year}-${month}`}
@@ -294,7 +347,7 @@ export default function HROpsPage({ user, onLogout }) {
           onPeriodChange={handleEntryPeriodChange}
         />
       )}
-      {view === 'snapshot' && (
+      {targetsHydrated && view === 'snapshot' && (
         <HROpsSnapshot
           /* Rerender when URL period changes (or when URL had no period — pass null) */
           key={`snapshot-${params.year || 'auto'}-${params.month || 'auto'}`}
@@ -502,6 +555,19 @@ const styles = {
     background: 'rgba(243,192,54,0.2)',
     color: '#F3C036',
     border: '1px solid rgba(243,192,54,0.4)',
+  },
+
+  hydrationSpinnerWrap: {
+    position: 'relative', zIndex: 5,
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    minHeight: 240,
+  },
+  spinner: {
+    width: 36, height: 36,
+    border: '4px solid rgba(255,255,255,0.1)',
+    borderTopColor: '#F3C036',
+    borderRadius: '50%',
+    animation: 'hrSpin 0.8s linear infinite',
   },
 
   footer: {
