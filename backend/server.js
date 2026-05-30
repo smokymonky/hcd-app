@@ -12,6 +12,7 @@ const activitiesRoutes = require('./routes/activities');
 const usersRoutes = require('./routes/users');
 const dashboardsRoutes = require('./routes/dashboards');
 const workflowRoutes = require('./routes/workflow');
+const targetsRoutes = require('./routes/targets');
 
 // Import database initializer
 const initDatabase = require('./config/initDatabase');
@@ -51,6 +52,7 @@ app.use('/api/activities', activitiesRoutes);
 app.use('/api/users', usersRoutes);
 app.use('/api/dashboards', dashboardsRoutes);
 app.use('/api/workflow', workflowRoutes);
+app.use('/api/targets', targetsRoutes);
 
 // =============================================
 // Error Handling
