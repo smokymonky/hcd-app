@@ -199,6 +199,33 @@ const initDatabase = async () => {
         metadata JSONB,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
+
+    -- =============================================
+    -- PHASE 2B: field_targets (admin-editable per-field targets)
+    -- One ACTIVE target per (module, field_key) — enforced via
+    -- partial unique index defined AFTER schema (Postgres requires
+    -- partial indexes outside CREATE TABLE).
+    -- Soft delete via is_active=false + deleted_at/deleted_by.
+    -- tolerance NULL means "use default 2.0" (frontend evaluateTarget
+    -- reads field.target.tolerance ?? 2.0).
+    -- =============================================
+    CREATE TABLE IF NOT EXISTS field_targets (
+        id SERIAL PRIMARY KEY,
+        module VARCHAR(50) NOT NULL,
+        field_key VARCHAR(100) NOT NULL,
+        target_value NUMERIC NOT NULL,
+        direction VARCHAR(10) NOT NULL
+          CHECK (direction IN ('above','below','exact')),
+        tolerance NUMERIC NULL,
+        label VARCHAR(255) NULL,
+        is_active BOOLEAN NOT NULL DEFAULT true,
+        created_by INTEGER NULL REFERENCES users(id),
+        updated_by INTEGER NULL REFERENCES users(id),
+        deleted_by INTEGER NULL REFERENCES users(id),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        deleted_at TIMESTAMP NULL
+    );
   `;
 
    try {
@@ -225,6 +252,15 @@ const initDatabase = async () => {
     await pool.query('CREATE INDEX IF NOT EXISTS idx_user_module_access_user ON user_module_access(user_id)');
     await pool.query('CREATE INDEX IF NOT EXISTS idx_workflow_history_target ON workflow_history(target_type, target_id)');
     await pool.query('CREATE INDEX IF NOT EXISTS idx_workflow_history_actor ON workflow_history(action_by)');
+
+    // =============================================
+    // PHASE 2B: indices for field_targets
+    // Partial unique index enforces "one ACTIVE target per (module, field_key)".
+    // Soft-deleted rows do NOT block re-adding (intentional — the new target
+    // is a fresh row; the soft-deleted row stays for audit/restore).
+    // =============================================
+    await pool.query('CREATE UNIQUE INDEX IF NOT EXISTS idx_field_targets_active_unique ON field_targets(module, field_key) WHERE is_active = true');
+    await pool.query('CREATE INDEX IF NOT EXISTS idx_field_targets_module ON field_targets(module)');
 
     console.log('Database tables created');
 
@@ -297,6 +333,27 @@ const initDatabase = async () => {
         ('HR_SYS', 'HR Systems', 'Systems availability, ticket SLAs, automation', 4)
       ON CONFLICT (code) DO NOTHING
     `);
+
+    // =============================================
+    // PHASE 2B: Seed Saudization target (Option C — seed once, hydrate forever)
+    // The frontend hrOpsFields.js previously hard-coded this inline. From v5.5
+    // the inline target serves only as the SEED source for fresh DBs; runtime
+    // truth lives in field_targets. The presence-check below ensures the seed
+    // does NOT re-insert after a deliberate admin soft-delete (any historical
+    // row for HR_OPS / saudization_pct, active or inactive, skips the seed).
+    // =============================================
+    const existingSaudization = await pool.query(
+      "SELECT 1 FROM field_targets WHERE module = 'HR_OPS' AND field_key = 'saudization_pct' LIMIT 1"
+    );
+    if (existingSaudization.rowCount === 0) {
+      await pool.query(`
+        INSERT INTO field_targets (module, field_key, target_value, direction, tolerance, label, is_active)
+        VALUES ('HR_OPS', 'saudization_pct', 85, 'above', NULL, 'KSA labor compliance', true)
+      `);
+      console.log('[Phase 2B] Seeded field_targets: HR_OPS / saudization_pct / 85 / above');
+    } else {
+      console.log('[Phase 2B] field_targets row for HR_OPS/saudization_pct already exists — skipping seed.');
+    }
 
     // =============================================
     // PHASE 0: Seed workflow_targets registry
