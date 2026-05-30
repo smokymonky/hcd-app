@@ -466,11 +466,12 @@ export function formatValue(field, raw) {
 //   { status: 'info', message: 'target: 85%' }      (direction='exact')
 //   null                                            (no target configured)
 //
-// Threshold for soft-fail vs hard-fail: within 2% of target = soft, beyond = hard.
-// This is intentionally a magic number (2.0) for Phase 2A simplicity;
-// Phase 2B admin UI may surface this as a per-target setting later.
+// PHASE 2B: tolerance is now per-target (field.target.tolerance).
+// When null/undefined, falls back to the canonical default 2.0
+// (preserves Phase 2A behavior — Saudization with NULL tolerance
+// keeps its original ±2.0% band).
 // =============================================
-const SOFT_FAIL_BAND = 2.0;
+const DEFAULT_TOLERANCE = 2.0;
 
 export function evaluateTarget(field, rawValue) {
   if (!field || !field.target) return null;
@@ -492,7 +493,10 @@ export function evaluateTarget(field, rawValue) {
   }
 
   const magnitude = Math.abs(delta);
-  const status = magnitude <= SOFT_FAIL_BAND ? 'soft-fail' : 'hard-fail';
+  // PHASE 2B — per-target tolerance with default fallback.
+  const tol = (field.target.tolerance == null) ? DEFAULT_TOLERANCE : Number(field.target.tolerance);
+  const band = Number.isFinite(tol) && tol >= 0 ? tol : DEFAULT_TOLERANCE;
+  const status = magnitude <= band ? 'soft-fail' : 'hard-fail';
   const word = direction === 'above' ? 'below' : 'above';
   return {
     status,
@@ -537,4 +541,58 @@ export const MONTH_NAMES_FULL = [
 
 export function buildMonthOptions() {
   return MONTH_NAMES_FULL.map((label, i) => ({ value: String(i + 1), label }));
+}
+
+// =============================================
+// PHASE 2B — Targets hydration (Option C: seed + hydrate)
+// =============================================
+// The inline `target` properties on FIELDS entries above (currently
+// just Saudization) are the SEED source. On first run of a fresh DB,
+// initDatabase.js seeds those into the field_targets table.
+//
+// At runtime, the FRONTEND fetches active targets via
+// GET /api/targets?module=HR_OPS and calls applyTargetsToFields(rows)
+// before rendering Entry/Snapshot. This mutates FIELDS in place:
+//
+//   1. Clears every inline target (treats them as seed-only)
+//   2. Applies each DB-driven active target as field.target = {...}
+//
+// Components (HROpsDataEntry, HROpsSnapshot, evaluateTarget) keep
+// reading field.target unchanged — Rule 13 + Rule 10 honored.
+//
+// CALLED FROM: HROpsPage.js (parent of Entry + Snapshot) on mount.
+// Render is gated until hydration completes so Snapshot's Saudization
+// indicator renders correctly from the very first frame.
+// =============================================
+export function applyTargetsToFields(targets) {
+  // Step 1 — Clear all inline (seed) targets. DB is the source of truth
+  // post-hydration. If an admin soft-deleted Saudization, the inline
+  // target must not silently re-attach itself here.
+  for (const f of FIELDS) {
+    if (f.target) delete f.target;
+  }
+
+  // Step 2 — Apply DB-driven active targets.
+  const list = Array.isArray(targets) ? targets : [];
+  for (const t of list) {
+    // Defensive: only attach ACTIVE rows. The /api/targets endpoint returns
+    // both active + soft-deleted (for admin UI), but hydration must only
+    // surface active ones. Filter here in case caller forgot to.
+    if (t.is_active === false) continue;
+
+    const field = FIELDS.find((f) => f.key === t.field_key);
+    if (!field) continue;   // unknown field — ignore (Rule 13: future fields tolerated)
+
+    const value = Number(t.target_value);
+    if (!Number.isFinite(value)) continue;
+
+    const tolerance = (t.tolerance == null) ? null : Number(t.tolerance);
+
+    field.target = {
+      value,
+      direction: t.direction,
+      tolerance: (tolerance == null || !Number.isFinite(tolerance)) ? null : tolerance,
+      label: (t.label && String(t.label).trim() !== '') ? String(t.label) : undefined,
+    };
+  }
 }
