@@ -225,12 +225,34 @@ export default function EditTargetModal({
 
         {/* Header */}
         <div style={styles.header}>
-          <div style={styles.title}>{mode === 'edit' ? 'Edit Target' : 'Add Target'}</div>
-          <div style={styles.subtitle}>
-            {mode === 'edit'
-              ? 'Update goal for an existing dashboard field. To change which field has a target, delete this one and add a new one.'
-              : 'Attach a goal to an existing dashboard field. Changes commit immediately (admin-only).'}
+          <div style={styles.headerText}>
+            <div style={styles.title}>{mode === 'edit' ? 'Edit Target' : 'Add Target'}</div>
+            <div style={styles.subtitle}>
+              {mode === 'edit'
+                ? 'Update goal for an existing dashboard field. To change which field has a target, delete this one and add a new one.'
+                : 'Attach a goal to an existing dashboard field. Changes commit immediately (admin-only).'}
+            </div>
           </div>
+          <button
+            type="button"
+            aria-label="Close"
+            style={{ ...styles.closeBtn, ...(saving ? styles.closeBtnDisabled : {}) }}
+            onClick={onClose}
+            disabled={saving}
+            onMouseEnter={(e) => {
+              if (saving) return;
+              e.currentTarget.style.background = 'rgba(239,68,68,0.12)';
+              e.currentTarget.style.borderColor = 'rgba(239,68,68,0.3)';
+              e.currentTarget.style.color = '#fca5a5';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'rgba(255,255,255,0.05)';
+              e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)';
+              e.currentTarget.style.color = 'rgba(255,255,255,0.6)';
+            }}
+          >
+            ✕
+          </button>
         </div>
 
         {/* Body */}
@@ -446,7 +468,29 @@ export function ConfirmDeleteModal({ open, onClose, onConfirm, targetSummary }) 
       <div style={{ ...styles.card, maxWidth: 440 }}>
         <div style={styles.accent} />
         <div style={styles.header}>
-          <div style={styles.title}>Delete this target?</div>
+          <div style={styles.headerText}>
+            <div style={styles.title}>Delete this target?</div>
+          </div>
+          <button
+            type="button"
+            aria-label="Close"
+            style={{ ...styles.closeBtn, ...(deleting ? styles.closeBtnDisabled : {}) }}
+            onClick={onClose}
+            disabled={deleting}
+            onMouseEnter={(e) => {
+              if (deleting) return;
+              e.currentTarget.style.background = 'rgba(239,68,68,0.12)';
+              e.currentTarget.style.borderColor = 'rgba(239,68,68,0.3)';
+              e.currentTarget.style.color = '#fca5a5';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'rgba(255,255,255,0.05)';
+              e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)';
+              e.currentTarget.style.color = 'rgba(255,255,255,0.6)';
+            }}
+          >
+            ✕
+          </button>
         </div>
         <div style={{ ...styles.body, paddingTop: 4 }}>
           You're about to soft-delete the target on <strong style={{ color: '#fff' }}>{targetSummary}</strong>.
@@ -477,8 +521,13 @@ const styles = {
     background: 'rgba(14,8,32,0.72)',
     backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)',
     zIndex: 9999,
-    display: 'flex', alignItems: 'center', justifyContent: 'center',
-    padding: '40px 20px',
+    // Pin to TOP (not center) so a card taller than the viewport doesn't
+    // push its top above the viewport edge with no way to scroll up.
+    // The overlay itself owns the scroll (overflowY:'auto') — the modal
+    // card keeps overflow:'visible' so the Field/Direction dropdown panels
+    // still escape the card without being clipped by an inner scroller.
+    display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
+    padding: '5vh 20px',
     overflowY: 'auto',
     fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
   },
@@ -502,6 +551,34 @@ const styles = {
   header: {
     padding: '22px 26px 14px',
     borderBottom: '1px solid rgba(255,255,255,0.06)',
+    // Phase 2B polish — flex so the close button sits top-right
+    // beside the stacked title+subtitle.
+    display: 'flex',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  headerText: {
+    flex: 1,
+    minWidth: 0, // allow long subtitles to wrap inside the flex item
+  },
+  closeBtn: {
+    width: 32, height: 32,
+    flexShrink: 0,
+    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+    background: 'rgba(255,255,255,0.05)',
+    border: '1px solid rgba(255,255,255,0.1)',
+    borderRadius: 8,
+    color: 'rgba(255,255,255,0.6)',
+    cursor: 'pointer',
+    fontFamily: 'inherit',
+    fontSize: 14, lineHeight: 1,
+    padding: 0,
+    transition: 'all 0.15s ease',
+  },
+  closeBtnDisabled: {
+    opacity: 0.35,
+    cursor: 'not-allowed',
   },
   title: {
     fontSize: 18, fontWeight: 700, letterSpacing: '-0.3px',
