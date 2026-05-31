@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import Dropdown from './Dropdown';
 
 // =============================================
@@ -218,7 +219,14 @@ export default function EditTargetModal({
 
   if (!open) return null;
 
-  return (
+  // Render through a portal to document.body so the backdrop's
+  // position:fixed actually pins to the viewport. Without this, an
+  // ancestor with backdrop-filter / filter / transform (e.g. the
+  // TargetsManager stage's blurred glass cards + keyframe animations)
+  // becomes the containing block for position:fixed descendants, which
+  // anchors the modal to the scrolled panel and clips top/bottom.
+  // The portal places the modal outside that ancestor entirely.
+  return createPortal(
     <div style={styles.backdrop} onClick={handleBackdropClick} role="dialog" aria-modal="true">
       <div style={styles.card}>
         <div style={styles.accent} />
@@ -405,7 +413,8 @@ export default function EditTargetModal({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
@@ -463,7 +472,9 @@ export function ConfirmDeleteModal({ open, onClose, onConfirm, targetSummary }) 
 
   if (!open) return null;
 
-  return (
+  // Portal — see EditTargetModal's createPortal comment for the
+  // containing-block reasoning. Same fix applies here.
+  return createPortal(
     <div style={styles.backdrop} onClick={handleBackdropClick} role="dialog" aria-modal="true">
       <div style={{ ...styles.card, maxWidth: 440 }}>
         <div style={styles.accent} />
@@ -507,7 +518,8 @@ export function ConfirmDeleteModal({ open, onClose, onConfirm, targetSummary }) 
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
