@@ -77,7 +77,9 @@ function buildAllFields() {
       all.push({
         moduleCode: m.code,
         key: f.key,
-        label: f.label,
+        // Phase 2B polish: disambiguate HO/OP-paired fields via formatFieldLabel.
+        // Single helper keeps dropdown + list + delete summary in sync.
+        label: formatFieldLabel(f),
         section: f.section,
         dataType: f.dataType,
         unit: f.unit,
@@ -474,7 +476,11 @@ export default function TargetsManager() {
 // TargetRow — one row inside a section group
 // =============================================
 function TargetRow({ target, field, orphan = false, deleted = false, onEdit, onDelete, onRestore }) {
-  const fieldName = field ? field.label : target.field_key;
+  // Phase 2B polish: same formatFieldLabel helper used by the Add/Edit
+  // dropdown — keeps list ↔ dropdown ↔ delete summary consistent so an
+  // admin who picks "ID Cards Printed (HO)" sees that exact label in
+  // the list and in the delete confirm modal.
+  const fieldName = field ? formatFieldLabel(field) : target.field_key;
   const unit = field
     ? (field.unit || (field.dataType === 'percentage' ? '%' : ''))
     : '';
@@ -555,11 +561,33 @@ function moduleNameByCode(code) {
   return m ? m.name : code;
 }
 
+// =============================================
+// formatFieldLabel — Phase 2B polish
+// =============================================
+// HO/OP-paired fields in HR_OPS share a base label (e.g. "ID Cards Printed"
+// for both new_employee_profiles_ho and new_employee_profiles_op). Without
+// disambiguation the Add/Edit Field dropdown and the target list both show
+// identical-looking pairs and the admin can't tell which is which.
+//
+// Each field config already carries dimensionCol ('ho' | 'op') for paired
+// fields and nothing for the rest. Append "(HO)" / "(OP)" only when set.
+// Single helper used by buildAllFields(), TargetRow, and labelForField so
+// the dropdown, the list, and the delete-confirm summary stay consistent.
+//
+// SCOPE: this only changes DISPLAYED labels in the targets admin UI.
+// hrOpsFields.js field defs are untouched (per spec).
+// =============================================
+function formatFieldLabel(f) {
+  if (!f || !f.label) return '';
+  const suffix = f.dimensionCol ? ` (${String(f.dimensionCol).toUpperCase()})` : '';
+  return `${f.label}${suffix}`;
+}
+
 function labelForField(fieldKey, moduleCode) {
   const m = MODULES.find((x) => x.code === moduleCode);
   if (!m) return fieldKey;
   const f = (m.fields || []).find((x) => x.key === fieldKey);
-  return f ? f.label : fieldKey;
+  return f ? formatFieldLabel(f) : fieldKey;
 }
 
 function formatTargetValue(rawValue, field) {
