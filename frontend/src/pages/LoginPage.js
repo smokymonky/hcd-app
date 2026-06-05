@@ -91,7 +91,7 @@ const LoginPage = ({ setUser }) => {
                     type="email"
                     value={email}
                     onChange={e => setEmail(e.target.value)}
-                    placeholder="admin@aljfinance.com"
+                    placeholder=""
                     required
                     style={styles.input}
                   />
