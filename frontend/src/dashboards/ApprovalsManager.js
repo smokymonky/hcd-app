@@ -101,6 +101,14 @@ export default function ApprovalsManager() {
   const [loadError, setLoadError] = useState(null);
   const [refreshTick, setRefreshTick] = useState(0);
 
+  // POLISH — mobile parity. Canonical pattern from DashboardPage.js.
+  const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth <= 768);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   // Single-row action modal: { kind: 'approve'|'publish'|'reject'|'reopen', row } | null
   const [action, setAction] = useState(null);
 
@@ -239,7 +247,7 @@ export default function ApprovalsManager() {
       `}</style>
 
       {/* Toolbar */}
-      <div style={styles.toolbar}>
+      <div style={{ ...styles.toolbar, ...(isMobile ? styles.toolbarMobile : {}) }}>
         <div style={styles.toolbarLeft}>
           <span style={styles.toolbarHeading}>
             Submission Approvals
@@ -249,16 +257,18 @@ export default function ApprovalsManager() {
               </span>
             )}
           </span>
-          <span style={styles.toolbarFilterSlot}>(filter / module · search — coming later)</span>
+          {!isMobile && <span style={styles.toolbarFilterSlot}>(filter / module · search — coming later)</span>}
         </div>
-        <div style={styles.legend}>
-          {Object.entries(STATUS_META).map(([key, meta]) => (
-            <span key={key} style={styles.legendItem}>
-              <span style={{ ...styles.legendDot, background: meta.dot }} />
-              {meta.label}
-            </span>
-          ))}
-        </div>
+        {!isMobile && (
+          <div style={styles.legend}>
+            {Object.entries(STATUS_META).map(([key, meta]) => (
+              <span key={key} style={styles.legendItem}>
+                <span style={{ ...styles.legendDot, background: meta.dot }} />
+                {meta.label}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Toast */}
@@ -300,15 +310,15 @@ export default function ApprovalsManager() {
 
       {/* Bulk selection bar (floats above the awaiting section when active) */}
       {!loading && !loadError && selectedIds.size > 0 && (
-        <div style={styles.bulkBar}>
+        <div style={{ ...styles.bulkBar, ...(isMobile ? styles.bulkBarMobile : {}) }}>
           <span style={styles.bulkBarText}>
             <strong>{selectedIds.size}</strong> selected
           </span>
-          <div style={{ display: 'inline-flex', gap: 8 }}>
-            <button type="button" style={styles.bulkClearBtn} onClick={() => setSelectedIds(new Set())}>
+          <div style={{ display: 'inline-flex', gap: 8, ...(isMobile ? { width: '100%' } : {}) }}>
+            <button type="button" style={{ ...styles.bulkClearBtn, ...(isMobile ? styles.bulkBtnMobile : {}) }} onClick={() => setSelectedIds(new Set())}>
               Clear
             </button>
-            <button type="button" style={styles.bulkApproveBtn} onClick={() => setBulkConfirmOpen(true)}>
+            <button type="button" style={{ ...styles.bulkApproveBtn, ...(isMobile ? styles.bulkBtnMobile : {}) }} onClick={() => setBulkConfirmOpen(true)}>
               <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"/></svg>
               Approve all
             </button>
@@ -321,6 +331,7 @@ export default function ApprovalsManager() {
         <>
           <SectionCard
             variant="awaiting"
+            isMobile={isMobile}
             title="Awaiting your review"
             subtitle="Submitted by owners — admin can approve or reject directly (override)."
             icon={
@@ -344,6 +355,7 @@ export default function ApprovalsManager() {
               <QueueRow
                 key={row.id}
                 row={row}
+                isMobile={isMobile}
                 selectable
                 selected={selectedIds.has(row.id)}
                 onToggleSelect={() => toggleSelect(row.id)}
@@ -358,6 +370,7 @@ export default function ApprovalsManager() {
 
           <SectionCard
             variant="ready"
+            isMobile={isMobile}
             title="Ready to publish"
             subtitle="Approved by the workflow — one click + confirm sends it to the live Snapshot."
             icon={
@@ -370,6 +383,7 @@ export default function ApprovalsManager() {
               <QueueRow
                 key={row.id}
                 row={row}
+                isMobile={isMobile}
                 actions={[
                   { kind: 'publish', label: 'Publish', style: styles.btnPublish, icon: PublishIcon },
                   { kind: 'reject', label: 'Reject', style: styles.btnReject, icon: XIcon },
@@ -381,6 +395,7 @@ export default function ApprovalsManager() {
 
           <SectionCard
             variant="published"
+            isMobile={isMobile}
             title="Published"
             subtitle="Live on the Snapshot — viewers can see these periods. Reopen requires a reason."
             icon={
@@ -393,6 +408,7 @@ export default function ApprovalsManager() {
               <QueueRow
                 key={row.id}
                 row={row}
+                isMobile={isMobile}
                 actions={[
                   { kind: 'reopen', label: 'Reopen', style: styles.btnReopen, icon: ReopenIcon },
                 ]}
@@ -434,7 +450,7 @@ export default function ApprovalsManager() {
 // =============================================
 // SectionCard
 // =============================================
-function SectionCard({ variant, title, subtitle, icon, headerRight, children }) {
+function SectionCard({ variant, title, subtitle, icon, headerRight, isMobile = false, children }) {
   const accentByVariant = {
     awaiting: 'linear-gradient(90deg, #60a5fa, #a78bfa, #ec4899)',
     ready: 'linear-gradient(90deg, #F3C036, #fbbf24, #ec4899)',
@@ -446,9 +462,9 @@ function SectionCard({ variant, title, subtitle, icon, headerRight, children }) 
     published: { background: 'rgba(34,197,94,0.12)', color: '#86efac' },
   };
   return (
-    <div style={styles.sectionCard}>
+    <div style={{ ...styles.sectionCard, ...(isMobile ? styles.sectionCardMobile : {}) }}>
       <div style={{ ...styles.sectionAccent, background: accentByVariant[variant] }} />
-      <div style={styles.sectionHeader}>
+      <div style={{ ...styles.sectionHeader, ...(isMobile ? styles.sectionHeaderMobile : {}) }}>
         <div style={styles.sectionHeaderLeft}>
           <div style={{ ...styles.sectionHeaderIcon, ...iconStyleByVariant[variant] }}>
             {icon}
@@ -468,9 +484,66 @@ function SectionCard({ variant, title, subtitle, icon, headerRight, children }) 
 // =============================================
 // QueueRow
 // =============================================
-function QueueRow({ row, selectable = false, selected = false, onToggleSelect, actions, onAction }) {
+function QueueRow({ row, isMobile = false, selectable = false, selected = false, onToggleSelect, actions, onAction }) {
   const meta = STATUS_META[row.status] || STATUS_META.submitted;
   const metaLine = buildMetaLine(row);
+
+  // POLISH — mobile: stacked layout (module+period+checkbox header line /
+  // status pill / owner+meta / actions full-width ≥40px). No horizontal scroll.
+  if (isMobile) {
+    return (
+      <div style={{ ...styles.row, ...styles.rowMobile, ...(selected ? styles.rowSelected : {}) }}>
+        <div style={styles.rowMobileHead}>
+          {selectable && (
+            <input
+              type="checkbox"
+              checked={selected}
+              onChange={onToggleSelect}
+              style={{ ...styles.checkbox, ...styles.checkboxMobile }}
+              aria-label={`Select ${row.module_code} ${periodLabel(row)}`}
+            />
+          )}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={styles.rowModuleCode}>
+              {row.module_code}
+              <span style={styles.rowMobilePeriod}>{periodLabel(row)}</span>
+            </div>
+            <div style={styles.rowModuleName}>{row.module_name || ''}</div>
+          </div>
+        </div>
+        <div>
+          <span style={{
+            ...styles.statusPill,
+            color: meta.color, background: meta.bg, borderColor: meta.border,
+          }}>
+            <span style={{ ...styles.statusDot, background: meta.dot }} />
+            {meta.label}
+          </span>
+        </div>
+        <div style={styles.rowOwner}>
+          <div style={{ ...styles.rowOwnerWho, whiteSpace: 'normal' }}>
+            {row.owner_name || `user #${row.created_by || '?'}`}
+            {row.owner_role && <span style={styles.roleTag}>{row.owner_role}</span>}
+          </div>
+          <div style={styles.rowOwnerMeta}>{metaLine}</div>
+        </div>
+        <div style={styles.rowActionsMobile}>
+          {actions.map((a) => (
+            <button
+              key={a.kind}
+              type="button"
+              style={{ ...styles.btnAct, ...a.style, ...styles.btnActMobile }}
+              onClick={() => onAction(a.kind)}
+            >
+              {a.icon}
+              {a.label}
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={{ ...styles.row, ...(selected ? styles.rowSelected : {}) }}>
       {selectable ? (
@@ -1081,6 +1154,59 @@ const styles = {
     borderRadius: 10,
     marginTop: 8,
     transition: 'all 0.15s ease',
+  },
+  // POLISH — mobile: stacked single-column row, no horizontal scroll.
+  rowMobile: {
+    gridTemplateColumns: '1fr',
+    gap: 10,
+    padding: '14px 12px',
+  },
+  rowMobileHead: {
+    display: 'flex', alignItems: 'flex-start', gap: 10,
+  },
+  rowMobilePeriod: {
+    marginLeft: 8,
+    fontSize: 12,
+    fontWeight: 600,
+    color: 'rgba(255,255,255,0.6)',
+  },
+  checkboxMobile: {
+    width: 20, height: 20, marginTop: 2,
+  },
+  rowActionsMobile: {
+    display: 'flex', gap: 8, width: '100%',
+  },
+  btnActMobile: {
+    flex: 1,
+    justifyContent: 'center',
+    minHeight: 40,
+    fontSize: 12.5,
+  },
+  toolbarMobile: {
+    flexDirection: 'column',
+    alignItems: 'stretch',
+    padding: '16px 16px 10px',
+  },
+  bulkBarMobile: {
+    flexDirection: 'column',
+    alignItems: 'stretch',
+    gap: 10,
+    margin: '0 16px 12px',
+  },
+  bulkBtnMobile: {
+    flex: 1,
+    justifyContent: 'center',
+    minHeight: 42,
+    display: 'inline-flex',
+    alignItems: 'center',
+  },
+  sectionCardMobile: {
+    margin: '0 16px 14px',
+  },
+  sectionHeaderMobile: {
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+    gap: 10,
   },
   rowSelected: {
     background: 'rgba(34,197,94,0.06)',
