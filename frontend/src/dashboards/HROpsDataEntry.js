@@ -141,7 +141,36 @@ export default function HROpsDataEntry({
   // Save Draft. Hits POST /dashboards/HR_OPS/submissions which upserts.
   // When status is 'rejected', backend auto-transitions to 'draft' via
   // resumed_editing action (Phase 0 Option C contract).
+  // =============================================
+  // POLISH — no-negatives validation (HR_OPS scope, client-side).
+  // All HR_OPS entry fields are counts / percentages / currency, so a
+  // negative value is always invalid (a −3 slipped into production).
+  // Returns array of offending field labels, e.g.
+  // ['Sponsorship Transfer (OP): value cannot be negative'].
+  // 0 and empty stay valid. Backend stays generic for future modules.
+  // =============================================
+  function findNegativeValues() {
+    const offenders = [];
+    for (const f of FIELDS) {
+      if (!f.active || f.source === 'computed') continue;
+      const raw = values[f.key];
+      if (raw === undefined || raw === null || raw === '') continue;
+      const n = Number(raw);
+      if (Number.isFinite(n) && n < 0) {
+        const dim = f.dimensionCol ? ` (${String(f.dimensionCol).toUpperCase()})` : '';
+        offenders.push(`${f.label}${dim}: value cannot be negative`);
+      }
+    }
+    return offenders;
+  }
+
   async function handleSaveDraft() {
+    // POLISH — block save when any entered value is negative.
+    const negatives = findNegativeValues();
+    if (negatives.length > 0) {
+      setMessage({ type: 'error', text: `Cannot save — ${negatives.join(' · ')}` });
+      return;
+    }
     setSaving(true);
     setMessage(null);
     try {
@@ -180,6 +209,14 @@ export default function HROpsDataEntry({
   async function handleSubmit() {
     if (!submission || !submission.id) {
       setMessage({ type: 'error', text: 'Save a draft first before submitting for review.' });
+      return;
+    }
+    // POLISH — same no-negatives guard as save. Covers the path where
+    // values are already saved (hasUnsavedChanges=false skips handleSaveDraft)
+    // but a previously-saved negative is still on screen.
+    const negatives = findNegativeValues();
+    if (negatives.length > 0) {
+      setMessage({ type: 'error', text: `Cannot submit — ${negatives.join(' · ')}` });
       return;
     }
     if (hasUnsavedChanges) {
@@ -535,6 +572,7 @@ function renderDimensionGrid(section, fields, values, onChange, readOnly) {
               <input
                 key={f.key}
                 type="number"
+                min="0"
                 style={styles.dimensionInput}
                 value={values[f.key] ?? ''}
                 onChange={(e) => onChange(f.key, e.target.value)}
@@ -562,6 +600,7 @@ function renderServicesGrid(fields, values, onChange, readOnly) {
           </label>
           <input
             type="number"
+            min="0"
             style={styles.serviceInput}
             value={values[f.key] ?? ''}
             onChange={(e) => onChange(f.key, e.target.value)}
@@ -634,6 +673,7 @@ function FieldCell({ field, values, onChange, readOnly }) {
         ) : (
           <input
             type="number"
+            min="0"
             step={field.step || (field.dataType === 'percentage' ? '0.1' : '1')}
             value={values[field.key] ?? ''}
             onChange={(e) => onChange(field.key, e.target.value)}
