@@ -311,6 +311,49 @@ router.post('/admin-reopen', authenticateToken, isAdmin, async (req, res) => {
 });
 
 // =============================================
+// POST /api/workflow/admin-publish
+// Admin publishes an APPROVED submission → visible on the live Snapshot.
+// Body: { target_type, target_id, reason?: string }
+//
+// PHASE 2C. Mirrors admin-approve via performAdminTransition, with an
+// admin-reopen-style pre-transition guard:
+//   Pre-condition: current status MUST be 'approved'.
+//     - in-flight states (submitted/head_reviewed/director_reviewed)
+//       must be approved first (use admin-approve)
+//     - published is already published (no double-publish)
+//     - draft/rejected are not in the admin pipeline at all
+// ALLOWED_TRANSITIONS in lib/workflow.js already permits
+// approved -> published for admin; this route simply exposes it.
+// =============================================
+router.post('/admin-publish', authenticateToken, isAdmin, async (req, res) => {
+  const v = validateActionBody(req.body, { reasonRequired: false });
+  if (!v.ok) return res.status(400).json({ error: v.error });
+
+  const { target_type, target_id, reason } = req.body;
+
+  const result = await performAdminTransition({
+    target_type,
+    target_id: parseInt(target_id, 10),
+    toState: 'published',
+    action: 'admin_published',
+    reason: reason || null,
+    actorUserId: req.user.id,
+    actorRole: req.user.role,
+    preTransitionGuard: (currentStatus) => {
+      if (currentStatus !== 'approved') {
+        return {
+          ok: false,
+          status: 400,
+          error: `Cannot publish submission in status '${currentStatus}'. admin-publish only applies to 'approved' submissions. For in-flight states (submitted/head_reviewed/director_reviewed), approve first via admin-approve. Published submissions are already live.`
+        };
+      }
+      return { ok: true };
+    }
+  });
+  res.status(result.http).json(result.body);
+});
+
+// =============================================
 // GET /api/workflow/history?target_type=&target_id=
 // Returns ordered workflow_history rows for a target.
 // Auth: admin OR (user has module access AND workflow_active=true).
