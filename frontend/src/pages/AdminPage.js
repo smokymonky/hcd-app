@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { activitiesAPI, usersAPI } from '../services/api';
 import TargetsManager from '../dashboards/TargetsManager';
+import ApprovalsManager from '../dashboards/ApprovalsManager';
 import '../styles/dashboard.css';
 
 const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -313,6 +314,7 @@ const AdminPage = ({ user, onLogout }) => {
         <button style={{...S.tab, ...(activeTab==='activities'?S.tabActive:{})}} onClick={()=>setActiveTab('activities')}>📋 Activities ({activities.length})</button>
         <button style={{...S.tab, ...(activeTab==='users'?S.tabActive:{})}} onClick={()=>setActiveTab('users')}>👥 Users</button>
         <button style={{...S.tab, ...(activeTab==='targets'?S.tabActive:{})}} onClick={()=>setActiveTab('targets')}>🎯 Targets</button>
+        <button style={{...S.tab, ...(activeTab==='approvals'?S.tabActive:{})}} onClick={()=>setActiveTab('approvals')}>✅ Approvals</button>
       </div>
 
       {/* Activities Tab */}
@@ -563,6 +565,13 @@ const AdminPage = ({ user, onLogout }) => {
       {activeTab === 'targets' && (
         <div className="view-section" style={{padding:'16px', overflow:'visible'}}>
           <TargetsManager />
+        </div>
+      )}
+
+      {/* Approvals Tab (Phase 2C) */}
+      {activeTab === 'approvals' && (
+        <div className="view-section" style={{padding:'16px', overflow:'visible'}}>
+          <ApprovalsManager />
         </div>
       )}
 
