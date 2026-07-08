@@ -567,4 +567,53 @@ router.get('/pending-approval', authenticateToken, isAdmin, async (req, res) => 
   }
 });
 
+// =============================================
+// GET /api/dashboards/admin-queue
+// PHASE 2C. Admin-only full pipeline queue across ALL modules.
+// Returns every non-draft, non-rejected submission:
+//   status IN (submitted, head_reviewed, director_reviewed, approved, published)
+//
+// Distinct from pending-approval (which stays submitted-only per its
+// existing contract — Rule 10; confirmed unused by any UI but preserved).
+//
+// Row shape:
+//   id, module_id, module_code, module_name, year, month, status,
+//   created_by, owner_name, owner_role, updated_at,
+//   last_action_at, last_action_by_name  (latest workflow_history entry)
+//
+// The lateral join grabs the most recent workflow_history row per
+// submission so the UI can show "Reviewed by X · 2h ago" without a
+// second round-trip. Cheap: one indexed lookup per returned row
+// (idx_workflow_history_target covers target_type+target_id).
+// =============================================
+router.get('/admin-queue', authenticateToken, isAdmin, async (req, res) => {
+  try {
+    const r = await pool.query(
+      `SELECT s.id, s.module_id, m.code AS module_code, m.name AS module_name,
+              s.year, s.month, s.status, s.created_by,
+              u.name AS owner_name, u.role AS owner_role,
+              s.updated_at,
+              wh.created_at AS last_action_at,
+              au.name AS last_action_by_name
+       FROM dashboard_submissions s
+       JOIN dashboard_modules m ON s.module_id = m.id
+       LEFT JOIN users u ON s.created_by = u.id
+       LEFT JOIN LATERAL (
+         SELECT h.created_at, h.action_by
+         FROM workflow_history h
+         WHERE h.target_type = 'dashboard_submission' AND h.target_id = s.id
+         ORDER BY h.created_at DESC, h.id DESC
+         LIMIT 1
+       ) wh ON true
+       LEFT JOIN users au ON wh.action_by = au.id
+       WHERE s.status IN ('submitted','head_reviewed','director_reviewed','approved','published')
+       ORDER BY s.updated_at DESC`
+    );
+    res.json(r.rows);
+  } catch (err) {
+    console.error('GET /admin-queue error:', err);
+    res.status(500).json({ error: 'Server error loading admin queue.' });
+  }
+});
+
 module.exports = router;
