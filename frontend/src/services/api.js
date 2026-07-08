@@ -131,6 +131,12 @@ export const dashboardsAPI = {
 
   // GET /api/dashboards/pending-approval (admin only)
   getPendingApproval: () => request('/dashboards/pending-approval'),
+
+  // GET /api/dashboards/admin-queue (admin only) — PHASE 2C
+  // Full non-draft pipeline across all modules:
+  // submitted, head_reviewed, director_reviewed, approved, published.
+  // Used by the Approvals tab (ApprovalsManager).
+  getAdminQueue: () => request('/dashboards/admin-queue'),
 };
 
 // =============================================
@@ -144,6 +150,11 @@ export const workflowAPI = {
     method: 'POST', body: JSON.stringify({ target_type, target_id, reason })
   }),
   adminReopen: (target_type, target_id, reason) => request('/workflow/admin-reopen', {
+    method: 'POST', body: JSON.stringify({ target_type, target_id, reason })
+  }),
+  // POST /api/workflow/admin-publish — PHASE 2C
+  // Transition approved -> published (admin only). Reason optional.
+  adminPublish: (target_type, target_id, reason) => request('/workflow/admin-publish', {
     method: 'POST', body: JSON.stringify({ target_type, target_id, reason })
   }),
   getHistory: (target_type, target_id) =>
