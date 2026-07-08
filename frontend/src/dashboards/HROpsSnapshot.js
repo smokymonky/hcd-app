@@ -3,7 +3,6 @@ import {
   FIELDS,
   SECTIONS,
   computeField,
-  computeSectionHeaderTotal,
   formatNumber,
   evaluateTarget,
 } from '../config/hrOpsFields';
@@ -387,17 +386,17 @@ function renderComplianceSection(values) {
         {/* Saudization — with inline TargetIndicator (Item 6) */}
         <div style={styles.miniKpi}>
           <div style={styles.miniLabel}>Saudization</div>
-          <div style={{ ...styles.miniValue, color: '#F3C036' }}>
+          <div style={{ ...styles.miniValue, ...styles.miniValueLarge, color: '#F3C036' }}>
             {values.saudization_pct ? `${formatNumber(values.saudization_pct)}%` : '—'}
           </div>
           <TargetIndicator evaluation={evaluation} />
         </div>
         {/* HRDF Employees */}
-        <MiniKpi label="HRDF Employees" value={formatNumber(values.hrdf_employee_count)} />
+        <MiniKpi label="HRDF Employees" value={formatNumber(values.hrdf_employee_count)} large />
         {/* HRDF Amount */}
         <div style={styles.miniKpi}>
           <div style={styles.miniLabel}>HRDF Amount</div>
-          <div style={{ ...styles.miniValue, color: '#F3C036' }}>
+          <div style={{ ...styles.miniValue, ...styles.miniValueLarge, color: '#F3C036' }}>
             {formatNumber(values.hrdf_amount_sr)} <span style={{ ...styles.miniValuePct, color: 'rgba(255,255,255,0.5)' }}>SR</span>
           </div>
         </div>
@@ -419,8 +418,10 @@ function renderOnOffSection(values) {
     { key: 'gosi_qiwa_removal', label: 'Gosi / Qiwa removal' },
     { key: 'sponsorship_transfer', label: 'Sponsorship transfer' },
   ];
-  const onboardTotal = computeSectionHeaderTotal(SECTIONS.find((s) => s.key === 'onboarding'), values);
-  const offboardTotal = computeSectionHeaderTotal(SECTIONS.find((s) => s.key === 'offboarding'), values);
+  // POLISH: header totals removed — summing distinct process steps for the
+  // same people (profile + ID card + insurance + Gosi for one hire = "4")
+  // was misleading. Services keeps its total (total_handled_requests is a
+  // real count of handled requests).
 
   return (
     <div style={styles.snapSection}>
@@ -428,7 +429,7 @@ function renderOnOffSection(values) {
       <div style={styles.snapTitle}>On-Boarding / Off-Boarding</div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 18 }}>
         <div>
-          <div style={styles.subSnapTitle}>On-Boarding {onboardTotal != null && `· ${onboardTotal} total`}</div>
+          <div style={styles.subSnapTitle}>On-Boarding</div>
           <div style={styles.hoOpHeader}>
             <div />
             <div style={styles.hoOpColHead}>HO</div>
@@ -443,7 +444,7 @@ function renderOnOffSection(values) {
           ))}
         </div>
         <div>
-          <div style={styles.subSnapTitle}>Off-Boarding {offboardTotal != null && `· ${offboardTotal} total`}</div>
+          <div style={styles.subSnapTitle}>Off-Boarding</div>
           <div style={styles.hoOpHeader}>
             <div />
             <div style={styles.hoOpColHead}>HO</div>
@@ -489,11 +490,15 @@ function renderServicesSection(values) {
 // =============================================
 // Small components + helpers
 // =============================================
-function MiniKpi({ label, value, pct }) {
+// POLISH: optional `large` prop bumps the value size for wide cards
+// (Compliance & HRDF 3-col section). Default stays 18px so the
+// Headcount 4-up MiniKpis (Employees/Outsource/Female/Male) render
+// exactly as before.
+function MiniKpi({ label, value, pct, large = false }) {
   return (
     <div style={styles.miniKpi}>
       <div style={styles.miniLabel}>{label}</div>
-      <div style={styles.miniValue}>
+      <div style={{ ...styles.miniValue, ...(large ? styles.miniValueLarge : {}) }}>
         {value}
         {pct && <span style={styles.miniValuePct}>{pct}</span>}
       </div>
@@ -529,6 +534,12 @@ const styles = {
     background: 'rgba(255,255,255,0.03)',
     border: '1px solid rgba(255,255,255,0.1)',
     backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
+    // MICRO-FIX: backdropFilter creates a stacking context, so the Dropdown
+    // panel's zIndex:1000 only competes INSIDE this bar. Later siblings
+    // (hero KPI cards, also blurred stacking contexts) painted over the
+    // open panel. Explicit zIndex lifts the whole bar above them.
+    // Same family as Principle 6B.11 / the Phase 2A Data Entry fix.
+    position: 'relative', zIndex: 30,
     borderRadius: 16,
     padding: '16px 20px',
     marginBottom: 22,
@@ -663,6 +674,11 @@ const styles = {
   miniValue: {
     fontSize: 18, fontWeight: 700, letterSpacing: '-0.3px',
     color: '#fff', fontVariantNumeric: 'tabular-nums',
+  },
+  // POLISH: larger value size for the wide Compliance & HRDF cards.
+  // Weight/format identical to miniValue — size only.
+  miniValueLarge: {
+    fontSize: 27,
   },
   miniValuePct: {
     fontSize: 12, fontWeight: 600,
