@@ -109,6 +109,14 @@ export default function TargetsManager() {
   const [loadError, setLoadError] = useState(null);
   const [refreshTick, setRefreshTick] = useState(0);
 
+  // POLISH — mobile parity. Canonical pattern from DashboardPage.js.
+  const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth <= 768);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   // Modal state
   const [modalOpen, setModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState('add');     // 'add' | 'edit'
@@ -274,7 +282,7 @@ export default function TargetsManager() {
       `}</style>
 
       {/* Toolbar */}
-      <div style={styles.toolbar}>
+      <div style={{ ...styles.toolbar, ...(isMobile ? styles.toolbarMobile : {}) }}>
         <div style={styles.toolbarLeft}>
           <span style={styles.toolbarHeading}>
             Dashboard Targets
@@ -284,9 +292,13 @@ export default function TargetsManager() {
               </span>
             )}
           </span>
-          <span style={styles.toolbarFilterSlot}>(filter / search — coming later)</span>
+          {!isMobile && <span style={styles.toolbarFilterSlot}>(filter / search — coming later)</span>}
         </div>
-        <button type="button" style={styles.btnPrimary} onClick={() => openAdd(null)}>
+        <button
+          type="button"
+          style={{ ...styles.btnPrimary, ...(isMobile ? styles.btnPrimaryMobile : {}) }}
+          onClick={() => openAdd(null)}
+        >
           <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4"/></svg>
           Add Target
         </button>
@@ -324,7 +336,7 @@ export default function TargetsManager() {
           : 0;
 
         return (
-          <div key={m.code} style={{ ...styles.moduleCard, ...(m.isActive ? {} : styles.moduleCardDisabled) }}>
+          <div key={m.code} style={{ ...styles.moduleCard, ...(isMobile ? styles.moduleCardMobile : {}), ...(m.isActive ? {} : styles.moduleCardDisabled) }}>
             <div style={styles.moduleAccent} />
             <div style={styles.moduleHeader}>
               <div style={styles.moduleHeaderLeft}>
@@ -388,6 +400,7 @@ export default function TargetsManager() {
                           key={row.id}
                           target={row}
                           field={field}
+                          isMobile={isMobile}
                           onEdit={() => openEdit(row)}
                           onDelete={() => openDelete(row)}
                         />
@@ -406,6 +419,7 @@ export default function TargetsManager() {
                         target={row}
                         field={field}
                         orphan
+                        isMobile={isMobile}
                         onEdit={() => openEdit(row)}
                         onDelete={() => openDelete(row)}
                       />
@@ -423,6 +437,7 @@ export default function TargetsManager() {
                         target={row}
                         field={field}
                         deleted
+                        isMobile={isMobile}
                         onRestore={() => handleRestore(row)}
                       />
                     ))}
@@ -475,7 +490,7 @@ export default function TargetsManager() {
 // =============================================
 // TargetRow — one row inside a section group
 // =============================================
-function TargetRow({ target, field, orphan = false, deleted = false, onEdit, onDelete, onRestore }) {
+function TargetRow({ target, field, orphan = false, deleted = false, isMobile = false, onEdit, onDelete, onRestore }) {
   // Phase 2B polish: same formatFieldLabel helper used by the Add/Edit
   // dropdown — keeps list ↔ dropdown ↔ delete summary consistent so an
   // admin who picks "ID Cards Printed (HO)" sees that exact label in
@@ -490,14 +505,29 @@ function TargetRow({ target, field, orphan = false, deleted = false, onEdit, onD
     ? '±2.0 (default)'
     : `±${formatNum(target.tolerance)}${unit || ''}`;
 
+  // POLISH — mobile: rows stack vertically (field / value+direction /
+  // meta / actions full-width ≥40px).
+  const rowStyle = isMobile
+    ? { ...styles.targetRow, ...styles.targetRowMobile, ...(deleted ? styles.targetRowDeleted : {}) }
+    : { ...styles.targetRow, ...(deleted ? styles.targetRowDeleted : {}) };
+  const actionsStyle = isMobile
+    ? { ...styles.targetActions, ...styles.targetActionsMobile }
+    : styles.targetActions;
+  const miniBtnStyle = isMobile
+    ? { ...styles.btnMini, ...styles.btnMiniMobile }
+    : styles.btnMini;
+  const restoreBtnStyle = isMobile
+    ? { ...styles.btnRestore, ...styles.btnMiniMobile }
+    : styles.btnRestore;
+
   return (
-    <div style={{ ...styles.targetRow, ...(deleted ? styles.targetRowDeleted : {}) }}>
+    <div style={rowStyle}>
       <div style={styles.targetFieldName}>
         <span style={deleted ? { textDecoration: 'line-through' } : {}}>{fieldName}</span>
         {orphan && <span style={styles.orphanTag}>orphan</span>}
         <span style={styles.fieldKey}>{target.field_key}</span>
       </div>
-      <div style={styles.targetValue}>{valueDisplay}</div>
+      <div style={{ ...styles.targetValue, ...(isMobile ? styles.targetValueMobile : {}) }}>{valueDisplay}</div>
       <div style={{ ...styles.targetDirection, color: directionMeta.color }}>
         <span style={{ ...styles.directionGlyph, color: directionMeta.color }}>{directionMeta.glyph}</span>
         {directionMeta.label}
@@ -512,16 +542,16 @@ function TargetRow({ target, field, orphan = false, deleted = false, onEdit, onD
             : `Tolerance: ${tolDisplay}`}
         </span>
       </div>
-      <div style={styles.targetActions}>
+      <div style={actionsStyle}>
         {deleted ? (
-          <button type="button" style={styles.btnRestore} onClick={onRestore}>
+          <button type="button" style={restoreBtnStyle} onClick={onRestore}>
             <svg width="11" height="11" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
             Restore
           </button>
         ) : (
           <>
-            <button type="button" style={styles.btnMini} onClick={onEdit}>Edit</button>
-            <button type="button" style={{ ...styles.btnMini, ...styles.btnDanger }} onClick={onDelete}>Delete</button>
+            <button type="button" style={miniBtnStyle} onClick={onEdit}>Edit</button>
+            <button type="button" style={{ ...miniBtnStyle, ...styles.btnDanger }} onClick={onDelete}>Delete</button>
           </>
         )}
       </div>
@@ -768,6 +798,41 @@ const styles = {
     border: '1px solid rgba(255,255,255,0.04)',
     borderRadius: 10,
     marginBottom: 6,
+  },
+  // POLISH — mobile: single column stack, tighter padding.
+  targetRowMobile: {
+    gridTemplateColumns: '1fr',
+    gap: 8,
+    padding: '12px',
+  },
+  targetValueMobile: {
+    textAlign: 'left',
+    fontSize: 18,
+  },
+  targetActionsMobile: {
+    justifyContent: 'stretch',
+    width: '100%',
+    display: 'flex',
+    gap: 8,
+  },
+  btnMiniMobile: {
+    flex: 1,
+    justifyContent: 'center',
+    minHeight: 40,
+    fontSize: 12.5,
+  },
+  toolbarMobile: {
+    flexDirection: 'column',
+    alignItems: 'stretch',
+    padding: '16px 16px 10px',
+  },
+  btnPrimaryMobile: {
+    width: '100%',
+    justifyContent: 'center',
+    minHeight: 44,
+  },
+  moduleCardMobile: {
+    margin: '0 16px 14px',
   },
   targetRowDeleted: {
     opacity: 0.55,
