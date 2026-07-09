@@ -209,7 +209,7 @@ const AdminPage = ({ user, onLogout }) => {
 
   // User CRUD
   const handleCreateUser = () => {
-    setEditItem({ name: '', email: '', password: '', role: 'viewer', function_name: 'OP' });
+    setEditItem({ name: '', email: '', password: '', role: 'viewer', function: 'OP' });
     setFormType('create-user');
     setShowForm(true);
   };
@@ -510,9 +510,12 @@ const AdminPage = ({ user, onLogout }) => {
                             )}
                           </div>
                         </div>
-                        <div style={{display:'flex',gap:8,marginTop:8}}>
+                        <div style={{display:'flex',gap:8,marginTop:8,flexWrap:'wrap',alignItems:'center'}}>
                           <span style={{...S.roleBadge, background: u.role === 'admin' ? 'rgba(243,192,54,0.2)' : 'rgba(168,136,190,0.2)', color: u.role === 'admin' ? '#F3C036' : '#A888BE'}}>{u.role}</span>
-                          <span style={{fontSize:11,color:'var(--text-light)'}}>{u.function_name || u.function || '-'}</span>
+                          <span style={{fontSize:11,color:'var(--text-light)'}}>{u.function || '-'}</span>
+                          <span style={{fontSize:11,color:u.function&&!moduleAccessFromFunction(u.function).startsWith('—')?'#A888BE':'var(--text-light)'}}>
+                            · {u.function ? moduleAccessFromFunction(u.function) : '— none (manual)'}
+                          </span>
                         </div>
                       </div>
                     )) : <div style={{textAlign:'center',padding:'40px',color:'var(--text-light)'}}>Loading users or no users found...</div>}
@@ -522,7 +525,7 @@ const AdminPage = ({ user, onLogout }) => {
                 return (
                   <table className="data-table">
                     <thead><tr>
-                      <th>#</th><th>Name</th><th>Email</th><th>Role</th><th>Function</th><th>Status</th><th>Actions</th>
+                      <th>#</th><th>Name</th><th>Email</th><th>Role</th><th>Function</th><th>Module access</th><th>Status</th><th>Actions</th>
                     </tr></thead>
                     <tbody>
                       {displayUsers.length > 0 ? displayUsers.map((u, idx) => (
@@ -531,7 +534,12 @@ const AdminPage = ({ user, onLogout }) => {
                           <td style={{fontWeight:500}}>{u.name}</td>
                           <td>{u.email}</td>
                           <td><span style={{...S.roleBadge, background: u.role === 'admin' ? 'rgba(243,192,54,0.2)' : 'rgba(168,136,190,0.2)', color: u.role === 'admin' ? '#F3C036' : '#A888BE'}}>{u.role}</span></td>
-                          <td>{u.function_name || u.function || '-'}</td>
+                          <td>{u.function || '-'}</td>
+                          <td>
+                            <span style={{fontSize:11,color:u.function&&moduleAccessFromFunction(u.function).startsWith('—')?'var(--text-light)':'#A888BE',fontWeight:500}}>
+                              {u.function ? moduleAccessFromFunction(u.function) : '— none (manual)'}
+                            </span>
+                          </td>
                           <td>
                             <span style={{fontSize:11,padding:'3px 10px',borderRadius:4,fontWeight:600,
                               background:u.is_active===false?'rgba(239,68,68,0.15)':'rgba(34,197,94,0.15)',
@@ -552,7 +560,7 @@ const AdminPage = ({ user, onLogout }) => {
                           </td>
                         </tr>
                       )) : (
-                        <tr><td colSpan="7" style={{textAlign:'center',padding:'40px',color:'var(--text-light)'}}>Loading users or no users found...</td></tr>
+                        <tr><td colSpan="8" style={{textAlign:'center',padding:'40px',color:'var(--text-light)'}}>Loading users or no users found...</td></tr>
                       )}
                     </tbody>
                   </table>
@@ -666,7 +674,7 @@ const AdminPage = ({ user, onLogout }) => {
                     </div>
                     <div style={S.field}>
                       <label style={S.fieldLabel}>Function</label>
-                      <select style={S.fieldInput} value={editItem.function_name || editItem.function || 'OP'} onChange={e => setEditItem({...editItem, function_name: e.target.value})}>
+                      <select style={S.fieldInput} value={editItem.function || 'OP'} onChange={e => setEditItem({...editItem, function: e.target.value})}>
                         {['OP','D&C','T&A','OD','Com&Bn','SBM','ALL'].map(f => <option key={f} value={f}>{f}</option>)}
                       </select>
                     </div>
@@ -691,6 +699,16 @@ const AdminPage = ({ user, onLogout }) => {
 function getOwnerClass(owner) {
   const map = {OP:'op','D&C':'dc','T&A':'ta',OD:'od','Com&Bn':'cb',SBM:'sbm',ALL:'all','T&A/D&C':'ta','OD/D&C':'od','OD/SBM':'od','OD/Com&Bn':'od'};
   return map[owner] || 'all';
+}
+
+// Section 6.6 Function → Module auto-mapping (DISPLAY-ONLY, derived from
+// the user's function; mirrors backend FUNCTION_TO_MODULE_MAP). Functions
+// that don't auto-map (OD, Com&Bn, ALL, multi like 'T&A/D&C', or blank)
+// render as manual-assign. This is a read-only hint — the actual grant is
+// written by autoAssignModuleForUser on the backend at create/update.
+function moduleAccessFromFunction(fn) {
+  const map = { OP: 'HR Operations', 'T&A': 'Talent Acquisition', 'D&C': 'L&D', SBM: 'HR Systems' };
+  return map[fn] || '— none (manual)';
 }
 
 // Styles
