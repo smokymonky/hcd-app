@@ -278,25 +278,25 @@ const AdminPage = ({ user, onLogout }) => {
   return (
     <div className="dashboard-container">
       {/* Header */}
-      <header className="header">
-        <div className="header-left">
+      <header className="header" style={isMobile ? S.headerMobile : undefined}>
+        <div className="header-left" style={isMobile ? S.headerLeftMobile : undefined}>
           <div className="header-logo">
             <svg viewBox="0 0 180 50" fill="currentColor">
               <text x="0" y="28" fontFamily="Inter, sans-serif" fontSize="18" fontWeight="600">Abdul Latif Jameel</text>
               <text x="0" y="44" fontFamily="Inter, sans-serif" fontSize="12" fontWeight="500" fill="var(--text-light)">FINANCE</text>
             </svg>
           </div>
-          <div className="header-divider" />
+          {!isMobile && <div className="header-divider" />}
           <div className="header-title"><h1>Admin Panel</h1></div>
         </div>
-        <div className="header-right">
-          <button className="btn-theme" onClick={() => navigate('/dashboard')} style={{fontSize:'14px',width:'auto',padding:'0 16px',gap:'8px',display:'flex',alignItems:'center'}}>
+        <div className="header-right" style={isMobile ? S.headerRightMobile : undefined}>
+          <button className="btn-theme" onClick={() => navigate('/dashboard')} style={{fontSize:'14px',width:'auto',padding:isMobile?'10px 16px':'0 16px',gap:'8px',display:'flex',alignItems:'center',...(isMobile?{minHeight:40,flex:1,justifyContent:'center'}:{})}}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 19l-7-7 7-7"/></svg>
             Dashboard
           </button>
-          <div style={{display:'flex',alignItems:'center',gap:'8px',paddingLeft:'16px',borderLeft:'1px solid var(--border-color)'}}>
+          <div style={{display:'flex',alignItems:'center',gap:'8px',...(isMobile?{flex:1,justifyContent:'flex-end'}:{paddingLeft:'16px',borderLeft:'1px solid var(--border-color)'})}}>
             <span style={{color:'var(--text-secondary)',fontSize:'13px',fontWeight:500}}>{user?.name || 'Admin'}</span>
-            <button onClick={() => { if(onLogout) onLogout(); navigate('/login'); }} style={S.logoutBtn}>Logout</button>
+            <button onClick={() => { if(onLogout) onLogout(); navigate('/login'); }} style={{...S.logoutBtn,...(isMobile?{minHeight:40}:{})}}>Logout</button>
           </div>
         </div>
       </header>
@@ -309,12 +309,14 @@ const AdminPage = ({ user, onLogout }) => {
         </div>
       )}
 
-      {/* Tabs */}
-      <div style={S.tabs}>
-        <button style={{...S.tab, ...(activeTab==='activities'?S.tabActive:{})}} onClick={()=>setActiveTab('activities')}>📋 Activities ({activities.length})</button>
-        <button style={{...S.tab, ...(activeTab==='users'?S.tabActive:{})}} onClick={()=>setActiveTab('users')}>👥 Users</button>
-        <button style={{...S.tab, ...(activeTab==='targets'?S.tabActive:{})}} onClick={()=>setActiveTab('targets')}>🎯 Targets</button>
-        <button style={{...S.tab, ...(activeTab==='approvals'?S.tabActive:{})}} onClick={()=>setActiveTab('approvals')}>✅ Approvals</button>
+      {/* Tabs — MOBILE FIX: 2×2 full-width grid on phones (4 desktop tabs
+          overflow a 380px screen with no way to reach the rest). Desktop
+          rendering unchanged. */}
+      <div style={isMobile ? S.tabsMobile : S.tabs}>
+        <button style={{...S.tab, ...(isMobile?S.tabMobile:{}), ...(activeTab==='activities'?S.tabActive:{})}} onClick={()=>setActiveTab('activities')}>📋 Activities ({activities.length})</button>
+        <button style={{...S.tab, ...(isMobile?S.tabMobile:{}), ...(activeTab==='users'?S.tabActive:{})}} onClick={()=>setActiveTab('users')}>👥 Users</button>
+        <button style={{...S.tab, ...(isMobile?S.tabMobile:{}), ...(activeTab==='targets'?S.tabActive:{})}} onClick={()=>setActiveTab('targets')}>🎯 Targets</button>
+        <button style={{...S.tab, ...(isMobile?S.tabMobile:{}), ...(activeTab==='approvals'?S.tabActive:{})}} onClick={()=>setActiveTab('approvals')}>✅ Approvals</button>
       </div>
 
       {/* Activities Tab */}
@@ -694,7 +696,15 @@ function getOwnerClass(owner) {
 // Styles
 const S = {
   tabs: { display:'flex', gap:'4px', marginBottom:'24px', background:'var(--bg-card)', padding:'4px', borderRadius:'12px', border:'1px solid var(--border-color)', width:'fit-content' },
+  // MOBILE FIX: 2×2 grid, full-width, all 4 tabs visible — no horizontal scroll.
+  tabsMobile: { display:'grid', gridTemplateColumns:'1fr 1fr', gap:'4px', marginBottom:'20px', background:'var(--bg-card)', padding:'4px', borderRadius:'12px', border:'1px solid var(--border-color)', width:'100%' },
   tab: { padding:'10px 24px', background:'transparent', border:'none', borderRadius:'8px', fontFamily:'Inter,sans-serif', fontSize:'14px', fontWeight:600, color:'var(--text-secondary)', cursor:'pointer', transition:'all 0.15s ease', display:'flex', alignItems:'center', gap:'8px' },
+  // MOBILE FIX: tighter padding, 13px font, ≥40px tap target, centered.
+  tabMobile: { padding:'10px 12px', fontSize:'13px', minHeight:40, justifyContent:'center', gap:'6px' },
+  // MOBILE FIX: header stacks — brand+title, then actions row wrapping below.
+  headerMobile: { flexDirection:'column', alignItems:'stretch', gap:'12px' },
+  headerLeftMobile: { display:'flex', alignItems:'center', justifyContent:'space-between', gap:'10px', flexWrap:'wrap' },
+  headerRightMobile: { display:'flex', alignItems:'center', gap:'8px', width:'100%', flexWrap:'wrap' },
   tabActive: { background:'linear-gradient(135deg, #ec4899 0%, #a855f7 100%)', color:'#fff' },
   message: { padding:'12px 20px', borderRadius:'12px', border:'1px solid', marginBottom:'16px', fontSize:'14px', fontWeight:500, display:'flex', alignItems:'center', gap:'8px' },
   logoutBtn: { padding:'8px 16px', background:'rgba(239,68,68,0.1)', border:'1px solid rgba(239,68,68,0.3)', borderRadius:'8px', color:'#ef4444', fontFamily:'Inter,sans-serif', fontSize:'13px', fontWeight:600, cursor:'pointer' },
