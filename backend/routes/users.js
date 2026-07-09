@@ -161,9 +161,28 @@ router.put('/:id', authenticateToken, isAdmin, async (req, res) => {
       [name, email?.toLowerCase(), hashedPassword, password || null, role, userFunction, is_active, id]
     );
 
+    const updatedUser = result.rows[0];
+
+    // EMPLOYEE ACCESS FIX: re-run the module auto-assign grant after update.
+    // POST already does this on create; PUT previously did not, so an admin
+    // could not fix an already-broken user (function saved NULL) by editing
+    // them, and changing/assigning a function granted no access. We use the
+    // function value COALESCE actually persisted (updatedUser.function) so a
+    // PUT that omits function still grants based on the stored value.
+    // Best-effort + idempotent (ON CONFLICT DO NOTHING, no-throw). Only fires
+    // when a function value is present (auto-map functions: OP/T&A/D&C/SBM).
+    // KNOWN LIMITATION (deferred): no revoke — changing a function does NOT
+    // remove the previously granted module row yet (additive only for now).
+    let moduleResult = null;
+    if (updatedUser && updatedUser.function) {
+      moduleResult = await autoAssignModuleForUser(updatedUser.id, updatedUser.function);
+    }
+
     res.json({
       message: 'User updated successfully',
-      user: result.rows[0]
+      user: updatedUser,
+      moduleAutoAssigned: moduleResult ? moduleResult.moduleCode : null,
+      moduleAssignDetail: moduleResult
     });
 
   } catch (err) {
