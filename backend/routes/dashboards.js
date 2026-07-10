@@ -369,11 +369,22 @@ router.post('/:moduleCode/submissions', authenticateToken, (req, res, next) => {
     }
 
     // REPLACE hr_ops_data for this submission
-    await client.query('DELETE FROM hr_ops_data WHERE submission_id = $1', [submission.id]);
+    // MULTI-USER SAFE SAVE: per-field UPSERT instead of DELETE-all + re-INSERT.
+    // The old code wiped the whole month then re-inserted the payload, so a
+    // second employee saving a different section would erase the first's work
+    // with their stale copy. Now each save MERGES only the sent fields into
+    // the month; fields ABSENT from the payload are left untouched.
+    // Relies on the existing UNIQUE (submission_id, section, field_key)
+    // constraint (initDatabase). A field sent with null/'' upserts to NULL —
+    // that's an explicit clear (the frontend only sends fields the user
+    // actually changed, sending cleared-to-empty as null; omitted fields
+    // are never sent, so they're never touched).
     for (const row of data) {
       await client.query(
         `INSERT INTO hr_ops_data (submission_id, section, field_key, value)
-         VALUES ($1, $2, $3, $4)`,
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (submission_id, section, field_key)
+         DO UPDATE SET value = EXCLUDED.value`,
         [submission.id, row.section, row.field_key, row.value == null ? null : String(row.value)]
       );
     }
