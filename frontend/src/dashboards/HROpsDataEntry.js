@@ -119,6 +119,21 @@ export default function HROpsDataEntry({
     [values, lastSaved]
   );
 
+  // MULTI-USER SAFE SAVE (Fix 3a) — warn on tab close/refresh with unsaved
+  // edits. Listener added/removed as hasUnsavedChanges flips so we don't
+  // nag when there's nothing to lose.
+  useEffect(() => {
+    if (!hasUnsavedChanges) return undefined;
+    function onBeforeUnload(e) {
+      e.preventDefault();
+      // Modern browsers show a generic message; returnValue must be set.
+      e.returnValue = '';
+      return '';
+    }
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, [hasUnsavedChanges]);
+
   // Latest rejection reason (for the rejected banner)
   const latestRejection = useMemo(() => {
     if (!isRejected) return null;
@@ -169,25 +184,46 @@ export default function HROpsDataEntry({
     const negatives = findNegativeValues();
     if (negatives.length > 0) {
       setMessage({ type: 'error', text: `Cannot save — ${negatives.join(' · ')}` });
-      return;
+      return false;
     }
+
+    // MULTI-USER SAFE SAVE — send ONLY fields that changed vs the last saved
+    // snapshot. Combined with the backend's per-field UPSERT (no DELETE-all),
+    // this means one employee's save never overwrites another's section: we
+    // only touch the field_keys this person actually edited. A field cleared
+    // to empty is sent as value:null so the clear propagates; fields the user
+    // never touched are omitted entirely and left untouched server-side.
+    const changed = FIELDS
+      .filter((f) => f.active && f.source !== 'computed')
+      .filter((f) => {
+        const cur = values[f.key];
+        const prev = lastSaved[f.key];
+        const sc = cur === undefined || cur === null ? '' : String(cur);
+        const sp = prev === undefined || prev === null ? '' : String(prev);
+        return sc !== sp;
+      })
+      .map((f) => ({
+        section: f.section,
+        field_key: f.key,
+        value: values[f.key] === undefined || values[f.key] === '' ? null : String(values[f.key]),
+      }));
+
+    // Nothing changed → don't send an empty write.
+    if (changed.length === 0) {
+      setMessage({ type: 'info', text: 'No changes to save.' });
+      return true;
+    }
+
     setSaving(true);
     setMessage(null);
     try {
-      // Build payload: only manual fields with non-empty values
-      const data = FIELDS
-        .filter((f) => f.active && f.source !== 'computed')
-        .map((f) => ({
-          section: f.section,
-          field_key: f.key,
-          value: values[f.key] === undefined || values[f.key] === '' ? null : String(values[f.key]),
-        }));
-
-      const resp = await dashboardsAPI.saveSubmission('HR_OPS', { year, month, data });
+      const resp = await dashboardsAPI.saveSubmission('HR_OPS', { year, month, data: changed });
       // resp = { submission, data, created }
       const sub = resp.submission;
       setSubmission(sub);
-      // Refresh from server response — handles auto-resume rejected→draft
+      // Refresh from server response — it returns the FULL merged month, so
+      // each person sees the combined latest (their edits + others') after save.
+      // Also handles auto-resume rejected→draft.
       const v = {};
       (resp.data || []).forEach((row) => { v[row.field_key] = row.value ?? ''; });
       setValues(v);
@@ -197,9 +233,11 @@ export default function HROpsDataEntry({
       setHistory(detail.history || []);
       if (onStatusChange) onStatusChange(sub.status);
       setMessage({ type: 'success', text: resp.created ? 'Draft created.' : 'Draft saved.' });
+      return true;
     } catch (err) {
       console.error('[HROpsDataEntry] save failed:', err);
       setMessage({ type: 'error', text: `Save failed: ${err.message || 'unknown error'}` });
+      return false;
     } finally {
       setSaving(false);
     }
@@ -220,8 +258,14 @@ export default function HROpsDataEntry({
       return;
     }
     if (hasUnsavedChanges) {
-      // Save before submitting so reviewer sees latest
-      await handleSaveDraft();
+      // Save before submitting so reviewer sees latest. ABORT the submit if
+      // that save did not succeed (e.g. negative value or network error) —
+      // previously submit proceeded regardless, which could submit stale data.
+      const ok = await handleSaveDraft();
+      if (!ok) {
+        // handleSaveDraft already surfaced the reason via setMessage.
+        return;
+      }
     }
     setSubmitting(true);
     setMessage(null);
@@ -263,6 +307,12 @@ export default function HROpsDataEntry({
   const monthOptions = buildMonthOptions();
 
   function handlePeriodChange(nextYear, nextMonth) {
+    // MULTI-USER SAFE SAVE (Fix 3b) — guard against losing unsaved edits when
+    // switching month/year. Cancel keeps the user on the current period.
+    if (hasUnsavedChanges) {
+      const proceed = window.confirm('You have unsaved changes. Switch period and lose them?');
+      if (!proceed) return;
+    }
     if (typeof onPeriodChange === 'function') {
       onPeriodChange(Number(nextYear), Number(nextMonth));
     }
