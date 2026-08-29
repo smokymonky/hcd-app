@@ -7,7 +7,7 @@ const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcryptjs');
 const pool = require('../config/database');
-const { authenticateToken, isAdmin, autoAssignModuleForUser } = require('../middleware/auth');
+const { authenticateToken, isAdmin, autoAssignModuleForUser, FUNCTION_TO_MODULE_MAP } = require('../middleware/auth');
 
 // =============================================
 // GET /api/users
@@ -163,6 +163,36 @@ router.put('/:id', authenticateToken, isAdmin, async (req, res) => {
 
     const updatedUser = result.rows[0];
 
+    // ACCESS MGMT — revoke-on-function-change.
+    // checkResult.rows[0] holds the OLD user (pre-update). If the function
+    // changed AND the old function mapped to a DIFFERENT module than the new
+    // one, remove the stale AUTO access row for the old mapped module. Only
+    // source='auto' is ever deleted — 'manual' grants are deliberately left
+    // intact (that's the whole point of the source tag). The new-function
+    // auto-grant below then adds the new module. Net: function change SWAPS
+    // the auto module, manual grants survive. Best-effort — a failure here
+    // never fails the user update.
+    try {
+      const oldUser = checkResult.rows[0];
+      const oldFn = oldUser ? oldUser.function : null;
+      const newFn = updatedUser ? updatedUser.function : null;
+      if (oldFn && oldFn !== newFn) {
+        const oldModuleCode = FUNCTION_TO_MODULE_MAP[oldFn];
+        const newModuleCode = newFn ? FUNCTION_TO_MODULE_MAP[newFn] : null;
+        if (oldModuleCode && oldModuleCode !== newModuleCode) {
+          await pool.query(
+            `DELETE FROM user_module_access
+             WHERE user_id = $1
+               AND source = 'auto'
+               AND module_id = (SELECT id FROM dashboard_modules WHERE code = $2)`,
+            [updatedUser.id, oldModuleCode]
+          );
+        }
+      }
+    } catch (revokeErr) {
+      console.error('Revoke-on-function-change error (non-fatal):', revokeErr);
+    }
+
     // EMPLOYEE ACCESS FIX: re-run the module auto-assign grant after update.
     // POST already does this on create; PUT previously did not, so an admin
     // could not fix an already-broken user (function saved NULL) by editing
@@ -171,8 +201,8 @@ router.put('/:id', authenticateToken, isAdmin, async (req, res) => {
     // PUT that omits function still grants based on the stored value.
     // Best-effort + idempotent (ON CONFLICT DO NOTHING, no-throw). Only fires
     // when a function value is present (auto-map functions: OP/T&A/D&C/SBM).
-    // KNOWN LIMITATION (deferred): no revoke — changing a function does NOT
-    // remove the previously granted module row yet (additive only for now).
+    // Paired with the revoke above, a function change now cleanly swaps the
+    // auto module while leaving manual grants intact.
     let moduleResult = null;
     if (updatedUser && updatedUser.function) {
       moduleResult = await autoAssignModuleForUser(updatedUser.id, updatedUser.function);
@@ -248,6 +278,101 @@ router.get('/by-function/:function', authenticateToken, async (req, res) => {
   } catch (err) {
     console.error('Get users by function error:', err);
     res.status(500).json({ error: 'Server error.' });
+  }
+});
+
+// =============================================
+// ACCESS MGMT — manual module-access endpoints (admin-only)
+// =============================================
+
+// GET /api/users/:id/access
+// The user's module-access rows joined to dashboard_modules.
+router.get('/:id/access', authenticateToken, isAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const result = await pool.query(
+      `SELECT uma.module_id, m.code AS module_code, m.name AS module_name,
+              uma.access_level, uma.source
+       FROM user_module_access uma
+       JOIN dashboard_modules m ON uma.module_id = m.id
+       WHERE uma.user_id = $1
+       ORDER BY m.sort_order ASC, m.code ASC`,
+      [id]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error('GET /:id/access error:', err);
+    res.status(500).json({ error: 'Server error loading module access.' });
+  }
+});
+
+// POST /api/users/:id/access  { module_id | module_code, access_level }
+// Grant (or relabel) a module for the user. Always tagged source='manual' —
+// manually setting a row overrides/relabels it as a manual grant, which
+// protects it from revoke-on-function-change.
+router.post('/:id/access', authenticateToken, isAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { module_id, module_code, access_level } = req.body;
+
+    if (!access_level || !['owner', 'viewer'].includes(access_level)) {
+      return res.status(400).json({ error: "access_level must be 'owner' or 'viewer'." });
+    }
+    if (!module_id && !module_code) {
+      return res.status(400).json({ error: 'module_id or module_code is required.' });
+    }
+
+    // Resolve module_id from code if needed.
+    let moduleId = module_id;
+    if (!moduleId) {
+      const m = await pool.query('SELECT id FROM dashboard_modules WHERE code = $1', [module_code]);
+      if (m.rows.length === 0) {
+        return res.status(404).json({ error: `Unknown module_code '${module_code}'.` });
+      }
+      moduleId = m.rows[0].id;
+    }
+
+    const result = await pool.query(
+      `INSERT INTO user_module_access (user_id, module_id, access_level, source)
+       VALUES ($1, $2, $3, 'manual')
+       ON CONFLICT (user_id, module_id)
+       DO UPDATE SET access_level = EXCLUDED.access_level, source = 'manual'
+       RETURNING module_id, access_level, source`,
+      [id, moduleId, access_level]
+    );
+
+    // Return the row joined to module info for immediate UI render.
+    const row = await pool.query(
+      `SELECT uma.module_id, m.code AS module_code, m.name AS module_name,
+              uma.access_level, uma.source
+       FROM user_module_access uma
+       JOIN dashboard_modules m ON uma.module_id = m.id
+       WHERE uma.user_id = $1 AND uma.module_id = $2`,
+      [id, moduleId]
+    );
+    res.status(201).json(row.rows[0] || result.rows[0]);
+  } catch (err) {
+    console.error('POST /:id/access error:', err);
+    res.status(500).json({ error: 'Server error granting module access.' });
+  }
+});
+
+// DELETE /api/users/:id/access/:moduleId
+// Remove a module-access row regardless of source.
+// NOTE: removing an 'auto' row this way may reappear if a later function
+// re-assign runs autoAssignModuleForUser for that module. Manual rows stay
+// gone until re-granted.
+router.delete('/:id/access/:moduleId', authenticateToken, isAdmin, async (req, res) => {
+  try {
+    const { id, moduleId } = req.params;
+    await pool.query(
+      'DELETE FROM user_module_access WHERE user_id = $1 AND module_id = $2',
+      [id, moduleId]
+    );
+    res.json({ message: 'Module access removed.' });
+  } catch (err) {
+    console.error('DELETE /:id/access/:moduleId error:', err);
+    res.status(500).json({ error: 'Server error removing module access.' });
   }
 });
 
