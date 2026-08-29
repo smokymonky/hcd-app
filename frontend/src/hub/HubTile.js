@@ -63,7 +63,6 @@ export default function HubTile({ tile, locked = false, onClick }) {
              dangerouslySetInnerHTML={{ __html: iconPath }} />
       </div>
       <div style={styles.title}>{tile.title}</div>
-      {tile.description && <div style={styles.desc}>{tile.description}</div>}
     </a>
   );
 }
