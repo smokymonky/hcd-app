@@ -125,6 +125,64 @@ const checkModuleAccess = (moduleCode, requiredLevel = 'owner') => {
 };
 
 // =============================================
+// checkModuleAccessParam(requiredLevel)              Module Engine (Step 2a)
+// =============================================
+// Same gate as checkModuleAccess, but reads the module code from
+// req.params.moduleCode instead of a static argument — for routes like
+// /:moduleCode/labels where the module varies per request. Admin bypass;
+// otherwise looks up user_module_access for owner/viewer. Scoping every
+// label query by module_code (in the route) plus this gate means an owner
+// of one module can't reach another's labels.
+// =============================================
+const checkModuleAccessParam = (requiredLevel = 'owner') => {
+  return async (req, res, next) => {
+    try {
+      const moduleCode = req.params.moduleCode;
+      if (!moduleCode) {
+        return res.status(400).json({ error: 'Missing moduleCode in route.' });
+      }
+
+      // Admin bypass
+      if (req.user.role && req.user.role.toLowerCase() === 'admin') {
+        req.moduleAccess = { moduleCode, accessLevel: 'admin' };
+        return next();
+      }
+
+      const result = await pool.query(
+        `SELECT uma.access_level
+         FROM user_module_access uma
+         JOIN dashboard_modules m ON uma.module_id = m.id
+         WHERE uma.user_id = $1 AND m.code = $2`,
+        [req.user.id, moduleCode]
+      );
+
+      if (result.rows.length === 0) {
+        return res.status(403).json({
+          error: `You do not have access to module ${moduleCode}.`
+        });
+      }
+
+      const userLevel = result.rows[0].access_level;
+      const sufficient =
+        (requiredLevel === 'viewer') ||
+        (requiredLevel === 'owner' && userLevel === 'owner');
+
+      if (!sufficient) {
+        return res.status(403).json({
+          error: `Insufficient access level for ${moduleCode}. Required: ${requiredLevel}, have: ${userLevel}.`
+        });
+      }
+
+      req.moduleAccess = { moduleCode, accessLevel: userLevel };
+      next();
+    } catch (err) {
+      console.error('Module access (param) check error:', err);
+      return res.status(500).json({ error: 'Server error during module access check.' });
+    }
+  };
+};
+
+// =============================================
 // autoAssignModuleForUser(userId, functionValue)     Phase 0
 // Utility (NOT middleware). Called from routes/users.js
 // after a new user is created. If the user's function
@@ -166,6 +224,7 @@ module.exports = {
   checkPermission,
   isAdmin,
   checkModuleAccess,
+  checkModuleAccessParam,
   autoAssignModuleForUser,
   FUNCTION_TO_MODULE_MAP
 };
