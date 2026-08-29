@@ -152,6 +152,42 @@ export const dashboardsAPI = {
 };
 
 // =============================================
+// Labels (Module Engine Step 2a) — grid_labels management
+// =============================================
+// Editable department/source/status labels for the 'labeled_grid' engine
+// type. Owner/admin-gated on the backend. Consumed by the Step 2b UI.
+export const labelsAPI = {
+  // GET /api/dashboards/:code/labels?section=&includeHidden=
+  getLabels: (code, { section, includeHidden } = {}) => {
+    const qs = new URLSearchParams();
+    if (section) qs.set('section', section);
+    if (includeHidden) qs.set('includeHidden', 'true');
+    const suffix = qs.toString() ? `?${qs.toString()}` : '';
+    return request(`/dashboards/${encodeURIComponent(code)}/labels${suffix}`);
+  },
+  // POST /api/dashboards/:code/labels  { section_key, label }
+  addLabel: (code, { section_key, label }) => request(
+    `/dashboards/${encodeURIComponent(code)}/labels`,
+    { method: 'POST', body: JSON.stringify({ section_key, label }) }
+  ),
+  // PUT /api/dashboards/:code/labels/:id  { label }  — rename (stable id)
+  renameLabel: (code, id, label) => request(
+    `/dashboards/${encodeURIComponent(code)}/labels/${id}`,
+    { method: 'PUT', body: JSON.stringify({ label }) }
+  ),
+  // DELETE /api/dashboards/:code/labels/:id  — soft-hide
+  hideLabel: (code, id) => request(
+    `/dashboards/${encodeURIComponent(code)}/labels/${id}`,
+    { method: 'DELETE' }
+  ),
+  // POST /api/dashboards/:code/labels/:id/restore  — un-hide
+  restoreLabel: (code, id) => request(
+    `/dashboards/${encodeURIComponent(code)}/labels/${id}/restore`,
+    { method: 'POST', body: JSON.stringify({}) }
+  ),
+};
+
+// =============================================
 // Workflow (Phase 1+ — admin/review actions)
 // =============================================
 export const workflowAPI = {
