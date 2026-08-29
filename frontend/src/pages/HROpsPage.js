@@ -273,7 +273,6 @@ export default function HROpsPage({ user, onLogout }) {
         <div style={styles.titleRow}>
           <div>
             <div style={styles.title}>HR Operations</div>
-            <div style={styles.subtitle}>Monthly headcount, on-boarding, services SLA.</div>
           </div>
           <div style={styles.titleRight}>
             <span style={styles.periodBadge}>{monthName(month)} {year}</span>
