@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { activitiesAPI, usersAPI } from '../services/api';
+import { activitiesAPI, usersAPI, dashboardsAPI } from '../services/api';
 import TargetsManager from '../dashboards/TargetsManager';
 import ApprovalsManager from '../dashboards/ApprovalsManager';
 import '../styles/dashboard.css';
@@ -44,6 +44,15 @@ const AdminPage = ({ user, onLogout }) => {
   const [loading, setLoading] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
   const [showInactive, setShowInactive] = useState(false);
+
+  // ACCESS MGMT — module-access section state (Edit User modal, edit mode only)
+  const [accessRows, setAccessRows] = useState([]);       // [{module_id, module_code, module_name, access_level, source}]
+  const [accessLoading, setAccessLoading] = useState(false);
+  const [accessError, setAccessError] = useState(null);
+  const [allModules, setAllModules] = useState([]);        // [{id, code, name}] for the Add dropdown
+  const [grantModuleId, setGrantModuleId] = useState('');
+  const [grantLevel, setGrantLevel] = useState('viewer');
+  const [grantBusy, setGrantBusy] = useState(false);
 
   // Set theme on mount
   useEffect(() => {
@@ -218,6 +227,60 @@ const AdminPage = ({ user, onLogout }) => {
     setEditItem({ ...u, password: '' });
     setFormType('edit-user');
     setShowForm(true);
+    loadUserAccess(u.id);
+  };
+
+  // ACCESS MGMT — load the user's module-access rows + module catalog for
+  // the Add dropdown. Called when the Edit User modal opens.
+  const loadUserAccess = async (userId) => {
+    if (!userId) return;
+    setAccessLoading(true);
+    setAccessError(null);
+    setGrantModuleId('');
+    setGrantLevel('viewer');
+    try {
+      const [rows, modules] = await Promise.all([
+        usersAPI.getAccess(userId),
+        allModules.length ? Promise.resolve(allModules) : dashboardsAPI.listModules(),
+      ]);
+      setAccessRows(Array.isArray(rows) ? rows : []);
+      if (!allModules.length && Array.isArray(modules)) setAllModules(modules);
+    } catch (err) {
+      console.error('[AdminPage] load access failed:', err);
+      setAccessError('Could not load module access.');
+    } finally {
+      setAccessLoading(false);
+    }
+  };
+
+  const handleGrantAccess = async () => {
+    if (!editItem?.id || !grantModuleId) return;
+    setGrantBusy(true);
+    try {
+      await usersAPI.grantAccess(editItem.id, {
+        module_id: Number(grantModuleId),
+        access_level: grantLevel,
+      });
+      await loadUserAccess(editItem.id);
+      showMessage('Module access granted.', 'success');
+    } catch (err) {
+      console.error('[AdminPage] grant failed:', err);
+      showMessage(`Grant failed: ${err.message || 'unknown error'}`, 'error');
+    } finally {
+      setGrantBusy(false);
+    }
+  };
+
+  const handleRevokeAccess = async (moduleId) => {
+    if (!editItem?.id) return;
+    try {
+      await usersAPI.revokeAccess(editItem.id, moduleId);
+      await loadUserAccess(editItem.id);
+      showMessage('Module access removed.', 'success');
+    } catch (err) {
+      console.error('[AdminPage] revoke failed:', err);
+      showMessage(`Remove failed: ${err.message || 'unknown error'}`, 'error');
+    }
   };
 
   const handleSaveUser = async () => {
@@ -264,7 +327,7 @@ const AdminPage = ({ user, onLogout }) => {
     }
   };
 
-  const closeForm = () => { setShowForm(false); setEditItem(null); };
+  const closeForm = () => { setShowForm(false); setEditItem(null); setAccessRows([]); setAccessError(null); setGrantModuleId(''); };
 
   // Due dates toggle
   const toggleDueDate = (month) => {
@@ -679,6 +742,69 @@ const AdminPage = ({ user, onLogout }) => {
                       </select>
                     </div>
                   </div>
+
+                  {/* ACCESS MGMT — Module access (edit mode only). New users
+                      get access from their function on create; manual grants
+                      come after the user exists. */}
+                  {formType === 'edit-user' && (
+                    <div style={S.field}>
+                      <label style={S.fieldLabel}>Module access</label>
+                      <div style={SA.wrap}>
+                        {accessLoading && <div style={SA.note}>Loading access…</div>}
+                        {accessError && <div style={SA.errNote}>{accessError}</div>}
+                        {!accessLoading && !accessError && accessRows.length === 0 && (
+                          <div style={SA.note}>No module access yet. Add one below, or set a function that auto-maps.</div>
+                        )}
+                        {!accessLoading && accessRows.map((r) => (
+                          <div key={r.module_id} style={SA.row}>
+                            <div style={SA.rowLeft}>
+                              <span style={SA.moduleName}>{r.module_name || r.module_code}</span>
+                              <span style={SA.level}>{r.access_level}</span>
+                              <span style={{...SA.badge, ...(r.source === 'manual' ? SA.badgeManual : SA.badgeAuto)}}>{r.source}</span>
+                            </div>
+                            <button
+                              type="button"
+                              style={SA.removeBtn}
+                              title="Remove access"
+                              onClick={() => handleRevokeAccess(r.module_id)}
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        ))}
+
+                        {/* Add access control */}
+                        <div style={{...SA.addRow, ...(isMobile ? SA.addRowMobile : {})}}>
+                          <select
+                            style={{...S.fieldInput, ...SA.addSelect}}
+                            value={grantModuleId}
+                            onChange={(e) => setGrantModuleId(e.target.value)}
+                          >
+                            <option value="">Add module…</option>
+                            {allModules
+                              .filter((m) => !accessRows.some((r) => r.module_id === m.id))
+                              .map((m) => <option key={m.id} value={m.id}>{m.name || m.code}</option>)}
+                          </select>
+                          <select
+                            style={{...S.fieldInput, ...SA.addLevel}}
+                            value={grantLevel}
+                            onChange={(e) => setGrantLevel(e.target.value)}
+                          >
+                            <option value="viewer">viewer</option>
+                            <option value="owner">owner</option>
+                          </select>
+                          <button
+                            type="button"
+                            style={{...SA.addBtn, ...(isMobile ? SA.addBtnMobile : {}), opacity: (!grantModuleId || grantBusy) ? 0.5 : 1}}
+                            onClick={handleGrantAccess}
+                            disabled={!grantModuleId || grantBusy}
+                          >
+                            {grantBusy ? 'Adding…' : 'Add'}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </>
               )}
             </div>
@@ -746,6 +872,48 @@ const S = {
   cancelBtn: { padding:'10px 24px', background:'var(--bg-input)', border:'1px solid var(--border-color)', borderRadius:'8px', fontFamily:'Inter,sans-serif', fontSize:'14px', fontWeight:600, color:'var(--text-secondary)', cursor:'pointer' },
   saveBtn: { padding:'10px 24px', background:'linear-gradient(135deg, #ec4899 0%, #a855f7 100%)', border:'none', borderRadius:'8px', fontFamily:'Inter,sans-serif', fontSize:'14px', fontWeight:600, color:'#fff', cursor:'pointer', boxShadow:'0 4px 20px rgba(236,72,153,0.3)' },
   adminFilter: { padding:'8px 12px', background:'#2d1f42', border:'1px solid var(--border-color)', borderRadius:'8px', fontFamily:'Inter,sans-serif', fontSize:'13px', color:'#ffffff', outline:'none' },
+};
+
+// ACCESS MGMT — styles for the Module access section in the Edit User modal.
+const SA = {
+  wrap: {
+    display:'flex', flexDirection:'column', gap:8,
+    padding:'12px', background:'rgba(0,0,0,0.2)',
+    border:'1px solid var(--border-color)', borderRadius:8,
+  },
+  note: { fontSize:12, color:'var(--text-light)', fontStyle:'italic' },
+  errNote: { fontSize:12, color:'#fca5a5' },
+  row: {
+    display:'flex', alignItems:'center', justifyContent:'space-between', gap:10,
+    padding:'8px 10px', background:'rgba(255,255,255,0.04)',
+    border:'1px solid rgba(255,255,255,0.08)', borderRadius:6,
+  },
+  rowLeft: { display:'flex', alignItems:'center', gap:8, flexWrap:'wrap', minWidth:0 },
+  moduleName: { fontSize:13, fontWeight:600, color:'#fff' },
+  level: { fontSize:11, color:'var(--text-secondary)', textTransform:'uppercase', letterSpacing:'0.4px' },
+  badge: {
+    fontSize:9.5, fontWeight:700, letterSpacing:'0.6px', textTransform:'uppercase',
+    padding:'2px 7px', borderRadius:4,
+  },
+  badgeAuto: { background:'rgba(168,136,190,0.18)', color:'#c4b5fd' },
+  badgeManual: { background:'rgba(243,192,54,0.18)', color:'#F3C036' },
+  removeBtn: {
+    flexShrink:0, width:26, height:26, borderRadius:6,
+    background:'rgba(239,68,68,0.10)', border:'1px solid rgba(239,68,68,0.3)',
+    color:'#fca5a5', cursor:'pointer', fontSize:12, lineHeight:1,
+    display:'inline-flex', alignItems:'center', justifyContent:'center',
+  },
+  addRow: { display:'flex', gap:8, alignItems:'center', marginTop:4 },
+  addRowMobile: { flexDirection:'column', alignItems:'stretch' },
+  addSelect: { flex:2, minWidth:0 },
+  addLevel: { flex:1, minWidth:0 },
+  addBtn: {
+    flexShrink:0, padding:'10px 18px', borderRadius:8,
+    background:'linear-gradient(135deg, #ec4899 0%, #a855f7 100%)',
+    border:'none', color:'#fff', fontFamily:'Inter,sans-serif',
+    fontSize:13, fontWeight:600, cursor:'pointer',
+  },
+  addBtnMobile: { width:'100%', minHeight:44 },
 };
 
 export default AdminPage;
