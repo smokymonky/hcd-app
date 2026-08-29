@@ -228,6 +228,26 @@ const initDatabase = async () => {
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         deleted_at TIMESTAMP NULL
     );
+
+    -- =============================================
+    -- MODULE ENGINE (Step 2a): grid_labels
+    -- DB-backed editable department/source/status labels for the generic
+    -- engine's 'labeled_grid' type. Owned/edited by module OWNERS + admins.
+    -- Stable id = rename-safe (historical values stay linked to the id, not
+    -- the text). Soft-hide via is_active=false (history-safe) + restore.
+    -- Starts empty; real labels seeded per-module in Step 3+.
+    -- =============================================
+    CREATE TABLE IF NOT EXISTS grid_labels (
+        id SERIAL PRIMARY KEY,
+        module_code VARCHAR(50) NOT NULL,
+        section_key VARCHAR(100) NOT NULL,
+        label VARCHAR(255) NOT NULL,
+        sort_order INTEGER DEFAULT 0,
+        is_active BOOLEAN DEFAULT true,
+        created_by INTEGER REFERENCES users(id),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
   `;
 
    try {
@@ -284,6 +304,9 @@ const initDatabase = async () => {
     // =============================================
     await pool.query('CREATE UNIQUE INDEX IF NOT EXISTS idx_field_targets_active_unique ON field_targets(module, field_key) WHERE is_active = true');
     await pool.query('CREATE INDEX IF NOT EXISTS idx_field_targets_module ON field_targets(module)');
+
+    // MODULE ENGINE (Step 2a): active-label lookup per module+section.
+    await pool.query('CREATE INDEX IF NOT EXISTS idx_grid_labels_module_section_active ON grid_labels(module_code, section_key) WHERE is_active = true');
 
     console.log('Database tables created');
 
