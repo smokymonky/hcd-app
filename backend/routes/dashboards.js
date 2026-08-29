@@ -22,6 +22,7 @@ const pool = require('../config/database');
 const {
   authenticateToken,
   checkModuleAccess,
+  checkModuleAccessParam,
   isAdmin
 } = require('../middleware/auth');
 const {
@@ -624,6 +625,152 @@ router.get('/admin-queue', authenticateToken, isAdmin, async (req, res) => {
   } catch (err) {
     console.error('GET /admin-queue error:', err);
     res.status(500).json({ error: 'Server error loading admin queue.' });
+  }
+});
+
+// =============================================
+// MODULE ENGINE (Step 2a) — grid_labels endpoints
+// =============================================
+// Editable department/source/status labels for the 'labeled_grid' engine
+// type. Gated by checkModuleAccessParam('owner') — owners of the module +
+// admins only. Every query is scoped by module_code so one module's owner
+// cannot read or mutate another module's labels. Rename keeps the stable id
+// (historical values stay linked); delete is a soft-hide; restore reactivates.
+
+// Helper: 404 if the module code isn't a real dashboard_modules row.
+async function assertModuleExists(moduleCode) {
+  const m = await pool.query('SELECT id FROM dashboard_modules WHERE code = $1', [moduleCode]);
+  return m.rows.length > 0;
+}
+
+// GET /:moduleCode/labels?section=<key>&includeHidden=<bool>
+router.get('/:moduleCode/labels', authenticateToken, checkModuleAccessParam('owner'), async (req, res) => {
+  try {
+    const { moduleCode } = req.params;
+    const { section, includeHidden } = req.query;
+    if (!(await assertModuleExists(moduleCode))) {
+      return res.status(404).json({ error: `Unknown module '${moduleCode}'.` });
+    }
+
+    const params = [moduleCode];
+    let sql = 'SELECT id, module_code, section_key, label, sort_order, is_active, created_by, created_at, updated_at FROM grid_labels WHERE module_code = $1';
+    if (section) {
+      params.push(section);
+      sql += ` AND section_key = $${params.length}`;
+    }
+    if (String(includeHidden) !== 'true') {
+      sql += ' AND is_active = true';
+    }
+    sql += ' ORDER BY sort_order ASC, id ASC';
+
+    const r = await pool.query(sql, params);
+    res.json(r.rows);
+  } catch (err) {
+    console.error('GET /:moduleCode/labels error:', err);
+    res.status(500).json({ error: 'Server error loading labels.' });
+  }
+});
+
+// POST /:moduleCode/labels  { section_key, label }
+router.post('/:moduleCode/labels', authenticateToken, checkModuleAccessParam('owner'), async (req, res) => {
+  try {
+    const { moduleCode } = req.params;
+    const { section_key, label } = req.body;
+    if (!(await assertModuleExists(moduleCode))) {
+      return res.status(404).json({ error: `Unknown module '${moduleCode}'.` });
+    }
+    if (!section_key || !String(section_key).trim()) {
+      return res.status(400).json({ error: 'section_key is required.' });
+    }
+    if (!label || !String(label).trim()) {
+      return res.status(400).json({ error: 'label cannot be empty.' });
+    }
+
+    // Next sort_order within this module+section (append to end).
+    const ord = await pool.query(
+      'SELECT COALESCE(MAX(sort_order), -1) + 1 AS next FROM grid_labels WHERE module_code = $1 AND section_key = $2',
+      [moduleCode, section_key]
+    );
+    const nextOrder = ord.rows[0].next;
+
+    const r = await pool.query(
+      `INSERT INTO grid_labels (module_code, section_key, label, sort_order, created_by)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING id, module_code, section_key, label, sort_order, is_active, created_by, created_at, updated_at`,
+      [moduleCode, section_key.trim(), label.trim(), nextOrder, req.user.id]
+    );
+    res.status(201).json(r.rows[0]);
+  } catch (err) {
+    console.error('POST /:moduleCode/labels error:', err);
+    res.status(500).json({ error: 'Server error adding label.' });
+  }
+});
+
+// PUT /:moduleCode/labels/:id  { label }  — RENAME (id stays stable)
+router.put('/:moduleCode/labels/:id', authenticateToken, checkModuleAccessParam('owner'), async (req, res) => {
+  try {
+    const { moduleCode, id } = req.params;
+    const { label } = req.body;
+    if (!label || !String(label).trim()) {
+      return res.status(400).json({ error: 'label cannot be empty.' });
+    }
+    // Scoped by module_code so an owner can't rename another module's label.
+    const r = await pool.query(
+      `UPDATE grid_labels
+       SET label = $1, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $2 AND module_code = $3
+       RETURNING id, module_code, section_key, label, sort_order, is_active, created_by, created_at, updated_at`,
+      [label.trim(), id, moduleCode]
+    );
+    if (r.rows.length === 0) {
+      return res.status(404).json({ error: 'Label not found for this module.' });
+    }
+    res.json(r.rows[0]);
+  } catch (err) {
+    console.error('PUT /:moduleCode/labels/:id error:', err);
+    res.status(500).json({ error: 'Server error renaming label.' });
+  }
+});
+
+// DELETE /:moduleCode/labels/:id  — SOFT-HIDE (never hard-delete)
+router.delete('/:moduleCode/labels/:id', authenticateToken, checkModuleAccessParam('owner'), async (req, res) => {
+  try {
+    const { moduleCode, id } = req.params;
+    const r = await pool.query(
+      `UPDATE grid_labels
+       SET is_active = false, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $1 AND module_code = $2
+       RETURNING id`,
+      [id, moduleCode]
+    );
+    if (r.rows.length === 0) {
+      return res.status(404).json({ error: 'Label not found for this module.' });
+    }
+    res.json({ message: 'Label hidden.', id: r.rows[0].id });
+  } catch (err) {
+    console.error('DELETE /:moduleCode/labels/:id error:', err);
+    res.status(500).json({ error: 'Server error hiding label.' });
+  }
+});
+
+// POST /:moduleCode/labels/:id/restore  — un-hide
+router.post('/:moduleCode/labels/:id/restore', authenticateToken, checkModuleAccessParam('owner'), async (req, res) => {
+  try {
+    const { moduleCode, id } = req.params;
+    const r = await pool.query(
+      `UPDATE grid_labels
+       SET is_active = true, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $1 AND module_code = $2
+       RETURNING id, module_code, section_key, label, sort_order, is_active, created_by, created_at, updated_at`,
+      [id, moduleCode]
+    );
+    if (r.rows.length === 0) {
+      return res.status(404).json({ error: 'Label not found for this module.' });
+    }
+    res.json(r.rows[0]);
+  } catch (err) {
+    console.error('POST /:moduleCode/labels/:id/restore error:', err);
+    res.status(500).json({ error: 'Server error restoring label.' });
   }
 });
 
