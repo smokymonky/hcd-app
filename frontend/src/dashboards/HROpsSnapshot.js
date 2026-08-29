@@ -306,7 +306,7 @@ export default function HROpsSnapshot({
       {/* Hero KPIs */}
       {!loading && !error && snapshot && Object.keys(values).length > 0 && (
         <>
-          <div style={styles.heroGrid}>
+          <div style={{ ...styles.heroGrid, ...(isMobile ? { gridTemplateColumns: 'repeat(2, 1fr)' } : {}) }}>
             <HeroKpi
               label="Total Headcount"
               value={hero.headcount != null ? formatNumber(hero.headcount) : '—'}
