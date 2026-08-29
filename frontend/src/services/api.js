@@ -75,6 +75,18 @@ export const usersAPI = {
     method: 'PUT', body: JSON.stringify(data)
   }),
   delete: (id) => request(`/users/${id}`, { method: 'DELETE' }),
+
+  // ACCESS MGMT — manual module-access management (admin-only)
+  // GET the user's module-access rows (module_id, code, name, level, source).
+  getAccess: (id) => request(`/users/${id}/access`),
+  // POST a manual grant/relabel: { module_id | module_code, access_level }.
+  grantAccess: (id, data) => request(`/users/${id}/access`, {
+    method: 'POST', body: JSON.stringify(data)
+  }),
+  // DELETE a module-access row (any source).
+  revokeAccess: (id, moduleId) => request(`/users/${id}/access/${moduleId}`, {
+    method: 'DELETE'
+  }),
 };
 
 // =============================================
