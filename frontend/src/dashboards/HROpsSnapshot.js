@@ -47,6 +47,14 @@ export default function HROpsSnapshot({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  // MOBILE — canonical isMobile pattern (layout-only).
+  const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth <= 768);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   // Phase 2A Extension: if parent passes urlYear/urlMonth (from URL params),
   // those are the source of truth. Internal selection mirrors them.
   useEffect(() => {
@@ -185,42 +193,81 @@ export default function HROpsSnapshot({
 
   // ---------- RENDER ----------
   return (
-    <div style={styles.canvas}>
+    <div style={{ ...styles.canvas, ...(isMobile ? styles.canvasMobile : {}) }}>
       {/* Year/Month selector + published stamp */}
-      <div style={styles.selector}>
+      <div style={{ ...styles.selector, ...(isMobile ? styles.selectorMobile : {}) }}>
         <span style={styles.selectorLabel}>VIEWING</span>
-        <Dropdown
-          label="Year"
-          value={selectedYear ? String(selectedYear) : ''}
-          options={yearOptions}
-          onChange={(v) => {
-            const nextY = Number(v);
-            // Phase 2A Extension: prefer URL-driven navigation
-            if (typeof onPeriodChange === 'function' && selectedMonth) {
-              onPeriodChange(nextY, selectedMonth);
-            } else {
-              setSelectedYear(nextY);
-            }
-          }}
-          width={120}
-        />
-        <Dropdown
-          label="Month"
-          value={selectedMonth ? String(selectedMonth) : ''}
-          options={monthOptions}
-          onChange={(v) => {
-            const nextM = Number(v);
-            // Phase 2A Extension: prefer URL-driven navigation
-            if (typeof onPeriodChange === 'function' && selectedYear) {
-              onPeriodChange(selectedYear, nextM);
-            } else {
-              setSelectedMonth(nextM);
-            }
-          }}
-          width={150}
-        />
+        {isMobile ? (
+          <>
+            <div style={styles.dropdownFill}>
+              <Dropdown
+                label="Year"
+                value={selectedYear ? String(selectedYear) : ''}
+                options={yearOptions}
+                onChange={(v) => {
+                  const nextY = Number(v);
+                  if (typeof onPeriodChange === 'function' && selectedMonth) {
+                    onPeriodChange(nextY, selectedMonth);
+                  } else {
+                    setSelectedYear(nextY);
+                  }
+                }}
+                width="100%"
+              />
+            </div>
+            <div style={styles.dropdownFill}>
+              <Dropdown
+                label="Month"
+                value={selectedMonth ? String(selectedMonth) : ''}
+                options={monthOptions}
+                onChange={(v) => {
+                  const nextM = Number(v);
+                  if (typeof onPeriodChange === 'function' && selectedYear) {
+                    onPeriodChange(selectedYear, nextM);
+                  } else {
+                    setSelectedMonth(nextM);
+                  }
+                }}
+                width="100%"
+              />
+            </div>
+          </>
+        ) : (
+          <>
+            <Dropdown
+              label="Year"
+              value={selectedYear ? String(selectedYear) : ''}
+              options={yearOptions}
+              onChange={(v) => {
+                const nextY = Number(v);
+                // Phase 2A Extension: prefer URL-driven navigation
+                if (typeof onPeriodChange === 'function' && selectedMonth) {
+                  onPeriodChange(nextY, selectedMonth);
+                } else {
+                  setSelectedYear(nextY);
+                }
+              }}
+              width={120}
+            />
+            <Dropdown
+              label="Month"
+              value={selectedMonth ? String(selectedMonth) : ''}
+              options={monthOptions}
+              onChange={(v) => {
+                const nextM = Number(v);
+                // Phase 2A Extension: prefer URL-driven navigation
+                if (typeof onPeriodChange === 'function' && selectedYear) {
+                  onPeriodChange(selectedYear, nextM);
+                } else {
+                  setSelectedMonth(nextM);
+                }
+              }}
+              width={150}
+            />
+          </>
+        )}
         {snapshot?.submission && (
-          <span style={styles.publishedStamp}>
+          <span style={{ ...styles.publishedStamp, ...(isMobile ? styles.publishedStampMobile : {}) }}>
             <span style={styles.publishedDot} />
             Published {snapshot.submission.updated_at
               ? new Date(snapshot.submission.updated_at).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })
@@ -302,16 +349,16 @@ export default function HROpsSnapshot({
           </div>
 
           {/* Section: Composition */}
-          {renderCompositionSection(values)}
+          {renderCompositionSection(values, isMobile)}
 
           {/* Section: Compliance & HRDF */}
-          {renderComplianceSection(values)}
+          {renderComplianceSection(values, isMobile)}
 
           {/* Section: On-Boarding / Off-Boarding (HO/OP side-by-side) */}
-          {renderOnOffSection(values)}
+          {renderOnOffSection(values, isMobile)}
 
           {/* Section: Services (3-col grid) */}
-          {renderServicesSection(values)}
+          {renderServicesSection(values, isMobile)}
         </>
       )}
     </div>
@@ -336,13 +383,13 @@ function HeroKpi({ label, value, sub, extra, valueGold }) {
 // =============================================
 // Section renderers
 // =============================================
-function renderCompositionSection(values) {
+function renderCompositionSection(values, isMobile = false) {
   return (
-    <div style={styles.snapSection}>
+    <div style={{ ...styles.snapSection, ...(isMobile ? styles.snapSectionMobile : {}) }}>
       <div style={styles.snapAccent} />
-      <div style={styles.snapTitle}>Composition</div>
+      <div style={{ ...styles.snapTitle, ...(isMobile ? { flexWrap: 'wrap' } : {}) }}>Composition</div>
 
-      <div style={{ ...styles.miniRow, gridTemplateColumns: 'repeat(4, 1fr)' }}>
+      <div style={{ ...styles.miniRow, gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)' }}>
         <MiniKpi label="Employees" value={formatNumber(values.total_employees)} pct={pctStr(values.total_employees, values.outsource_count)} />
         <MiniKpi label="Outsource" value={formatNumber(values.outsource_count)} pct={pctStr(values.outsource_count, values.total_employees)} />
         <MiniKpi label="Female" value={formatNumber(values.female_count)} pct={pctStr(values.female_count, values.male_count)} />
@@ -372,17 +419,17 @@ function renderCompositionSection(values) {
   );
 }
 
-function renderComplianceSection(values) {
+function renderComplianceSection(values, isMobile = false) {
   const saudField = FIELDS.find((f) => f.key === 'saudization_pct');
   const evaluation = evaluateTarget(saudField, values.saudization_pct);
   return (
-    <div style={styles.snapSection}>
+    <div style={{ ...styles.snapSection, ...(isMobile ? styles.snapSectionMobile : {}) }}>
       <div style={styles.snapAccent} />
-      <div style={styles.snapTitle}>
+      <div style={{ ...styles.snapTitle, ...(isMobile ? { flexWrap: 'wrap' } : {}) }}>
         Compliance &amp; HRDF
         <span style={styles.snapTitleAccent}>Saudi labor + Gov programs</span>
       </div>
-      <div style={{ ...styles.miniRow, gridTemplateColumns: 'repeat(3, 1fr)' }}>
+      <div style={{ ...styles.miniRow, gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)' }}>
         {/* Saudization — with inline TargetIndicator (Item 6) */}
         <div style={styles.miniKpi}>
           <div style={styles.miniLabel}>Saudization</div>
@@ -405,7 +452,7 @@ function renderComplianceSection(values) {
   );
 }
 
-function renderOnOffSection(values) {
+function renderOnOffSection(values, isMobile = false) {
   const onboardRows = [
     { key: 'new_employee_profiles', label: 'New profiles' },
     { key: 'id_cards_printed', label: 'ID cards printed' },
@@ -424,10 +471,10 @@ function renderOnOffSection(values) {
   // real count of handled requests).
 
   return (
-    <div style={styles.snapSection}>
+    <div style={{ ...styles.snapSection, ...(isMobile ? styles.snapSectionMobile : {}) }}>
       <div style={styles.snapAccent} />
-      <div style={styles.snapTitle}>On-Boarding / Off-Boarding</div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 18 }}>
+      <div style={{ ...styles.snapTitle, ...(isMobile ? { flexWrap: 'wrap' } : {}) }}>On-Boarding / Off-Boarding</div>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 18 }}>
         <div>
           <div style={styles.subSnapTitle}>On-Boarding</div>
           <div style={styles.hoOpHeader}>
@@ -463,19 +510,19 @@ function renderOnOffSection(values) {
   );
 }
 
-function renderServicesSection(values) {
+function renderServicesSection(values, isMobile = false) {
   const fields = FIELDS.filter((f) => f.section === 'services' && f.source !== 'computed')
     .sort((a, b) => a.displayOrder - b.displayOrder);
   const totalField = FIELDS.find((f) => f.key === 'total_handled_requests');
   const totalDisplay = totalField ? computeField(totalField, values) : '—';
   return (
-    <div style={styles.snapSection}>
+    <div style={{ ...styles.snapSection, ...(isMobile ? styles.snapSectionMobile : {}) }}>
       <div style={styles.snapAccent} />
-      <div style={styles.snapTitle}>
+      <div style={{ ...styles.snapTitle, ...(isMobile ? { flexWrap: 'wrap' } : {}) }}>
         Services
         <span style={styles.snapTitleAccent}>{totalDisplay} total</span>
       </div>
-      <div style={styles.servicesGrid}>
+      <div style={{ ...styles.servicesGrid, ...(isMobile ? styles.servicesGridMobile : {}) }}>
         {fields.map((f) => (
           <div key={f.key} style={styles.snapService}>
             <span style={styles.snapServiceLabel}>{f.label}</span>
@@ -529,6 +576,9 @@ const styles = {
     padding: '0 48px',
     animation: 'hrFadeInUp 0.5s 0.05s ease both',
   },
+  canvasMobile: {
+    padding: '0 14px',
+  },
 
   selector: {
     background: 'rgba(255,255,255,0.03)',
@@ -549,6 +599,24 @@ const styles = {
     fontSize: 11, fontWeight: 700,
     color: 'rgba(255,255,255,0.5)',
     letterSpacing: '1.5px', textTransform: 'uppercase',
+  },
+  // ===== MOBILE variants (layout-only) =====
+  selectorMobile: {
+    flexDirection: 'column',
+    alignItems: 'stretch',
+    gap: 10,
+    padding: '14px 14px',
+  },
+  dropdownFill: {
+    // grid item stretches the inline-block Dropdown root to full width
+    display: 'grid',
+    width: '100%',
+  },
+  publishedStampMobile: {
+    marginLeft: 0,
+  },
+  servicesGridMobile: {
+    gridTemplateColumns: '1fr 1fr',
   },
   publishedStamp: {
     display: 'inline-flex', alignItems: 'center', gap: 6,
@@ -634,6 +702,9 @@ const styles = {
     padding: '22px 24px',
     marginBottom: 18,
     position: 'relative', overflow: 'hidden',
+  },
+  snapSectionMobile: {
+    padding: '18px 14px',
   },
   snapAccent: {
     position: 'absolute', top: 0, left: 0, right: 0,
