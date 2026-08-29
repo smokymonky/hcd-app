@@ -58,6 +58,15 @@ export default function HROpsDataEntry({
   const [saving, setSaving] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState(null);        // { type: 'success'|'error', text }
+
+  // MOBILE — canonical isMobile pattern (DashboardPage / TargetsManager /
+  // ApprovalsManager). Layout-only; no logic depends on it.
+  const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth <= 768);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
   const [expandedSections, setExpandedSections] = useState(
     () => Object.fromEntries(SECTIONS.map((s) => [s.key, true]))
   );
@@ -319,24 +328,52 @@ export default function HROpsDataEntry({
   }
 
   return (
-    <div style={styles.canvas}>
+    <div style={{ ...styles.canvas, ...(isMobile ? styles.canvasMobile : {}) }}>
       {/* Period selector (Phase 2A Extension) — historical entry */}
-      <div style={styles.periodSelector}>
+      <div style={{ ...styles.periodSelector, ...(isMobile ? styles.periodSelectorMobile : {}) }}>
         <span style={styles.periodSelectorLabel}>ENTERING</span>
-        <Dropdown
-          label="Year"
-          value={String(year)}
-          options={yearOptions}
-          onChange={(v) => handlePeriodChange(v, month)}
-          width={120}
-        />
-        <Dropdown
-          label="Month"
-          value={String(month)}
-          options={monthOptions}
-          onChange={(v) => handlePeriodChange(year, v)}
-          width={150}
-        />
+        {/* MOBILE: grid wrappers stretch the inline-block Dropdown root to
+            full column width (can't set width:100% on root without editing
+            Dropdown.js, which is out of scope). Desktop path unchanged. */}
+        {isMobile ? (
+          <>
+            <div style={styles.dropdownFill}>
+              <Dropdown
+                label="Year"
+                value={String(year)}
+                options={yearOptions}
+                onChange={(v) => handlePeriodChange(v, month)}
+                width="100%"
+              />
+            </div>
+            <div style={styles.dropdownFill}>
+              <Dropdown
+                label="Month"
+                value={String(month)}
+                options={monthOptions}
+                onChange={(v) => handlePeriodChange(year, v)}
+                width="100%"
+              />
+            </div>
+          </>
+        ) : (
+          <>
+            <Dropdown
+              label="Year"
+              value={String(year)}
+              options={yearOptions}
+              onChange={(v) => handlePeriodChange(v, month)}
+              width={120}
+            />
+            <Dropdown
+              label="Month"
+              value={String(month)}
+              options={monthOptions}
+              onChange={(v) => handlePeriodChange(year, v)}
+              width={150}
+            />
+          </>
+        )}
       </div>
 
       {/* Status banners */}
@@ -416,12 +453,12 @@ export default function HROpsDataEntry({
             </div>
 
             {expanded && (
-              <div style={styles.sectionBody}>
+              <div style={{ ...styles.sectionBody, ...(isMobile ? styles.sectionBodyMobile : {}) }}>
                 {section.dimensionLayout === 'ho_op'
-                  ? renderDimensionGrid(section, fields, values, handleFieldChange, isReadOnly)
+                  ? renderDimensionGrid(section, fields, values, handleFieldChange, isReadOnly, isMobile)
                   : section.servicesLayout
-                    ? renderServicesGrid(fields, values, handleFieldChange, isReadOnly)
-                    : renderHeadcountGrid(fields, values, handleFieldChange, isReadOnly)
+                    ? renderServicesGrid(fields, values, handleFieldChange, isReadOnly, isMobile)
+                    : renderHeadcountGrid(fields, values, handleFieldChange, isReadOnly, isMobile)
                 }
                 {/* Section footer for computed totals (Q4 pattern a) */}
                 {renderSectionFooter(section, fields, values)}
@@ -432,7 +469,7 @@ export default function HROpsDataEntry({
       })}
 
       {/* Form actions */}
-      <div style={styles.formActions}>
+      <div style={{ ...styles.formActions, ...(isMobile ? styles.formActionsMobile : {}) }}>
         <div style={styles.saveState}>
           {hasUnsavedChanges && !isReadOnly ? (
             <>
@@ -451,10 +488,10 @@ export default function HROpsDataEntry({
           )}
         </div>
         {!isReadOnly && (
-          <div style={styles.actionsRight}>
+          <div style={{ ...styles.actionsRight, ...(isMobile ? styles.actionsRightMobile : {}) }}>
             <button
               type="button"
-              style={styles.btnGhost}
+              style={{ ...styles.btnGhost, ...(isMobile ? styles.btnGhostMobile : {}) }}
               onClick={handleSaveDraft}
               disabled={saving || submitting}
             >
@@ -462,7 +499,7 @@ export default function HROpsDataEntry({
             </button>
             <button
               type="button"
-              style={styles.btnPrimary}
+              style={{ ...styles.btnPrimary, ...(isMobile ? styles.btnPrimaryMobile : {}) }}
               onClick={handleSubmit}
               disabled={submitting || saving || !submission}
               title={!submission ? 'Save a draft first' : ''}
@@ -563,7 +600,7 @@ function renderStatusBanner(status, rejection) {
   return null;
 }
 
-function renderHeadcountGrid(fields, values, onChange, readOnly) {
+function renderHeadcountGrid(fields, values, onChange, readOnly, isMobile = false) {
   // Group by subsection; render 2-col rows (manual + computed pairs).
   const bySubsection = {};
   for (const f of fields) {
@@ -581,7 +618,7 @@ function renderHeadcountGrid(fields, values, onChange, readOnly) {
   return Object.entries(bySubsection).map(([subKey, subFields]) => (
     <div key={subKey} style={styles.subsection}>
       <div style={styles.subsectionLabel}>{labels[subKey] || subKey}</div>
-      <div style={styles.fieldGrid}>
+      <div style={{ ...styles.fieldGrid, ...(isMobile ? styles.fieldGridMobile : {}) }}>
         {subFields.map((f) => (
           <FieldCell key={f.key} field={f} values={values} onChange={onChange} readOnly={readOnly} />
         ))}
@@ -590,7 +627,7 @@ function renderHeadcountGrid(fields, values, onChange, readOnly) {
   ));
 }
 
-function renderDimensionGrid(section, fields, values, onChange, readOnly) {
+function renderDimensionGrid(section, fields, values, onChange, readOnly, isMobile = false) {
   // Group fields by dimensionRow; render as rows with HO/OP columns.
   const rows = {};
   for (const f of fields) {
@@ -602,6 +639,44 @@ function renderDimensionGrid(section, fields, values, onChange, readOnly) {
     if (f.dimensionCol === 'ho') rows[r].ho = f;
     if (f.dimensionCol === 'op') rows[r].op = f;
   }
+
+  // MOBILE: stack each row — label on its own line, then HO input full-width
+  // with an inline "HO" tag, then OP input full-width with "OP" tag. The
+  // standalone HO/OP column header row is hidden (tags carry the meaning now).
+  if (isMobile) {
+    return (
+      <>
+        {Object.entries(rows).map(([rowKey, row]) => (
+          <div key={rowKey} style={styles.dimensionRowMobile}>
+            <div style={styles.dimensionRowLabel}>
+              {row.label}
+              {row.helper && (
+                <div style={styles.dimensionRowHelper}>{row.helper}</div>
+              )}
+            </div>
+            {[{ f: row.ho, tag: 'HO' }, { f: row.op, tag: 'OP' }].map(({ f, tag }, i) => (
+              f ? (
+                <div key={f.key} style={styles.dimensionMobileField}>
+                  <span style={styles.dimensionMobileTag}>{tag}</span>
+                  <input
+                    type="number"
+                    min="0"
+                    style={{ ...styles.dimensionInput, ...styles.dimensionInputMobile }}
+                    value={values[f.key] ?? ''}
+                    onChange={(e) => onChange(f.key, e.target.value)}
+                    readOnly={readOnly}
+                    disabled={readOnly}
+                    inputMode="numeric"
+                  />
+                </div>
+              ) : <div key={i} />
+            ))}
+          </div>
+        ))}
+      </>
+    );
+  }
+
   return (
     <>
       <div style={styles.dimensionHeaderRow}>
@@ -638,10 +713,10 @@ function renderDimensionGrid(section, fields, values, onChange, readOnly) {
   );
 }
 
-function renderServicesGrid(fields, values, onChange, readOnly) {
+function renderServicesGrid(fields, values, onChange, readOnly, isMobile = false) {
   const manualFields = fields.filter((f) => f.source !== 'computed');
   return (
-    <div style={styles.servicesGrid}>
+    <div style={{ ...styles.servicesGrid, ...(isMobile ? styles.servicesGridMobile : {}) }}>
       {manualFields.map((f) => (
         <div key={f.key} style={styles.serviceField}>
           <label style={styles.fieldLabel}>
@@ -751,6 +826,86 @@ const styles = {
     margin: '24px auto 0',
     padding: '0 48px',
     animation: 'hrFadeInUp 0.5s 0.05s ease both',
+  },
+  // ===== MOBILE variants (layout-only) =====
+  canvasMobile: {
+    padding: '0 14px',
+  },
+  periodSelectorMobile: {
+    flexDirection: 'column',
+    alignItems: 'stretch',
+    gap: 10,
+    padding: '14px 14px',
+  },
+  dropdownFill: {
+    // grid item stretches the inline-block Dropdown root to full width
+    display: 'grid',
+    width: '100%',
+  },
+  fieldGridMobile: {
+    gridTemplateColumns: '1fr',
+  },
+  servicesGridMobile: {
+    gridTemplateColumns: '1fr 1fr',
+  },
+  sectionBodyMobile: {
+    padding: '16px 14px 18px',
+  },
+  dimensionRowMobile: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 8,
+    padding: '14px',
+    background: 'rgba(255,255,255,0.02)',
+    border: '1px solid rgba(255,255,255,0.06)',
+    borderRadius: 10,
+    marginBottom: 8,
+  },
+  dimensionMobileField: {
+    position: 'relative',
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+  },
+  dimensionMobileTag: {
+    flexShrink: 0,
+    width: 34,
+    textAlign: 'center',
+    fontSize: 10.5,
+    fontWeight: 700,
+    letterSpacing: '0.5px',
+    color: 'rgba(243,192,54,0.9)',
+    background: 'rgba(243,192,54,0.10)',
+    border: '1px solid rgba(243,192,54,0.25)',
+    borderRadius: 6,
+    padding: '10px 0',
+  },
+  dimensionInputMobile: {
+    flex: 1,
+    minHeight: 44,
+  },
+  formActionsMobile: {
+    flexDirection: 'column',
+    alignItems: 'stretch',
+    gap: 12,
+  },
+  actionsRightMobile: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 10,
+    width: '100%',
+  },
+  btnGhostMobile: {
+    width: '100%',
+    minHeight: 46,
+    textAlign: 'center',
+    justifyContent: 'center',
+  },
+  btnPrimaryMobile: {
+    width: '100%',
+    minHeight: 46,
+    textAlign: 'center',
+    justifyContent: 'center',
   },
 
   // Period selector strip (Phase 2A Extension)
