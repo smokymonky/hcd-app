@@ -37,6 +37,14 @@ export default function HubPage({ user, onLogout }) {
   // Access denied modal state
   const [deniedTile, setDeniedTile] = useState(null);
 
+  // MOBILE — canonical isMobile pattern (layout-only).
+  const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth <= 768);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   // Theme setup (matches LoginPage / DashboardPage)
   useEffect(() => {
     document.body.setAttribute('data-theme', 'dark');
@@ -173,12 +181,12 @@ export default function HubPage({ user, onLogout }) {
       `}</style>
 
       {/* Top strip: logo + user identity + logout */}
-      <div style={styles.topStrip}>
+      <div style={{ ...styles.topStrip, ...(isMobile ? styles.topStripMobile : {}) }}>
         <svg viewBox="0 0 180 50" style={styles.logo}>
           <text x="0" y="28" fontFamily="Inter, sans-serif" fontSize="18" fontWeight="600" fill="#ffffff">Abdul Latif Jameel</text>
           <text x="0" y="44" fontFamily="Inter, sans-serif" fontSize="12" fontWeight="500" fill="rgba(255,255,255,0.5)">FINANCE</text>
         </svg>
-        <div style={styles.topRight}>
+        <div style={{ ...styles.topRight, ...(isMobile ? styles.topRightMobile : {}) }}>
           <UserIdentityCard user={user} />
           <button type="button" style={styles.logoutBtn} onClick={handleLogout}
             onMouseEnter={(e) => Object.assign(e.currentTarget.style, styles.logoutBtnHover)}
@@ -198,7 +206,7 @@ export default function HubPage({ user, onLogout }) {
       {/* LEVEL 1 */}
       {!isCategoryView && (
         <div style={styles.fadeIn}>
-          <div style={{ ...styles.grid, ...styles.gridLevel1 }}>
+          <div style={{ ...styles.grid, ...styles.gridLevel1, ...(isMobile ? styles.gridMobile : {}) }}>
             {level1Tiles.map((tile) => (
               <HubTile
                 key={tile.id}
@@ -214,7 +222,7 @@ export default function HubPage({ user, onLogout }) {
       {/* LEVEL 2 */}
       {isCategoryView && categoryEntry && (
         <div style={styles.fadeIn}>
-          <div style={styles.l2Header}>
+          <div style={{ ...styles.l2Header, ...(isMobile ? styles.l2HeaderMobile : {}) }}>
             <div style={styles.breadcrumb}>
               <a onClick={goLevel1} style={styles.breadcrumbLink}
                 onMouseEnter={(e) => Object.assign(e.currentTarget.style, styles.breadcrumbLinkHover)}
@@ -230,9 +238,6 @@ export default function HubPage({ user, onLogout }) {
             <div style={styles.l2TitleRow}>
               <div>
                 <div style={styles.l2Title}>{categoryEntry.title}</div>
-                {categoryEntry.drilldownSubtitle && (
-                  <div style={styles.l2Subtitle}>{categoryEntry.drilldownSubtitle}</div>
-                )}
               </div>
               {/* + New action — admin-only, disabled with tooltip per Phase 1 spec */}
               {isAdmin && categoryEntry.allowsCreation && (
@@ -257,7 +262,7 @@ export default function HubPage({ user, onLogout }) {
             <div style={styles.loadingNote}>Loading dashboards…</div>
           )}
 
-          <div style={{ ...styles.grid, ...styles.gridLevel2 }}>
+          <div style={{ ...styles.grid, ...styles.gridLevel2, ...(isMobile ? styles.gridMobile : {}) }}>
             {level2Tiles.map((tile) => (
               <HubTile
                 key={tile.id}
@@ -276,7 +281,7 @@ export default function HubPage({ user, onLogout }) {
         </div>
       )}
 
-      <div style={styles.footer}>Human Capital Hub</div>
+      <div style={{ ...styles.footer, ...(isMobile ? styles.footerMobile : {}) }}>Human Capital Hub</div>
 
       <AccessDeniedModal
         open={!!deniedTile}
@@ -336,8 +341,27 @@ const styles = {
     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
     padding: '28px 48px 0',
   },
+  // ===== MOBILE variants (layout-only) =====
+  topStripMobile: {
+    flexDirection: 'column',
+    alignItems: 'stretch',
+    gap: 14,
+    padding: '18px 16px 0',
+  },
+  l2HeaderMobile: {
+    padding: '18px 16px 0',
+  },
+  gridMobile: {
+    gridTemplateColumns: '1fr',
+    padding: '20px 16px 24px',
+    paddingTop: 24,
+  },
+  footerMobile: {
+    padding: '24px 16px 48px',
+  },
   logo: { height: 50, width: 'auto', display: 'block' },
   topRight: { display: 'flex', alignItems: 'center' },
+  topRightMobile: { justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' },
   logoutBtn: {
     background: 'transparent',
     color: 'rgba(255,255,255,0.6)',
