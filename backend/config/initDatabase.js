@@ -171,6 +171,8 @@ const initDatabase = async () => {
         module_id INTEGER NOT NULL REFERENCES dashboard_modules(id) ON DELETE CASCADE,
         access_level VARCHAR(20) NOT NULL DEFAULT 'owner'
           CHECK (access_level IN ('owner','viewer')),
+        source VARCHAR(10) NOT NULL DEFAULT 'auto'
+          CHECK (source IN ('auto','manual')),
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         UNIQUE (user_id, module_id)
     );
@@ -243,6 +245,27 @@ const initDatabase = async () => {
     await pool.query('ALTER TABLE role_permissions ADD COLUMN IF NOT EXISTS can_review_dashboard BOOLEAN DEFAULT false');
     await pool.query('ALTER TABLE role_permissions ADD COLUMN IF NOT EXISTS can_publish_dashboard BOOLEAN DEFAULT false');
     await pool.query('ALTER TABLE role_permissions ADD COLUMN IF NOT EXISTS can_view_dashboard BOOLEAN DEFAULT true');
+
+    // =============================================
+    // ACCESS MGMT: source tag on user_module_access ('auto' | 'manual').
+    // Idempotent migration for the existing prod table. Existing rows were
+    // all auto/seeded, so DEFAULT 'auto' backfills them correctly. The CHECK
+    // is added via a guarded DO block so re-running never errors (Postgres
+    // has no ADD CONSTRAINT IF NOT EXISTS).
+    // =============================================
+    await pool.query("ALTER TABLE user_module_access ADD COLUMN IF NOT EXISTS source VARCHAR(10) NOT NULL DEFAULT 'auto'");
+    await pool.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM pg_constraint WHERE conname = 'user_module_access_source_check'
+        ) THEN
+          ALTER TABLE user_module_access
+            ADD CONSTRAINT user_module_access_source_check
+            CHECK (source IN ('auto','manual'));
+        END IF;
+      END$$;
+    `);
 
     // PHASE 0: Indices for new tables
     await pool.query('CREATE INDEX IF NOT EXISTS idx_dashboard_submissions_module_year_month ON dashboard_submissions(module_id, year, month)');
