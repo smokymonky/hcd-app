@@ -143,8 +143,8 @@ const autoAssignModuleForUser = async (userId, functionValue, accessLevel = 'own
     const moduleCode = FUNCTION_TO_MODULE_MAP[functionValue];
 
     const result = await pool.query(
-      `INSERT INTO user_module_access (user_id, module_id, access_level)
-       SELECT $1, id, $2 FROM dashboard_modules WHERE code = $3
+      `INSERT INTO user_module_access (user_id, module_id, access_level, source)
+       SELECT $1, id, $2, 'auto' FROM dashboard_modules WHERE code = $3
        ON CONFLICT (user_id, module_id) DO NOTHING
        RETURNING id`,
       [userId, accessLevel, moduleCode]
