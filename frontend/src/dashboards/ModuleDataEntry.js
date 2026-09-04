@@ -44,7 +44,7 @@ import Dropdown from './Dropdown';
 // the target helper, save, and guards all match live exactly.
 // =============================================
 
-export default function ModuleDataEntry({ config, user, year, month, onStatusChange, onPeriodChange, canEditStructure = false, editMode = false, onStructureChanged }) {
+export default function ModuleDataEntry({ config, user, year, month, onStatusChange, onPeriodChange, canEditStructure = false, editMode = false, onStructureChanged, onStructurePatch }) {
   // Flatten config → a FIELDS-like list (adds engine-friendly accessors).
   const FIELDS = useMemo(() => flattenConfigFields(config), [config]);
   const ALL_SECTIONS = useMemo(() => (config.sections || []).slice().sort((a, b) => ((a.order ?? a.sort_order ?? 0) - (b.order ?? b.sort_order ?? 0))), [config]);
@@ -160,18 +160,38 @@ export default function ModuleDataEntry({ config, user, year, month, onStatusCha
     setExpandedSections((prev) => ({ ...prev, [sectionKey]: !prev[sectionKey] }));
   }
 
-  // ---- B3b-1 section-edit handlers ----
-  // Each mutation calls the B3a endpoint then onStructureChanged() to refetch.
-  async function runStructureOp(fn, successMsg) {
+  // ---- B3b-1 section-edit handlers (B3b PERF: response-driven local update) ----
+  // Each action makes exactly ONE network call (the mutation) and updates the
+  // local structure state FROM THE RESPONSE (or, for reorder, the sent order).
+  // No getStructure refetch, no targets refetch — targets don't change on a
+  // structure edit. On failure we DON'T apply the local change and surface a
+  // short error, so the screen never drifts from server truth.
+  //
+  // patchSections(updater) mutates the preview-owned config.sections in place
+  // (single source the renderer reads). Falls back to onStructureChanged (full
+  // refresh) only if the patch callback wasn't provided.
+  function patchSections(updater) {
+    if (typeof onStructurePatch === 'function') {
+      onStructurePatch(updater);
+    } else if (typeof onStructureChanged === 'function') {
+      onStructureChanged();
+    }
+  }
+
+  // Run one API call; on success apply the local patch + optional message;
+  // on error surface it and apply nothing. Returns true/false.
+  async function runStructureCall(apiCall, applyLocal, successMsg) {
     setStructureBusy(true);
     setStructureMsg(null);
     try {
-      await fn();
-      if (onStructureChanged) await onStructureChanged();
+      const result = await apiCall();
+      if (applyLocal) applyLocal(result);
       if (successMsg) setStructureMsg({ type: 'success', text: successMsg });
+      return true;
     } catch (err) {
       console.error('[ModuleDataEntry] structure op failed:', err);
       setStructureMsg({ type: 'error', text: `Structure change failed: ${err.message || 'unknown error'}` });
+      return false;
     } finally {
       setStructureBusy(false);
     }
@@ -180,24 +200,35 @@ export default function ModuleDataEntry({ config, user, year, month, onStatusCha
   async function handleAddSection() {
     const title = newSectionTitle.trim();
     if (!title) { setStructureMsg({ type: 'error', text: 'Section title cannot be empty.' }); return; }
-    await runStructureOp(
+    const ok = await runStructureCall(
       () => structureAPI.createSection(code, { title, layout: newSectionLayout }),
+      // createSection returns the new row → append with empty fields.
+      (row) => patchSections((secs) => [...secs, { ...row, fields: [] }]),
       'Section added.'
     );
-    setNewSectionTitle('');
-    setNewSectionLayout('kpi');
-    setAddSectionOpen(false);
+    if (ok) {
+      setNewSectionTitle('');
+      setNewSectionLayout('kpi');
+      setAddSectionOpen(false);
+    }
   }
 
   async function handleRenameSection(id) {
     const title = renameTitle.trim();
     if (!title) { setStructureMsg({ type: 'error', text: 'Section title cannot be empty.' }); return; }
-    await runStructureOp(
+    const ok = await runStructureCall(
       () => structureAPI.updateSection(code, id, { title }),
+      // updateSection returns the updated row → replace title/layout/order,
+      // keep the section's existing fields.
+      (row) => patchSections((secs) => secs.map((s) => (
+        s.id === row.id ? { ...s, title: row.title, layout: row.layout, sort_order: row.sort_order, is_active: row.is_active } : s
+      ))),
       'Section renamed.'
     );
-    setRenamingSectionId(null);
-    setRenameTitle('');
+    if (ok) {
+      setRenamingSectionId(null);
+      setRenameTitle('');
+    }
   }
 
   async function handleReorderSection(index, dir) {
@@ -206,22 +237,38 @@ export default function ModuleDataEntry({ config, user, year, month, onStatusCha
     const ids = SECTIONS.map((s) => s.id);
     const [moved] = ids.splice(index, 1);
     ids.splice(target, 0, moved);
-    await runStructureOp(() => structureAPI.reorderSections(code, ids), null);
+    // reorder returns a count, not rows → apply the SENT order locally,
+    // mirroring the backend's sort_order = (position+1) for active sections.
+    await runStructureCall(
+      () => structureAPI.reorderSections(code, ids),
+      () => patchSections((secs) => {
+        const orderByIds = new Map(ids.map((sid, i) => [sid, i + 1]));
+        return secs
+          .map((s) => (orderByIds.has(s.id) ? { ...s, sort_order: orderByIds.get(s.id) } : s))
+          .slice()
+          .sort((a, b) => ((a.sort_order ?? 0) - (b.sort_order ?? 0)));
+      }),
+      null
+    );
   }
 
   async function handleDeleteSectionConfirmed() {
     const target = confirmDeleteSection;
     setConfirmDeleteSection(null);
     if (!target) return;
-    await runStructureOp(
+    await runStructureCall(
       () => structureAPI.deleteSection(code, target.id),
+      // delete returns { id } → flip is_active=false locally (moves to hidden).
+      () => patchSections((secs) => secs.map((s) => (s.id === target.id ? { ...s, is_active: false } : s))),
       'Section hidden.'
     );
   }
 
   async function handleRestoreSection(id) {
-    await runStructureOp(
+    await runStructureCall(
       () => structureAPI.restoreSection(code, id),
+      // restore returns the row → flip is_active=true locally.
+      (row) => patchSections((secs) => secs.map((s) => (s.id === (row?.id ?? id) ? { ...s, is_active: true } : s))),
       'Section restored.'
     );
   }
@@ -433,7 +480,7 @@ export default function ModuleDataEntry({ config, user, year, month, onStatusCha
       )}
 
       {SECTIONS.map((section, sectionIndex) => {
-        const expanded = expandedSections[section.key];
+        const expanded = expandedSections[section.key] !== false;
         const fields = FIELDS.filter((f) => f.section === section.key && f.is_active !== false);
         const filledCount = countFilledManual(fields, values);
         const totalManual = fields.filter((f) => f.source !== 'computed').length;
