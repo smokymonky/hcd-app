@@ -248,6 +248,49 @@ const initDatabase = async () => {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
+
+    -- =============================================
+    -- DASHBOARD BUILDER (Step B1): module STRUCTURE model
+    -- DB-backed sections + fields for a module, so the generic renderer
+    -- reads structure from the DB instead of a hard-coded config file.
+    -- Seeded from hrOpsConfig for HR_OPS (see seed block below). Targets
+    -- stay in field_targets (Phase 2B), linked by module_code + key.
+    -- =============================================
+    CREATE TABLE IF NOT EXISTS module_sections (
+        id SERIAL PRIMARY KEY,
+        module_code VARCHAR(50) NOT NULL,
+        key VARCHAR(100) NOT NULL,
+        title VARCHAR(255) NOT NULL,
+        layout VARCHAR(20) NOT NULL DEFAULT 'kpi'
+          CHECK (layout IN ('kpi','ho_op','labeled_grid','matrix','group')),
+        sort_order INTEGER DEFAULT 0,
+        is_active BOOLEAN DEFAULT true,
+        created_by INTEGER REFERENCES users(id),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS module_fields (
+        id SERIAL PRIMARY KEY,
+        module_code VARCHAR(50) NOT NULL,
+        section_id INTEGER REFERENCES module_sections(id),
+        key VARCHAR(100) NOT NULL,
+        label VARCHAR(255) NOT NULL,
+        type VARCHAR(20) NOT NULL,
+        unit VARCHAR(20),
+        dimension VARCHAR(20),
+        dimension_row VARCHAR(100),
+        dimension_col VARCHAR(10),
+        source VARCHAR(20) DEFAULT 'manual',
+        formula_type VARCHAR(20),
+        formula_args JSONB,
+        subsection VARCHAR(100),
+        sort_order INTEGER DEFAULT 0,
+        is_active BOOLEAN DEFAULT true,
+        created_by INTEGER REFERENCES users(id),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
   `;
 
    try {
@@ -307,6 +350,10 @@ const initDatabase = async () => {
 
     // MODULE ENGINE (Step 2a): active-label lookup per module+section.
     await pool.query('CREATE INDEX IF NOT EXISTS idx_grid_labels_module_section_active ON grid_labels(module_code, section_key) WHERE is_active = true');
+
+    // DASHBOARD BUILDER (Step B1): structure lookup indices.
+    await pool.query('CREATE UNIQUE INDEX IF NOT EXISTS idx_module_sections_active_unique ON module_sections(module_code, key) WHERE is_active = true');
+    await pool.query('CREATE INDEX IF NOT EXISTS idx_module_fields_module_section_active ON module_fields(module_code, section_id) WHERE is_active = true');
 
     console.log('Database tables created');
 
@@ -399,6 +446,125 @@ const initDatabase = async () => {
       console.log('[Phase 2B] Seeded field_targets: HR_OPS / saudization_pct / 85 / above');
     } else {
       console.log('[Phase 2B] field_targets row for HR_OPS/saudization_pct already exists — skipping seed.');
+    }
+
+    // =============================================
+    // DASHBOARD BUILDER (Step B1): Seed HR Ops STRUCTURE (idempotent)
+    // =============================================
+    // Mirrors frontend/src/config/hrOpsConfig.js EXACTLY — 4 sections +
+    // 52 fields. Only seeds when no HR_OPS sections exist yet, so re-running
+    // initDatabase never duplicates. Field keys are the stable storage
+    // contract and match the config (and hr_ops_data values) verbatim.
+    // Computed fields use the CURATED formula model (Design v3 D-B):
+    //   percent_of { numerator, over:[...] }  and  sum { section }.
+    // =============================================
+    const existingHrOpsStructure = await pool.query(
+      "SELECT 1 FROM module_sections WHERE module_code = 'HR_OPS' LIMIT 1"
+    );
+    if (existingHrOpsStructure.rowCount === 0) {
+      // Section definitions: [key, title, layout, sort_order]
+      const hrOpsSections = [
+        ['headcount',   'Head Count & Saudization', 'kpi',           1],
+        ['onboarding',  'On-Boarding',              'ho_op',         2],
+        ['offboarding', 'Off-Boarding',             'ho_op',         3],
+        ['services',    'Services',                 'labeled_grid',  4],
+      ];
+      const sectionIdByKey = {};
+      for (const [key, title, layout, order] of hrOpsSections) {
+        const r = await pool.query(
+          `INSERT INTO module_sections (module_code, key, title, layout, sort_order)
+           VALUES ('HR_OPS', $1, $2, $3, $4) RETURNING id`,
+          [key, title, layout, order]
+        );
+        sectionIdByKey[key] = r.rows[0].id;
+      }
+
+      // Field definitions mirror hrOpsConfig order. Tuple shape:
+      //   [key, label, type, unit, section, subsection,
+      //    dimension, dimension_row, dimension_col,
+      //    source, formula_type, formula_args, sort_order]
+      const F = (key, label, type, unit, section, subsection, dimension, dRow, dCol, source, fType, fArgs, order) =>
+        ({ key, label, type, unit, section, subsection, dimension, dRow, dCol, source, fType, fArgs, order });
+
+      const hrOpsFields = [
+        // --- headcount / composition
+        F('total_employees','Total Employees','number',null,'headcount','composition',null,null,null,'manual',null,null,10),
+        F('employee_pct','Employee %','percentage',null,'headcount','composition',null,null,null,'computed','percent_of',{ numerator:'total_employees', over:['total_employees','outsource_count'] },11),
+        F('outsource_count','Outsource Count','number',null,'headcount','composition',null,null,null,'manual',null,null,12),
+        F('outsource_pct','Outsource %','percentage',null,'headcount','composition',null,null,null,'computed','percent_of',{ numerator:'outsource_count', over:['outsource_count','total_employees'] },13),
+        // --- headcount / gender
+        F('female_count','Female Count','number',null,'headcount','gender',null,null,null,'manual',null,null,20),
+        F('female_pct','Female %','percentage',null,'headcount','gender',null,null,null,'computed','percent_of',{ numerator:'female_count', over:['female_count','male_count'] },21),
+        F('male_count','Male Count','number',null,'headcount','gender',null,null,null,'manual',null,null,22),
+        F('male_pct','Male %','percentage',null,'headcount','gender',null,null,null,'computed','percent_of',{ numerator:'male_count', over:['male_count','female_count'] },23),
+        // --- headcount / location
+        F('ho_count','Head Office (HO) Count','number',null,'headcount','location',null,null,null,'manual',null,null,30),
+        F('ho_pct','HO %','percentage',null,'headcount','location',null,null,null,'computed','percent_of',{ numerator:'ho_count', over:['ho_count','op_count'] },31),
+        F('op_count','Operations (OP) Count','number',null,'headcount','location',null,null,null,'manual',null,null,32),
+        F('op_pct','OP %','percentage',null,'headcount','location',null,null,null,'computed','percent_of',{ numerator:'op_count', over:['op_count','ho_count'] },33),
+        // --- headcount / turnover
+        F('turnover_overall_pct','Overall Turnover','percentage','%','headcount','turnover',null,null,null,'manual',null,null,40),
+        F('turnover_ho_pct','HO Turnover','percentage','%','headcount','turnover',null,null,null,'manual',null,null,41),
+        F('turnover_op_pct','OP Turnover','percentage','%','headcount','turnover',null,null,null,'manual',null,null,42),
+        // --- headcount / compliance
+        F('saudization_pct','Saudization','percentage','%','headcount','compliance',null,null,null,'manual',null,null,50),
+        F('hrdf_employee_count','HRDF Employee Count','number',null,'headcount','compliance',null,null,null,'manual',null,null,51),
+        F('hrdf_amount_sr','HRDF Amount','currency','SR','headcount','compliance',null,null,null,'manual',null,null,52),
+        // --- onboarding (ho_op)
+        F('new_employee_profiles_ho','New Employee Profile Creation','number',null,'onboarding',null,'ho_op','new_employee_profiles','ho','manual',null,null,10),
+        F('new_employee_profiles_op','New Employee Profile Creation','number',null,'onboarding',null,'ho_op','new_employee_profiles','op','manual',null,null,11),
+        F('id_cards_printed_ho','ID Cards Printed','number',null,'onboarding',null,'ho_op','id_cards_printed','ho','manual',null,null,20),
+        F('id_cards_printed_op','ID Cards Printed','number',null,'onboarding',null,'ho_op','id_cards_printed','op','manual',null,null,21),
+        F('insurance_enrolled_ho','Insurance Enrolled','number',null,'onboarding',null,'ho_op','insurance_enrolled','ho','manual',null,null,30),
+        F('insurance_enrolled_op','Insurance Enrolled','number',null,'onboarding',null,'ho_op','insurance_enrolled','op','manual',null,null,31),
+        F('gosi_qiwa_enrolled_ho','Gosi / Qiwa Enrolled','number',null,'onboarding',null,'ho_op','gosi_qiwa_enrolled','ho','manual',null,null,40),
+        F('gosi_qiwa_enrolled_op','Gosi / Qiwa Enrolled','number',null,'onboarding',null,'ho_op','gosi_qiwa_enrolled','op','manual',null,null,41),
+        // --- offboarding (ho_op)
+        F('clearance_ho','Clearance','number',null,'offboarding',null,'ho_op','clearance','ho','manual',null,null,10),
+        F('clearance_op','Clearance','number',null,'offboarding',null,'ho_op','clearance','op','manual',null,null,11),
+        F('medical_removal_ho','Medical Removal','number',null,'offboarding',null,'ho_op','medical_removal','ho','manual',null,null,20),
+        F('medical_removal_op','Medical Removal','number',null,'offboarding',null,'ho_op','medical_removal','op','manual',null,null,21),
+        F('gosi_qiwa_removal_ho','Gosi / Qiwa Removal','number',null,'offboarding',null,'ho_op','gosi_qiwa_removal','ho','manual',null,null,30),
+        F('gosi_qiwa_removal_op','Gosi / Qiwa Removal','number',null,'offboarding',null,'ho_op','gosi_qiwa_removal','op','manual',null,null,31),
+        F('sponsorship_transfer_ho','Sponsorship Transfer','number',null,'offboarding',null,'ho_op','sponsorship_transfer','ho','manual',null,null,40),
+        F('sponsorship_transfer_op','Sponsorship Transfer','number',null,'offboarding',null,'ho_op','sponsorship_transfer','op','manual',null,null,41),
+        // --- services (labeled_grid; plain fields for now + computed total)
+        F('contract_renewal','Contract Renewal','number',null,'services',null,null,null,null,'manual',null,null,10),
+        F('help_desk_request','Help Desk Request','number',null,'services',null,null,null,null,'manual',null,null,20),
+        F('iqama_renewal','Iqama Renewal','number',null,'services',null,null,null,null,'manual',null,null,30),
+        F('flight_ticket_booking','Flight Ticket Booking','number',null,'services',null,null,null,null,'manual',null,null,40),
+        F('letters','Letters','number',null,'services',null,null,null,null,'manual',null,null,50),
+        F('transfer','Transfer','number',null,'services',null,null,null,null,'manual',null,null,60),
+        F('disciplinary_actions','Disciplinary Actions','number',null,'services',null,null,null,null,'manual',null,null,70),
+        F('probation_period_confirmation','Probation Confirmation','number',null,'services',null,null,null,null,'manual',null,null,80),
+        F('termination','Termination','number',null,'services',null,null,null,null,'manual',null,null,90),
+        F('exit_re_entry','Exit / Re-Entry','number',null,'services',null,null,null,null,'manual',null,null,100),
+        F('letter_attestation','Letter Attestation','number',null,'services',null,null,null,null,'manual',null,null,110),
+        F('professional_license','Professional License','number',null,'services',null,null,null,null,'manual',null,null,120),
+        F('dependent_medical','Dependent Medical','number',null,'services',null,null,null,null,'manual',null,null,130),
+        F('family_visit','Family Visit Visa','number',null,'services',null,null,null,null,'manual',null,null,140),
+        F('business_visit','Business Visit Visa','number',null,'services',null,null,null,null,'manual',null,null,150),
+        F('exit_interviews','Exit Interviews','number',null,'services',null,null,null,null,'manual',null,null,160),
+        F('resignation','Resignation','number',null,'services',null,null,null,null,'manual',null,null,170),
+        F('total_handled_requests','Total Handled Requests','number',null,'services',null,null,null,null,'computed','sum',{ section:'services' },999),
+      ];
+
+      for (const f of hrOpsFields) {
+        await pool.query(
+          `INSERT INTO module_fields
+             (module_code, section_id, key, label, type, unit, dimension, dimension_row, dimension_col,
+              source, formula_type, formula_args, subsection, sort_order)
+           VALUES ('HR_OPS', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+          [
+            sectionIdByKey[f.section], f.key, f.label, f.type, f.unit,
+            f.dimension, f.dRow, f.dCol, f.source, f.fType,
+            f.fArgs ? JSON.stringify(f.fArgs) : null, f.subsection, f.order,
+          ]
+        );
+      }
+      console.log(`[Builder B1] Seeded HR_OPS structure: ${hrOpsSections.length} sections, ${hrOpsFields.length} fields.`);
+    } else {
+      console.log('[Builder B1] HR_OPS structure already exists — skipping structure seed.');
     }
 
     // =============================================
