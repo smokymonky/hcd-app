@@ -121,6 +121,125 @@ export function computeField(field, values) {
 }
 
 // =============================================
+// evaluateFormula — DASHBOARD BUILDER Step B2 (curated formula model)
+// =============================================
+// Computes a computed field's RAW numeric value from field.formula_type +
+// field.formula_args (the DB/curated model from module_fields), replacing
+// the old formula-NAME lookup. Returns a number, or null when inputs are
+// insufficient (renders as "—"). Curated menu (Design v3 D-B):
+//
+//   percent_of  { numerator, over:[...] }
+//       → values[numerator] / sum(values[over]) * 100
+//         null if numerator or any `over` value missing, or denom 0.
+//   sum         { section }  (or { fields:[...] })
+//       → sum of the active MANUAL fields' values in that section,
+//         excluding the computed total itself. Uses `structure` to find
+//         the section's fields. The {fields:[...]} variant sums an
+//         explicit key list instead.
+//   avg         { over:[...] }
+//       → mean of the PRESENT values among `over` (missing ignored);
+//         null if none present.
+//   ratio       { numerator, denominator }
+//       → values[numerator] / values[denominator]; null if denom 0/missing.
+//
+// `structure` is the flat field list (or {sections} / {fields}) — used by
+// 'sum { section }' to discover the section's manual fields.
+// =============================================
+export function evaluateFormula(field, values, structure) {
+  if (!field || !field.formula_type) return null;
+  const args = field.formula_args || {};
+  const type = field.formula_type;
+
+  if (type === 'percent_of') {
+    const num = toNum(values[args.numerator]);
+    if (num === null) return null;
+    const overKeys = Array.isArray(args.over) ? args.over : [];
+    let denom = 0;
+    for (const k of overKeys) {
+      const n = toNum(values[k]);
+      if (n === null) return null;   // any missing → null (matches pctOfSum)
+      denom += n;
+    }
+    if (denom === 0) return null;
+    return (num / denom) * 100;
+  }
+
+  if (type === 'sum') {
+    let keys = [];
+    if (Array.isArray(args.fields) && args.fields.length) {
+      keys = args.fields;
+    } else if (args.section) {
+      keys = manualFieldKeysInSection(structure, args.section, field.key);
+    }
+    let total = 0;
+    let anyPresent = false;
+    for (const k of keys) {
+      const n = toNum(values[k]);
+      if (n !== null) { total += n; anyPresent = true; }
+    }
+    return anyPresent ? total : null;
+  }
+
+  if (type === 'avg') {
+    const overKeys = Array.isArray(args.over) ? args.over : [];
+    let total = 0;
+    let count = 0;
+    for (const k of overKeys) {
+      const n = toNum(values[k]);
+      if (n !== null) { total += n; count += 1; }
+    }
+    return count === 0 ? null : total / count;
+  }
+
+  if (type === 'ratio') {
+    const num = toNum(values[args.numerator]);
+    const den = toNum(values[args.denominator]);
+    if (num === null || den === null || den === 0) return null;
+    return num / den;
+  }
+
+  return null;
+}
+
+// Discover the active MANUAL field keys within a section from the structure,
+// excluding a given key (the computed total itself). Accepts a flat array of
+// fields, a { sections:[{key,fields:[]}] } object, or a { fields:[] } object.
+function manualFieldKeysInSection(structure, sectionKey, excludeKey) {
+  let fields = [];
+  if (Array.isArray(structure)) {
+    fields = structure;
+  } else if (structure && Array.isArray(structure.sections)) {
+    const s = structure.sections.find((x) => x.key === sectionKey);
+    fields = s ? (s.fields || []) : [];
+  } else if (structure && Array.isArray(structure.fields)) {
+    fields = structure.fields;
+  }
+  return fields
+    .filter((f) => (f.section || sectionKey) === sectionKey)
+    .filter((f) => f.source !== 'computed')
+    .filter((f) => f.is_active !== false)
+    .filter((f) => f.key !== excludeKey)
+    .map((f) => f.key);
+}
+
+// computeFieldValue — B2 render helper. Evaluates a computed field via the
+// curated model and returns the formatted display string ("25.3%", "1,247",
+// "—"), mirroring computeField's contract so render code stays simple.
+export function computeFieldValue(field, values, structure) {
+  if (!field || field.source !== 'computed') return null;
+  const raw = evaluateFormula(field, values, structure);
+  return formatValue(field, raw);
+}
+
+// Small numeric parser (module-local; mirrors toNumber above for the
+// formula evaluator's use).
+function toNum(v) {
+  if (v === null || v === undefined || v === '') return null;
+  const n = parseFloat(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+// =============================================
 // evaluateTarget (verbatim behavior from hrOpsFields.js)
 // =============================================
 // Returns one of:
