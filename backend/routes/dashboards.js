@@ -847,4 +847,388 @@ router.get('/:moduleCode/structure', authenticateToken, checkModuleAccessParam('
   }
 });
 
+// =============================================
+// DASHBOARD BUILDER (Step B3a) — structure CRUD (ADMIN ONLY)
+// =============================================
+// Write endpoints for module_sections / module_fields. Admin-gated
+// (structure editing is admin-only). Every query scoped by module_code so
+// a module can't touch another's structure. Keys are IMMUTABLE after create
+// (the storage contract — values are keyed by them); only labels/attributes
+// change. All deletes are SOFT (is_active=false) to protect historical
+// values. The existing viewer-gated /structure READ endpoint is unchanged.
+// =============================================
+
+const VALID_SECTION_LAYOUTS = ['kpi', 'ho_op', 'labeled_grid', 'matrix', 'group'];
+const VALID_FIELD_TYPES = ['number', 'percentage', 'currency', 'text', 'longtext', 'ratio'];
+
+// Stable slug from a human label: lowercase, non-alphanumerics → underscore.
+function slugify(text) {
+  return String(text || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 100) || 'item';
+}
+
+// Ensure a candidate key is unique within a scope; append _2, _3, … if not.
+// existingKeys is a Set of keys already in use in the scope.
+function uniqueKey(base, existingKeys) {
+  if (!existingKeys.has(base)) return base;
+  let n = 2;
+  while (existingKeys.has(`${base}_${n}`)) n += 1;
+  return `${base}_${n}`;
+}
+
+// ---------- SECTION endpoints ----------
+
+// POST /:moduleCode/sections  { key?, title, layout, sort_order? }
+router.post('/:moduleCode/sections', authenticateToken, isAdmin, async (req, res) => {
+  try {
+    const { moduleCode } = req.params;
+    const { key, title, layout, sort_order } = req.body;
+    if (!(await assertModuleExists(moduleCode))) {
+      return res.status(404).json({ error: `Unknown module '${moduleCode}'.` });
+    }
+    if (!title || !String(title).trim()) {
+      return res.status(400).json({ error: 'title cannot be empty.' });
+    }
+    if (!layout || !VALID_SECTION_LAYOUTS.includes(layout)) {
+      return res.status(400).json({ error: `layout must be one of: ${VALID_SECTION_LAYOUTS.join(', ')}.` });
+    }
+
+    // Resolve a unique key within the module (across active + inactive, so a
+    // restored section never collides). Key is immutable hereafter.
+    const existing = await pool.query('SELECT key FROM module_sections WHERE module_code = $1', [moduleCode]);
+    const usedKeys = new Set(existing.rows.map((r) => r.key));
+    const baseKey = key && String(key).trim() ? slugify(key) : slugify(title);
+    const finalKey = uniqueKey(baseKey, usedKeys);
+
+    // Default sort_order = end of the active list.
+    let order = sort_order;
+    if (order == null) {
+      const ord = await pool.query(
+        'SELECT COALESCE(MAX(sort_order), 0) + 1 AS next FROM module_sections WHERE module_code = $1 AND is_active = true',
+        [moduleCode]
+      );
+      order = ord.rows[0].next;
+    }
+
+    const r = await pool.query(
+      `INSERT INTO module_sections (module_code, key, title, layout, sort_order, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING id, module_code, key, title, layout, sort_order, is_active`,
+      [moduleCode, finalKey, title.trim(), layout, order, req.user.id]
+    );
+    res.status(201).json(r.rows[0]);
+  } catch (err) {
+    console.error('POST /:moduleCode/sections error:', err);
+    res.status(500).json({ error: 'Server error creating section.' });
+  }
+});
+
+// PUT /:moduleCode/sections/reorder  { orderedIds:[...] }
+// NOTE: declared BEFORE '/sections/:id' so 'reorder' isn't captured as :id.
+router.put('/:moduleCode/sections/reorder', authenticateToken, isAdmin, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { moduleCode } = req.params;
+    const { orderedIds } = req.body;
+    if (!Array.isArray(orderedIds)) {
+      return res.status(400).json({ error: 'orderedIds must be an array.' });
+    }
+    await client.query('BEGIN');
+    for (let i = 0; i < orderedIds.length; i++) {
+      await client.query(
+        'UPDATE module_sections SET sort_order = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 AND module_code = $3',
+        [i + 1, orderedIds[i], moduleCode]
+      );
+    }
+    await client.query('COMMIT');
+    res.json({ message: 'Sections reordered.', count: orderedIds.length });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('PUT /:moduleCode/sections/reorder error:', err);
+    res.status(500).json({ error: 'Server error reordering sections.' });
+  } finally {
+    client.release();
+  }
+});
+
+// PUT /:moduleCode/sections/:id  { title?, layout?, sort_order? }  (key IMMUTABLE)
+router.put('/:moduleCode/sections/:id', authenticateToken, isAdmin, async (req, res) => {
+  try {
+    const { moduleCode, id } = req.params;
+    const { title, layout, sort_order } = req.body;
+    if (title !== undefined && !String(title).trim()) {
+      return res.status(400).json({ error: 'title cannot be empty.' });
+    }
+    if (layout !== undefined && !VALID_SECTION_LAYOUTS.includes(layout)) {
+      return res.status(400).json({ error: `layout must be one of: ${VALID_SECTION_LAYOUTS.join(', ')}.` });
+    }
+    const r = await pool.query(
+      `UPDATE module_sections
+       SET title = COALESCE($1, title),
+           layout = COALESCE($2, layout),
+           sort_order = COALESCE($3, sort_order),
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = $4 AND module_code = $5
+       RETURNING id, module_code, key, title, layout, sort_order, is_active`,
+      [title !== undefined ? title.trim() : null, layout ?? null, sort_order ?? null, id, moduleCode]
+    );
+    if (r.rows.length === 0) {
+      return res.status(404).json({ error: 'Section not found for this module.' });
+    }
+    res.json(r.rows[0]);
+  } catch (err) {
+    console.error('PUT /:moduleCode/sections/:id error:', err);
+    res.status(500).json({ error: 'Server error updating section.' });
+  }
+});
+
+// DELETE /:moduleCode/sections/:id  → soft-hide (fields stay linked)
+router.delete('/:moduleCode/sections/:id', authenticateToken, isAdmin, async (req, res) => {
+  try {
+    const { moduleCode, id } = req.params;
+    const r = await pool.query(
+      `UPDATE module_sections SET is_active = false, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $1 AND module_code = $2 RETURNING id`,
+      [id, moduleCode]
+    );
+    if (r.rows.length === 0) {
+      return res.status(404).json({ error: 'Section not found for this module.' });
+    }
+    res.json({ message: 'Section hidden.', id: r.rows[0].id });
+  } catch (err) {
+    console.error('DELETE /:moduleCode/sections/:id error:', err);
+    res.status(500).json({ error: 'Server error hiding section.' });
+  }
+});
+
+// POST /:moduleCode/sections/:id/restore
+router.post('/:moduleCode/sections/:id/restore', authenticateToken, isAdmin, async (req, res) => {
+  try {
+    const { moduleCode, id } = req.params;
+    const r = await pool.query(
+      `UPDATE module_sections SET is_active = true, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $1 AND module_code = $2
+       RETURNING id, module_code, key, title, layout, sort_order, is_active`,
+      [id, moduleCode]
+    );
+    if (r.rows.length === 0) {
+      return res.status(404).json({ error: 'Section not found for this module.' });
+    }
+    res.json(r.rows[0]);
+  } catch (err) {
+    console.error('POST /:moduleCode/sections/:id/restore error:', err);
+    res.status(500).json({ error: 'Server error restoring section.' });
+  }
+});
+
+// ---------- FIELD endpoints ----------
+
+// PUT /:moduleCode/fields/reorder  { orderedIds:[...] }
+// Declared BEFORE '/fields/:id' so 'reorder' isn't captured as :id.
+router.put('/:moduleCode/fields/reorder', authenticateToken, isAdmin, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { moduleCode } = req.params;
+    const { orderedIds } = req.body;
+    if (!Array.isArray(orderedIds)) {
+      return res.status(400).json({ error: 'orderedIds must be an array.' });
+    }
+    await client.query('BEGIN');
+    for (let i = 0; i < orderedIds.length; i++) {
+      await client.query(
+        'UPDATE module_fields SET sort_order = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 AND module_code = $3',
+        [(i + 1) * 10, orderedIds[i], moduleCode]
+      );
+    }
+    await client.query('COMMIT');
+    res.json({ message: 'Fields reordered.', count: orderedIds.length });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('PUT /:moduleCode/fields/reorder error:', err);
+    res.status(500).json({ error: 'Server error reordering fields.' });
+  } finally {
+    client.release();
+  }
+});
+
+// POST /:moduleCode/sections/:sectionId/fields
+router.post('/:moduleCode/sections/:sectionId/fields', authenticateToken, isAdmin, async (req, res) => {
+  try {
+    const { moduleCode, sectionId } = req.params;
+    const {
+      key, label, type, unit, source, formula_type, formula_args,
+      dimension, dimension_row, dimension_col, subsection, sort_order,
+    } = req.body;
+
+    if (!(await assertModuleExists(moduleCode))) {
+      return res.status(404).json({ error: `Unknown module '${moduleCode}'.` });
+    }
+    // Section must exist and belong to this module.
+    const sec = await pool.query(
+      'SELECT id FROM module_sections WHERE id = $1 AND module_code = $2',
+      [sectionId, moduleCode]
+    );
+    if (sec.rows.length === 0) {
+      return res.status(404).json({ error: 'Section not found for this module.' });
+    }
+    if (!label || !String(label).trim()) {
+      return res.status(400).json({ error: 'label cannot be empty.' });
+    }
+    if (!type || !VALID_FIELD_TYPES.includes(type)) {
+      return res.status(400).json({ error: `type must be one of: ${VALID_FIELD_TYPES.join(', ')}.` });
+    }
+
+    // Unique key within (module, section) across active + inactive.
+    const existing = await pool.query(
+      'SELECT key FROM module_fields WHERE module_code = $1 AND section_id = $2',
+      [moduleCode, sectionId]
+    );
+    const usedKeys = new Set(existing.rows.map((r) => r.key));
+    const baseKey = key && String(key).trim() ? slugify(key) : slugify(label);
+    const finalKey = uniqueKey(baseKey, usedKeys);
+
+    let order = sort_order;
+    if (order == null) {
+      const ord = await pool.query(
+        'SELECT COALESCE(MAX(sort_order), 0) + 10 AS next FROM module_fields WHERE module_code = $1 AND section_id = $2 AND is_active = true',
+        [moduleCode, sectionId]
+      );
+      order = ord.rows[0].next;
+    }
+
+    const r = await pool.query(
+      `INSERT INTO module_fields
+         (module_code, section_id, key, label, type, unit, dimension, dimension_row, dimension_col,
+          source, formula_type, formula_args, subsection, sort_order, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+       RETURNING id, module_code, section_id, key, label, type, unit, dimension, dimension_row,
+                 dimension_col, source, formula_type, formula_args, subsection, sort_order, is_active`,
+      [
+        moduleCode, sectionId, finalKey, label.trim(), type, unit ?? null,
+        dimension ?? null, dimension_row ?? null, dimension_col ?? null,
+        source ?? 'manual', formula_type ?? null,
+        formula_args ? JSON.stringify(formula_args) : null,
+        subsection ?? null, order, req.user.id,
+      ]
+    );
+    res.status(201).json(r.rows[0]);
+  } catch (err) {
+    console.error('POST /:moduleCode/sections/:sectionId/fields error:', err);
+    res.status(500).json({ error: 'Server error creating field.' });
+  }
+});
+
+// PUT /:moduleCode/fields/:id  (key IMMUTABLE; section_id present = move)
+router.put('/:moduleCode/fields/:id', authenticateToken, isAdmin, async (req, res) => {
+  try {
+    const { moduleCode, id } = req.params;
+    const {
+      label, type, unit, source, formula_type, formula_args,
+      dimension, dimension_row, dimension_col, subsection, sort_order, section_id,
+    } = req.body;
+
+    if (label !== undefined && !String(label).trim()) {
+      return res.status(400).json({ error: 'label cannot be empty.' });
+    }
+    if (type !== undefined && !VALID_FIELD_TYPES.includes(type)) {
+      return res.status(400).json({ error: `type must be one of: ${VALID_FIELD_TYPES.join(', ')}.` });
+    }
+    // If moving sections, the target section must belong to this module.
+    if (section_id !== undefined && section_id !== null) {
+      const sec = await pool.query(
+        'SELECT id FROM module_sections WHERE id = $1 AND module_code = $2',
+        [section_id, moduleCode]
+      );
+      if (sec.rows.length === 0) {
+        return res.status(404).json({ error: 'Target section not found for this module.' });
+      }
+    }
+
+    // formula_args: only touch when the caller sends the key (allow explicit null).
+    const hasFormulaArgs = Object.prototype.hasOwnProperty.call(req.body, 'formula_args');
+    const formulaArgsSql = hasFormulaArgs
+      ? (formula_args ? JSON.stringify(formula_args) : null)
+      : null;
+
+    const r = await pool.query(
+      `UPDATE module_fields
+       SET label = COALESCE($1, label),
+           type = COALESCE($2, type),
+           unit = COALESCE($3, unit),
+           source = COALESCE($4, source),
+           formula_type = COALESCE($5, formula_type),
+           formula_args = CASE WHEN $6 THEN $7::jsonb ELSE formula_args END,
+           dimension = COALESCE($8, dimension),
+           dimension_row = COALESCE($9, dimension_row),
+           dimension_col = COALESCE($10, dimension_col),
+           subsection = COALESCE($11, subsection),
+           sort_order = COALESCE($12, sort_order),
+           section_id = COALESCE($13, section_id),
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = $14 AND module_code = $15
+       RETURNING id, module_code, section_id, key, label, type, unit, dimension, dimension_row,
+                 dimension_col, source, formula_type, formula_args, subsection, sort_order, is_active`,
+      [
+        label !== undefined ? label.trim() : null,
+        type ?? null, unit ?? null, source ?? null, formula_type ?? null,
+        hasFormulaArgs, formulaArgsSql,
+        dimension ?? null, dimension_row ?? null, dimension_col ?? null,
+        subsection ?? null, sort_order ?? null, section_id ?? null,
+        id, moduleCode,
+      ]
+    );
+    if (r.rows.length === 0) {
+      return res.status(404).json({ error: 'Field not found for this module.' });
+    }
+    res.json(r.rows[0]);
+  } catch (err) {
+    console.error('PUT /:moduleCode/fields/:id error:', err);
+    res.status(500).json({ error: 'Server error updating field.' });
+  }
+});
+
+// DELETE /:moduleCode/fields/:id  → soft-hide
+router.delete('/:moduleCode/fields/:id', authenticateToken, isAdmin, async (req, res) => {
+  try {
+    const { moduleCode, id } = req.params;
+    const r = await pool.query(
+      `UPDATE module_fields SET is_active = false, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $1 AND module_code = $2 RETURNING id`,
+      [id, moduleCode]
+    );
+    if (r.rows.length === 0) {
+      return res.status(404).json({ error: 'Field not found for this module.' });
+    }
+    res.json({ message: 'Field hidden.', id: r.rows[0].id });
+  } catch (err) {
+    console.error('DELETE /:moduleCode/fields/:id error:', err);
+    res.status(500).json({ error: 'Server error hiding field.' });
+  }
+});
+
+// POST /:moduleCode/fields/:id/restore
+router.post('/:moduleCode/fields/:id/restore', authenticateToken, isAdmin, async (req, res) => {
+  try {
+    const { moduleCode, id } = req.params;
+    const r = await pool.query(
+      `UPDATE module_fields SET is_active = true, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $1 AND module_code = $2
+       RETURNING id, module_code, section_id, key, label, type, unit, dimension, dimension_row,
+                 dimension_col, source, formula_type, formula_args, subsection, sort_order, is_active`,
+      [id, moduleCode]
+    );
+    if (r.rows.length === 0) {
+      return res.status(404).json({ error: 'Field not found for this module.' });
+    }
+    res.json(r.rows[0]);
+  } catch (err) {
+    console.error('POST /:moduleCode/fields/:id/restore error:', err);
+    res.status(500).json({ error: 'Server error restoring field.' });
+  }
+});
+
 module.exports = router;
