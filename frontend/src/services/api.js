@@ -153,7 +153,9 @@ export const dashboardsAPI = {
   // GET /api/dashboards/:moduleCode/structure — DASHBOARD BUILDER Step B1
   // Returns the DB-backed active structure (ordered sections + fields).
   // The B2 renderer consumes this instead of the config file.
-  getStructure: (moduleCode) => request(`/dashboards/${encodeURIComponent(moduleCode)}/structure`),
+  getStructure: (moduleCode, { includeHidden } = {}) => request(
+    `/dashboards/${encodeURIComponent(moduleCode)}/structure${includeHidden ? '?includeHidden=true' : ''}`
+  ),
 };
 
 // =============================================
