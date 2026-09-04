@@ -157,6 +157,49 @@ export const dashboardsAPI = {
 };
 
 // =============================================
+// Structure (Dashboard Builder Step B3a) — admin structure CRUD
+// =============================================
+// Create/edit/soft-delete/restore/reorder sections + fields in
+// module_sections / module_fields. Admin-only on the backend. Keys are
+// immutable after create. Consumed by the B3b builder UI.
+const enc = encodeURIComponent;
+export const structureAPI = {
+  // Sections
+  createSection: (code, payload) => request(`/dashboards/${enc(code)}/sections`, {
+    method: 'POST', body: JSON.stringify(payload)
+  }),
+  updateSection: (code, id, payload) => request(`/dashboards/${enc(code)}/sections/${id}`, {
+    method: 'PUT', body: JSON.stringify(payload)
+  }),
+  deleteSection: (code, id) => request(`/dashboards/${enc(code)}/sections/${id}`, {
+    method: 'DELETE'
+  }),
+  restoreSection: (code, id) => request(`/dashboards/${enc(code)}/sections/${id}/restore`, {
+    method: 'POST', body: JSON.stringify({})
+  }),
+  reorderSections: (code, orderedIds) => request(`/dashboards/${enc(code)}/sections/reorder`, {
+    method: 'PUT', body: JSON.stringify({ orderedIds })
+  }),
+
+  // Fields
+  createField: (code, sectionId, payload) => request(`/dashboards/${enc(code)}/sections/${sectionId}/fields`, {
+    method: 'POST', body: JSON.stringify(payload)
+  }),
+  updateField: (code, id, payload) => request(`/dashboards/${enc(code)}/fields/${id}`, {
+    method: 'PUT', body: JSON.stringify(payload)
+  }),
+  deleteField: (code, id) => request(`/dashboards/${enc(code)}/fields/${id}`, {
+    method: 'DELETE'
+  }),
+  restoreField: (code, id) => request(`/dashboards/${enc(code)}/fields/${id}/restore`, {
+    method: 'POST', body: JSON.stringify({})
+  }),
+  reorderFields: (code, orderedIds) => request(`/dashboards/${enc(code)}/fields/reorder`, {
+    method: 'PUT', body: JSON.stringify({ orderedIds })
+  }),
+};
+
+// =============================================
 // Labels (Module Engine Step 2a) — grid_labels management
 // =============================================
 // Editable department/source/status labels for the 'labeled_grid' engine
