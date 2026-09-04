@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  COMPUTERS,
-  computeField,
+  computeFieldValue,
   formatValue,
   buildYearOptions,
   buildMonthOptions,
@@ -47,7 +46,7 @@ import Dropdown from './Dropdown';
 export default function ModuleDataEntry({ config, user, year, month, onStatusChange, onPeriodChange }) {
   // Flatten config → a FIELDS-like list (adds engine-friendly accessors).
   const FIELDS = useMemo(() => flattenConfigFields(config), [config]);
-  const SECTIONS = useMemo(() => (config.sections || []).slice().sort((a, b) => (a.order || 0) - (b.order || 0)), [config]);
+  const SECTIONS = useMemo(() => (config.sections || []).slice().sort((a, b) => ((a.order ?? a.sort_order ?? 0) - (b.order ?? b.sort_order ?? 0))), [config]);
 
   const [submission, setSubmission] = useState(null);
   const [values, setValues] = useState({});
@@ -380,12 +379,24 @@ export default function ModuleDataEntry({ config, user, year, month, onStatusCha
 // =============================================
 const GENERIC_SECTION_ICON = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>';
 
-// Flatten config sections → flat field list, carrying section onto each field.
+// Flatten config/structure sections → flat field list, carrying section onto
+// each field and NORMALIZING both shapes:
+//   - DB structure (B1): dimension_row/dimension_col/formula_type/formula_args
+//   - file config (2b-1): dimensionRow/dimensionCol/formula
+// so the render helpers + curated evaluator work regardless of source.
 function flattenConfigFields(config) {
   const out = [];
   for (const s of (config.sections || [])) {
     for (const f of (s.fields || [])) {
-      out.push({ ...f, section: f.section || s.key });
+      out.push({
+        ...f,
+        section: f.section || s.key,
+        dimensionRow: f.dimensionRow || f.dimension_row || null,
+        dimensionCol: f.dimensionCol || f.dimension_col || null,
+        // curated-formula fields (DB); harmless when absent (file config)
+        formula_type: f.formula_type || null,
+        formula_args: f.formula_args || null,
+      });
     }
   }
   return out;
@@ -490,7 +501,7 @@ function renderSubsectionedGrid(fields, values, onChange, readOnly, isMobile = f
       {humanizeKey(subKey) && <div style={styles.subsectionLabel}>{humanizeKey(subKey)}</div>}
       <div style={{ ...styles.fieldGrid, ...(isMobile ? styles.fieldGridMobile : {}) }}>
         {subFields.map((f) => (
-          <FieldCell key={f.key} field={f} values={values} onChange={onChange} readOnly={readOnly} />
+          <FieldCell key={f.key} field={f} values={values} onChange={onChange} readOnly={readOnly} allFields={fields} />
         ))}
       </div>
     </div>
@@ -587,7 +598,7 @@ function renderSectionFooter(section, fields, values) {
   // (Headcount's computed pct fields have subsections → rendered inline.)
   const footerField = fields.find((f) => f.source === 'computed' && !f.subsection);
   if (!footerField) return null;
-  const computedDisplay = computeField(footerField, values);
+  const computedDisplay = computeFieldValue(footerField, values, fields);
   const empty = computedDisplay === '—';
   return (
     <div style={styles.sectionFooter}>
@@ -600,9 +611,9 @@ function renderSectionFooter(section, fields, values) {
 }
 
 // FieldCell — single field (manual or computed), identical to live.
-function FieldCell({ field, values, onChange, readOnly }) {
+function FieldCell({ field, values, onChange, readOnly, allFields }) {
   const isComputed = field.source === 'computed';
-  const display = isComputed ? computeField(field, values) : null;
+  const display = isComputed ? computeFieldValue(field, values, allFields) : null;
   const isEmptyComputed = isComputed && display === '—';
 
   const targetHelper = field.target
