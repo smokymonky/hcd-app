@@ -149,6 +149,11 @@ export const dashboardsAPI = {
   // submitted, head_reviewed, director_reviewed, approved, published.
   // Used by the Approvals tab (ApprovalsManager).
   getAdminQueue: () => request('/dashboards/admin-queue'),
+
+  // GET /api/dashboards/:moduleCode/structure — DASHBOARD BUILDER Step B1
+  // Returns the DB-backed active structure (ordered sections + fields).
+  // The B2 renderer consumes this instead of the config file.
+  getStructure: (moduleCode) => request(`/dashboards/${encodeURIComponent(moduleCode)}/structure`),
 };
 
 // =============================================
