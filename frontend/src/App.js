@@ -5,6 +5,7 @@ import DashboardPage from './pages/DashboardPage';
 import AdminPage from './pages/AdminPage';
 import HubPage from './pages/HubPage';
 import HROpsPage from './pages/HROpsPage';
+import ModuleEntryPreview from './pages/ModuleEntryPreview';
 
 function App() {
   const [user, setUser] = useState(null);
@@ -65,6 +66,16 @@ function App() {
         <Route path="/hub/dashboards/HR_OPS/:view" element={user ? <HROpsPage user={user} onLogout={handleLogout} /> : <Navigate to="/login" />} />
         <Route path="/hub/dashboards/HR_OPS/entry/:year/:month" element={user ? <HROpsPage user={user} onLogout={handleLogout} /> : <Navigate to="/login" />} />
         <Route path="/hub/dashboards/HR_OPS/snapshot/:year/:month" element={user ? <HROpsPage user={user} onLogout={handleLogout} /> : <Navigate to="/login" />} />
+        {/* MODULE ENGINE Step 2b-2 — additive generic-renderer PREVIEW route.
+            Renders ModuleDataEntry (config-driven) side by side with the live
+            entry above. Reuses the same submission + save so data is shared.
+            Path is under /hub/preview/* (NOT /hub/dashboards/HR_OPS/*) to
+            avoid being shadowed by the live '/hub/dashboards/HR_OPS/:view'
+            route — React Router v6 ranks the static 'HR_OPS' segment above a
+            ':moduleCode' param, which would otherwise catch 'entry-v2' as a
+            :view. Live routes above are untouched. Preview URL for HR Ops:
+            /hub/preview/HR_OPS/entry-v2 */}
+        <Route path="/hub/preview/:moduleCode/entry-v2" element={user ? <ModuleEntryPreview user={user} onLogout={handleLogout} /> : <Navigate to="/login" />} />
         <Route path="*" element={<Navigate to={user ? "/dashboard" : "/login"} />} />
       </Routes>
     </BrowserRouter>
