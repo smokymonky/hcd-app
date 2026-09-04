@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import ModuleDataEntry from '../dashboards/ModuleDataEntry';
 import { dashboardsAPI, targetsAPI } from '../services/api';
@@ -45,14 +45,20 @@ export default function ModuleEntryPreview({ user, onLogout }) {
 
   // DB-driven structure (assembled config-shaped object) + load state.
   const [config, setConfig] = useState(null);
-  const [structureLoading, setStructureLoading] = useState(true);
+  const [structureLoading, setStructureLoading] = useState(true);   // first load (blocks page)
+  const [structureRefetching, setStructureRefetching] = useState(false); // background refresh
   const [structureError, setStructureError] = useState(null);
+
+  // B3b-1: admin "Edit dashboard" mode (off by default).
+  const [editMode, setEditMode] = useState(false);
+
+  const isAdmin = accessLevel === 'admin';
 
   // Resolve the user's access level (same source as live: my-access).
   useEffect(() => {
     let cancelled = false;
-    const isAdmin = user && String(user.role || '').toLowerCase() === 'admin';
-    if (isAdmin) {
+    const admin = user && String(user.role || '').toLowerCase() === 'admin';
+    if (admin) {
       setAccessLevel('admin');
       setAccessResolved(true);
       return undefined;
@@ -73,24 +79,23 @@ export default function ModuleEntryPreview({ user, onLogout }) {
   }, [moduleCode, user]);
 
   // Fetch STRUCTURE + TARGETS from the DB and assemble the config object.
-  useEffect(() => {
-    let cancelled = false;
-    setStructureLoading(true);
+  // `background` = true → don't blank the page (used by onStructureChanged
+  // after an edit). `withHidden` → include soft-hidden rows (edit mode needs
+  // them for the "Show hidden" list).
+  const loadStructure = useCallback((opts = {}) => {
+    const { background = false, withHidden = false } = opts;
+    if (background) setStructureRefetching(true);
+    else { setStructureLoading(true); setConfig(null); }
     setStructureError(null);
-    setConfig(null);
 
-    Promise.all([
-      dashboardsAPI.getStructure(moduleCode),
-      // Targets aren't in /structure (they live in field_targets). Merge
-      // active ones by key so the target helper matches live. Tolerate a
-      // targets fetch failure — structure still renders (just no helper).
+    return Promise.all([
+      dashboardsAPI.getStructure(moduleCode, { includeHidden: withHidden }),
       targetsAPI.list(moduleCode).catch((e) => {
         console.error('[ModuleEntryPreview] targets fetch failed (non-fatal):', e);
         return [];
       }),
     ])
       .then(([structure, targets]) => {
-        if (cancelled) return;
         const targetByKey = {};
         (Array.isArray(targets) ? targets : []).forEach((t) => {
           if (t.is_active === false) return;
@@ -103,10 +108,12 @@ export default function ModuleEntryPreview({ user, onLogout }) {
         });
 
         const sections = (structure.sections || []).map((s) => ({
+          id: s.id,
           key: s.key,
           title: s.title,
           layout: s.layout,
           sort_order: s.sort_order,
+          is_active: s.is_active,
           fields: (s.fields || []).map((f) => ({
             ...f,
             section: s.key,
@@ -121,14 +128,34 @@ export default function ModuleEntryPreview({ user, onLogout }) {
         });
       })
       .catch((err) => {
-        if (cancelled) return;
         console.error('[ModuleEntryPreview] structure fetch failed:', err);
         setStructureError(err && err.message ? err.message : 'Could not load module structure.');
       })
-      .finally(() => { if (!cancelled) setStructureLoading(false); });
-
-    return () => { cancelled = true; };
+      .finally(() => {
+        setStructureLoading(false);
+        setStructureRefetching(false);
+      });
   }, [moduleCode]);
+
+  // Load structure whenever the module, resolved access, or edit mode
+  // changes. The very first load blocks the page (structureLoading starts
+  // true); once loaded, edit-mode flips refetch in the background with/
+  // without hidden rows. A ref tracks first-load so `config` is NOT a dep
+  // (it would loop, since loadStructure sets config). loadStructure is
+  // stable (useCallback on [moduleCode]).
+  const hasLoadedRef = useRef(false);
+  useEffect(() => {
+    if (!accessResolved) return;
+    const background = hasLoadedRef.current;
+    hasLoadedRef.current = true;
+    loadStructure({ background, withHidden: editMode && isAdmin });
+  }, [editMode, accessResolved, isAdmin, loadStructure]);
+
+  // Passed to ModuleDataEntry — re-fetch after any structure mutation.
+  const onStructureChanged = useCallback(
+    () => loadStructure({ background: true, withHidden: editMode && isAdmin }),
+    [loadStructure, editMode, isAdmin]
+  );
 
   function handlePeriodChange(nextYear, nextMonth) {
     setYear(Number(nextYear));
@@ -180,7 +207,17 @@ export default function ModuleEntryPreview({ user, onLogout }) {
         </button>
         <div style={S.title}>
           {config.name} — Data Entry <span style={S.v2}>(engine v2 · DB-driven)</span>
+          {structureRefetching && <span style={S.refetch}>↻ refreshing…</span>}
         </div>
+        {isAdmin && (
+          <button
+            type="button"
+            style={{ ...S.editToggle, ...(editMode ? S.editToggleOn : {}) }}
+            onClick={() => setEditMode((v) => !v)}
+          >
+            {editMode ? '✓ Editing dashboard' : '✎ Edit dashboard'}
+          </button>
+        )}
       </div>
       <ModuleDataEntry
         config={config}
@@ -188,6 +225,9 @@ export default function ModuleEntryPreview({ user, onLogout }) {
         year={year}
         month={month}
         onPeriodChange={handlePeriodChange}
+        canEditStructure={isAdmin}
+        editMode={editMode && isAdmin}
+        onStructureChanged={onStructureChanged}
       />
     </div>
   );
@@ -213,6 +253,18 @@ const S = {
   },
   title: { fontSize: 18, fontWeight: 700, letterSpacing: '-0.3px' },
   v2: { fontSize: 12, fontWeight: 600, color: '#F3C036' },
+  refetch: { fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,0.5)', marginLeft: 10 },
+  editToggle: {
+    marginLeft: 'auto',
+    padding: '8px 16px', borderRadius: 8,
+    background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.15)',
+    color: 'rgba(255,255,255,0.85)', cursor: 'pointer',
+    fontFamily: 'inherit', fontSize: 13, fontWeight: 600,
+  },
+  editToggleOn: {
+    background: 'linear-gradient(135deg, rgba(243,192,54,0.2), rgba(236,72,153,0.15))',
+    borderColor: 'rgba(243,192,54,0.5)', color: '#F3C036',
+  },
   notice: {
     maxWidth: 600, margin: '80px auto', padding: '20px 24px',
     background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.12)',
