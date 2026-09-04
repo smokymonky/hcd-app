@@ -774,4 +774,77 @@ router.post('/:moduleCode/labels/:id/restore', authenticateToken, checkModuleAcc
   }
 });
 
+// =============================================
+// DASHBOARD BUILDER (Step B1) — GET /:moduleCode/structure
+// =============================================
+// Returns the ACTIVE module structure: ordered sections, each with its
+// ordered active fields. This is what the B2 renderer consumes instead of
+// the hard-coded config file. Gated viewer-or-above (admin bypass) — any
+// user who can see the module can read its structure. Read-only; changes
+// nothing. Targets are NOT included here (they live in field_targets,
+// linked by module_code + key).
+// =============================================
+router.get('/:moduleCode/structure', authenticateToken, checkModuleAccessParam('viewer'), async (req, res) => {
+  try {
+    const { moduleCode } = req.params;
+
+    // Module must exist.
+    const m = await pool.query('SELECT id FROM dashboard_modules WHERE code = $1', [moduleCode]);
+    if (m.rows.length === 0) {
+      return res.status(404).json({ error: `Unknown module '${moduleCode}'.` });
+    }
+
+    const sectionsRes = await pool.query(
+      `SELECT id, key, title, layout, sort_order
+       FROM module_sections
+       WHERE module_code = $1 AND is_active = true
+       ORDER BY sort_order ASC, id ASC`,
+      [moduleCode]
+    );
+
+    const fieldsRes = await pool.query(
+      `SELECT id, section_id, key, label, type, unit,
+              dimension, dimension_row, dimension_col,
+              source, formula_type, formula_args, subsection, sort_order
+       FROM module_fields
+       WHERE module_code = $1 AND is_active = true
+       ORDER BY sort_order ASC, id ASC`,
+      [moduleCode]
+    );
+
+    // Group fields under their section (ordered).
+    const fieldsBySection = {};
+    for (const f of fieldsRes.rows) {
+      if (!fieldsBySection[f.section_id]) fieldsBySection[f.section_id] = [];
+      fieldsBySection[f.section_id].push(f);
+    }
+
+    const sections = sectionsRes.rows.map((s) => ({
+      key: s.key,
+      title: s.title,
+      layout: s.layout,
+      sort_order: s.sort_order,
+      fields: (fieldsBySection[s.id] || []).map((f) => ({
+        key: f.key,
+        label: f.label,
+        type: f.type,
+        unit: f.unit,
+        dimension: f.dimension,
+        dimension_row: f.dimension_row,
+        dimension_col: f.dimension_col,
+        source: f.source,
+        formula_type: f.formula_type,
+        formula_args: f.formula_args,
+        subsection: f.subsection,
+        sort_order: f.sort_order,
+      })),
+    }));
+
+    res.json({ module_code: moduleCode, sections });
+  } catch (err) {
+    console.error('GET /:moduleCode/structure error:', err);
+    res.status(500).json({ error: 'Server error loading module structure.' });
+  }
+});
+
 module.exports = router;
