@@ -787,6 +787,9 @@ router.post('/:moduleCode/labels/:id/restore', authenticateToken, checkModuleAcc
 router.get('/:moduleCode/structure', authenticateToken, checkModuleAccessParam('viewer'), async (req, res) => {
   try {
     const { moduleCode } = req.params;
+    // B3b-1: admins managing structure can request hidden rows too. Default
+    // (no param) is active-only — byte-identical to the original behavior.
+    const includeHidden = String(req.query.includeHidden) === 'true';
 
     // Module must exist.
     const m = await pool.query('SELECT id FROM dashboard_modules WHERE code = $1', [moduleCode]);
@@ -795,9 +798,9 @@ router.get('/:moduleCode/structure', authenticateToken, checkModuleAccessParam('
     }
 
     const sectionsRes = await pool.query(
-      `SELECT id, key, title, layout, sort_order
+      `SELECT id, key, title, layout, sort_order, is_active
        FROM module_sections
-       WHERE module_code = $1 AND is_active = true
+       WHERE module_code = $1 ${includeHidden ? '' : 'AND is_active = true'}
        ORDER BY sort_order ASC, id ASC`,
       [moduleCode]
     );
@@ -805,9 +808,9 @@ router.get('/:moduleCode/structure', authenticateToken, checkModuleAccessParam('
     const fieldsRes = await pool.query(
       `SELECT id, section_id, key, label, type, unit,
               dimension, dimension_row, dimension_col,
-              source, formula_type, formula_args, subsection, sort_order
+              source, formula_type, formula_args, subsection, sort_order, is_active
        FROM module_fields
-       WHERE module_code = $1 AND is_active = true
+       WHERE module_code = $1 ${includeHidden ? '' : 'AND is_active = true'}
        ORDER BY sort_order ASC, id ASC`,
       [moduleCode]
     );
@@ -820,11 +823,14 @@ router.get('/:moduleCode/structure', authenticateToken, checkModuleAccessParam('
     }
 
     const sections = sectionsRes.rows.map((s) => ({
+      id: s.id,
       key: s.key,
       title: s.title,
       layout: s.layout,
       sort_order: s.sort_order,
+      is_active: s.is_active,
       fields: (fieldsBySection[s.id] || []).map((f) => ({
+        id: f.id,
         key: f.key,
         label: f.label,
         type: f.type,
@@ -837,6 +843,7 @@ router.get('/:moduleCode/structure', authenticateToken, checkModuleAccessParam('
         formula_args: f.formula_args,
         subsection: f.subsection,
         sort_order: f.sort_order,
+        is_active: f.is_active,
       })),
     }));
 
