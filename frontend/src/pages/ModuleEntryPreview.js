@@ -151,11 +151,20 @@ export default function ModuleEntryPreview({ user, onLogout }) {
     loadStructure({ background, withHidden: editMode && isAdmin });
   }, [editMode, accessResolved, isAdmin, loadStructure]);
 
-  // Passed to ModuleDataEntry — re-fetch after any structure mutation.
+  // Passed to ModuleDataEntry — kept as a rarely-used full refresh (e.g. the
+  // edit-mode toggle already refetches with hidden rows). NOT called after
+  // every action anymore; per-action updates use onStructurePatch below.
   const onStructureChanged = useCallback(
     () => loadStructure({ background: true, withHidden: editMode && isAdmin }),
     [loadStructure, editMode, isAdmin]
   );
+
+  // B3b PERF — patch the in-memory structure locally after a mutation so the
+  // dashboard updates instantly with no getStructure/targets round-trip. The
+  // updater receives the current sections array and returns the next one.
+  const applyStructurePatch = useCallback((updater) => {
+    setConfig((prev) => (prev ? { ...prev, sections: updater(prev.sections || []) } : prev));
+  }, []);
 
   function handlePeriodChange(nextYear, nextMonth) {
     setYear(Number(nextYear));
@@ -228,6 +237,7 @@ export default function ModuleEntryPreview({ user, onLogout }) {
         canEditStructure={isAdmin}
         editMode={editMode && isAdmin}
         onStructureChanged={onStructureChanged}
+        onStructurePatch={applyStructurePatch}
       />
     </div>
   );
