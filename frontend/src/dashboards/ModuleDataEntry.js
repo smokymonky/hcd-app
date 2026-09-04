@@ -1,11 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   computeFieldValue,
   formatValue,
   buildYearOptions,
   buildMonthOptions,
 } from '../engine/computers';
-import { dashboardsAPI } from '../services/api';
+import { dashboardsAPI, structureAPI } from '../services/api';
 import Dropdown from './Dropdown';
 
 // =============================================
@@ -43,10 +44,28 @@ import Dropdown from './Dropdown';
 // the target helper, save, and guards all match live exactly.
 // =============================================
 
-export default function ModuleDataEntry({ config, user, year, month, onStatusChange, onPeriodChange }) {
+export default function ModuleDataEntry({ config, user, year, month, onStatusChange, onPeriodChange, canEditStructure = false, editMode = false, onStructureChanged }) {
   // Flatten config → a FIELDS-like list (adds engine-friendly accessors).
   const FIELDS = useMemo(() => flattenConfigFields(config), [config]);
-  const SECTIONS = useMemo(() => (config.sections || []).slice().sort((a, b) => ((a.order ?? a.sort_order ?? 0) - (b.order ?? b.sort_order ?? 0))), [config]);
+  const ALL_SECTIONS = useMemo(() => (config.sections || []).slice().sort((a, b) => ((a.order ?? a.sort_order ?? 0) - (b.order ?? b.sort_order ?? 0))), [config]);
+  // Active sections render as the dashboard; hidden ones only appear in the
+  // edit-mode "Show hidden" list.
+  const SECTIONS = useMemo(() => ALL_SECTIONS.filter((s) => s.is_active !== false), [ALL_SECTIONS]);
+  const HIDDEN_SECTIONS = useMemo(() => ALL_SECTIONS.filter((s) => s.is_active === false), [ALL_SECTIONS]);
+
+  const canEdit = canEditStructure && editMode;
+  const code = config.code;
+
+  // ---- B3b-1 section-edit UI state ----
+  const [addSectionOpen, setAddSectionOpen] = useState(false);
+  const [newSectionTitle, setNewSectionTitle] = useState('');
+  const [newSectionLayout, setNewSectionLayout] = useState('kpi');
+  const [renamingSectionId, setRenamingSectionId] = useState(null);
+  const [renameTitle, setRenameTitle] = useState('');
+  const [showHidden, setShowHidden] = useState(false);
+  const [confirmDeleteSection, setConfirmDeleteSection] = useState(null); // { id, title } | null
+  const [structureBusy, setStructureBusy] = useState(false);
+  const [structureMsg, setStructureMsg] = useState(null);
 
   const [submission, setSubmission] = useState(null);
   const [values, setValues] = useState({});
@@ -139,6 +158,72 @@ export default function ModuleDataEntry({ config, user, year, month, onStatusCha
 
   function toggleSection(sectionKey) {
     setExpandedSections((prev) => ({ ...prev, [sectionKey]: !prev[sectionKey] }));
+  }
+
+  // ---- B3b-1 section-edit handlers ----
+  // Each mutation calls the B3a endpoint then onStructureChanged() to refetch.
+  async function runStructureOp(fn, successMsg) {
+    setStructureBusy(true);
+    setStructureMsg(null);
+    try {
+      await fn();
+      if (onStructureChanged) await onStructureChanged();
+      if (successMsg) setStructureMsg({ type: 'success', text: successMsg });
+    } catch (err) {
+      console.error('[ModuleDataEntry] structure op failed:', err);
+      setStructureMsg({ type: 'error', text: `Structure change failed: ${err.message || 'unknown error'}` });
+    } finally {
+      setStructureBusy(false);
+    }
+  }
+
+  async function handleAddSection() {
+    const title = newSectionTitle.trim();
+    if (!title) { setStructureMsg({ type: 'error', text: 'Section title cannot be empty.' }); return; }
+    await runStructureOp(
+      () => structureAPI.createSection(code, { title, layout: newSectionLayout }),
+      'Section added.'
+    );
+    setNewSectionTitle('');
+    setNewSectionLayout('kpi');
+    setAddSectionOpen(false);
+  }
+
+  async function handleRenameSection(id) {
+    const title = renameTitle.trim();
+    if (!title) { setStructureMsg({ type: 'error', text: 'Section title cannot be empty.' }); return; }
+    await runStructureOp(
+      () => structureAPI.updateSection(code, id, { title }),
+      'Section renamed.'
+    );
+    setRenamingSectionId(null);
+    setRenameTitle('');
+  }
+
+  async function handleReorderSection(index, dir) {
+    const target = index + dir;
+    if (target < 0 || target >= SECTIONS.length) return;
+    const ids = SECTIONS.map((s) => s.id);
+    const [moved] = ids.splice(index, 1);
+    ids.splice(target, 0, moved);
+    await runStructureOp(() => structureAPI.reorderSections(code, ids), null);
+  }
+
+  async function handleDeleteSectionConfirmed() {
+    const target = confirmDeleteSection;
+    setConfirmDeleteSection(null);
+    if (!target) return;
+    await runStructureOp(
+      () => structureAPI.deleteSection(code, target.id),
+      'Section hidden.'
+    );
+  }
+
+  async function handleRestoreSection(id) {
+    await runStructureOp(
+      () => structureAPI.restoreSection(code, id),
+      'Section restored.'
+    );
   }
 
   // Negative-value guard (same as live, config-driven)
@@ -293,11 +378,66 @@ export default function ModuleDataEntry({ config, user, year, month, onStatusCha
         </div>
       )}
 
-      {SECTIONS.map((section) => {
+      {/* B3b-1 — section-edit toolbar (admin edit mode only) */}
+      {canEdit && (
+        <div style={styles.editToolbar}>
+          <div style={styles.editToolbarRow}>
+            {!addSectionOpen ? (
+              <button type="button" style={styles.addSectionBtn} disabled={structureBusy} onClick={() => setAddSectionOpen(true)}>
+                + Add Section
+              </button>
+            ) : (
+              <div style={styles.addSectionForm} onClick={(e) => e.stopPropagation()}>
+                <input
+                  type="text"
+                  autoFocus
+                  placeholder="Section title"
+                  value={newSectionTitle}
+                  onChange={(e) => setNewSectionTitle(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleAddSection(); if (e.key === 'Escape') setAddSectionOpen(false); }}
+                  style={styles.addSectionInput}
+                />
+                <select value={newSectionLayout} onChange={(e) => setNewSectionLayout(e.target.value)} style={styles.addSectionSelect}>
+                  <option value="kpi">kpi</option>
+                  <option value="ho_op">ho_op</option>
+                  <option value="labeled_grid">labeled_grid</option>
+                  <option value="matrix">matrix</option>
+                  <option value="group">group</option>
+                </select>
+                <button type="button" style={styles.miniSave} disabled={structureBusy} onClick={handleAddSection}>Add</button>
+                <button type="button" style={styles.miniCancel} onClick={() => { setAddSectionOpen(false); setNewSectionTitle(''); }}>Cancel</button>
+              </div>
+            )}
+            <button type="button" style={{ ...styles.showHiddenBtn, ...(showHidden ? styles.showHiddenOn : {}) }} onClick={() => setShowHidden((v) => !v)}>
+              {showHidden ? 'Hide hidden sections' : `Show hidden sections${HIDDEN_SECTIONS.length ? ` (${HIDDEN_SECTIONS.length})` : ''}`}
+            </button>
+          </div>
+          {structureMsg && (
+            <div style={structureMsg.type === 'error' ? styles.alertError : styles.alertSuccess}>
+              {structureMsg.text}
+            </div>
+          )}
+          {showHidden && (
+            <div style={styles.hiddenList}>
+              {HIDDEN_SECTIONS.length === 0 ? (
+                <div style={styles.hiddenEmpty}>No hidden sections.</div>
+              ) : HIDDEN_SECTIONS.map((s) => (
+                <div key={s.id} style={styles.hiddenRow}>
+                  <span style={styles.hiddenName}>{s.title} <span style={styles.hiddenKey}>{s.key}</span></span>
+                  <button type="button" style={styles.restoreBtn} disabled={structureBusy} onClick={() => handleRestoreSection(s.id)}>Restore</button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {SECTIONS.map((section, sectionIndex) => {
         const expanded = expandedSections[section.key];
-        const fields = FIELDS.filter((f) => f.section === section.key);
+        const fields = FIELDS.filter((f) => f.section === section.key && f.is_active !== false);
         const filledCount = countFilledManual(fields, values);
         const totalManual = fields.filter((f) => f.source !== 'computed').length;
+        const isRenaming = renamingSectionId === section.id;
 
         return (
           <div key={section.key} style={{ ...styles.section, ...(expanded ? {} : styles.sectionCollapsed) }}>
@@ -315,7 +455,22 @@ export default function ModuleDataEntry({ config, user, year, month, onStatusCha
                        dangerouslySetInnerHTML={{ __html: config.icon || GENERIC_SECTION_ICON }} />
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={styles.sectionTitle}>{section.title}</div>
+                  {isRenaming ? (
+                    <div style={styles.renameRow} onClick={(e) => e.stopPropagation()}>
+                      <input
+                        type="text"
+                        autoFocus
+                        value={renameTitle}
+                        onChange={(e) => setRenameTitle(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') handleRenameSection(section.id); if (e.key === 'Escape') { setRenamingSectionId(null); } }}
+                        style={styles.renameInput}
+                      />
+                      <button type="button" style={styles.miniSave} disabled={structureBusy} onClick={() => handleRenameSection(section.id)}>Save</button>
+                      <button type="button" style={styles.miniCancel} onClick={() => setRenamingSectionId(null)}>Cancel</button>
+                    </div>
+                  ) : (
+                    <div style={styles.sectionTitle}>{section.title}</div>
+                  )}
                   <div style={styles.sectionMeta}>
                     <span style={styles.progressMini}>
                       <span style={styles.progressBar}>
@@ -326,6 +481,14 @@ export default function ModuleDataEntry({ config, user, year, month, onStatusCha
                   </div>
                 </div>
               </div>
+              {canEdit && !isRenaming && (
+                <div style={styles.sectionEditControls} onClick={(e) => e.stopPropagation()}>
+                  <button type="button" title="Move up" style={styles.editIconBtn} disabled={structureBusy || sectionIndex === 0} onClick={() => handleReorderSection(sectionIndex, -1)}>↑</button>
+                  <button type="button" title="Move down" style={styles.editIconBtn} disabled={structureBusy || sectionIndex === SECTIONS.length - 1} onClick={() => handleReorderSection(sectionIndex, 1)}>↓</button>
+                  <button type="button" title="Rename" style={styles.editIconBtn} disabled={structureBusy} onClick={() => { setRenamingSectionId(section.id); setRenameTitle(section.title); }}>✎</button>
+                  <button type="button" title="Hide section" style={{ ...styles.editIconBtn, ...styles.editIconDanger }} disabled={structureBusy} onClick={() => setConfirmDeleteSection({ id: section.id, title: section.title })}>🗑</button>
+                </div>
+              )}
               <svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"
                 style={{ color: 'rgba(255,255,255,0.5)', flexShrink: 0, transform: expanded ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.25s ease' }}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7"/>
@@ -370,7 +533,61 @@ export default function ModuleDataEntry({ config, user, year, month, onStatusCha
           </div>
         )}
       </div>
+
+      {/* B3b-1 — confirm hide-section modal (portal, Principle 6B.11) */}
+      <ConfirmModal
+        open={!!confirmDeleteSection}
+        title="Hide this section?"
+        body={confirmDeleteSection
+          ? `"${confirmDeleteSection.title}" and its fields will be hidden. Its data is preserved and you can restore it from "Show hidden sections".`
+          : ''}
+        confirmLabel="Hide section"
+        busy={structureBusy}
+        onCancel={() => setConfirmDeleteSection(null)}
+        onConfirm={handleDeleteSectionConfirmed}
+      />
     </div>
+  );
+}
+
+// =============================================
+// ConfirmModal — portal + Esc + backdrop-click (Principle 6B.11)
+// =============================================
+function ConfirmModal({ open, title, body, confirmLabel, busy, onCancel, onConfirm }) {
+  useEffect(() => {
+    if (!open) return undefined;
+    function onKey(e) { if (e.key === 'Escape' && !busy) onCancel && onCancel(); }
+    document.addEventListener('keydown', onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.removeEventListener('keydown', onKey); document.body.style.overflow = prev; };
+  }, [open, busy, onCancel]);
+
+  if (!open) return null;
+
+  return createPortal(
+    <div
+      style={styles.modalBackdrop}
+      onClick={(e) => { if (e.target === e.currentTarget && !busy) onCancel && onCancel(); }}
+      role="dialog"
+      aria-modal="true"
+    >
+      <div style={styles.modalCard}>
+        <div style={styles.modalAccent} />
+        <div style={styles.modalHeader}>
+          <div style={styles.modalTitle}>{title}</div>
+          <button type="button" aria-label="Close" style={styles.modalClose} disabled={busy} onClick={onCancel}>✕</button>
+        </div>
+        <div style={styles.modalBody}>{body}</div>
+        <div style={styles.modalFooter}>
+          <button type="button" style={styles.btnGhost} onClick={onCancel} disabled={busy}>Cancel</button>
+          <button type="button" style={styles.modalDangerBtn} onClick={onConfirm} disabled={busy}>
+            {busy ? 'Working…' : confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
   );
 }
 
@@ -645,6 +862,115 @@ function FieldCell({ field, values, onChange, readOnly, allFields }) {
 
 
 const styles = {
+  // ---- B3b-1 section-edit styles ----
+  editToolbar: {
+    margin: '0 0 18px', padding: '14px 16px',
+    background: 'rgba(243,192,54,0.05)', border: '1px solid rgba(243,192,54,0.2)',
+    borderRadius: 12,
+  },
+  editToolbarRow: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' },
+  addSectionBtn: {
+    padding: '8px 16px', borderRadius: 8, cursor: 'pointer',
+    background: 'linear-gradient(135deg, #F3C036 0%, #ec4899 100%)', border: 'none',
+    color: '#1a1028', fontFamily: 'inherit', fontSize: 13, fontWeight: 700,
+  },
+  addSectionForm: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
+  addSectionInput: {
+    padding: '8px 12px', borderRadius: 8, minWidth: 180,
+    background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.15)',
+    color: '#fff', fontFamily: 'inherit', fontSize: 13, outline: 'none',
+  },
+  addSectionSelect: {
+    padding: '8px 12px', borderRadius: 8,
+    background: '#2d1f42', border: '1px solid rgba(255,255,255,0.15)',
+    color: '#fff', fontFamily: 'inherit', fontSize: 13, outline: 'none',
+  },
+  showHiddenBtn: {
+    marginLeft: 'auto', padding: '8px 14px', borderRadius: 8, cursor: 'pointer',
+    background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.15)',
+    color: 'rgba(255,255,255,0.8)', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 600,
+  },
+  showHiddenOn: { background: 'rgba(255,255,255,0.1)', color: '#fff' },
+  hiddenList: {
+    marginTop: 12, display: 'flex', flexDirection: 'column', gap: 6,
+  },
+  hiddenEmpty: { fontSize: 12.5, color: 'rgba(255,255,255,0.4)', fontStyle: 'italic' },
+  hiddenRow: {
+    display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
+    padding: '8px 12px', background: 'rgba(0,0,0,0.2)',
+    border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8,
+  },
+  hiddenName: { fontSize: 13, color: 'rgba(255,255,255,0.8)' },
+  hiddenKey: { fontSize: 10.5, color: 'rgba(255,255,255,0.4)', marginLeft: 6, fontFamily: 'monospace' },
+  restoreBtn: {
+    padding: '6px 14px', borderRadius: 6, cursor: 'pointer',
+    background: 'rgba(34,197,94,0.12)', border: '1px solid rgba(34,197,94,0.35)',
+    color: '#86efac', fontFamily: 'inherit', fontSize: 12, fontWeight: 600,
+  },
+  sectionEditControls: { display: 'inline-flex', gap: 4, flexShrink: 0, marginRight: 8 },
+  editIconBtn: {
+    width: 30, height: 30, borderRadius: 6, cursor: 'pointer',
+    background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)',
+    color: 'rgba(255,255,255,0.75)', fontFamily: 'inherit', fontSize: 13,
+    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+  },
+  editIconDanger: { background: 'rgba(239,68,68,0.1)', borderColor: 'rgba(239,68,68,0.3)', color: '#fca5a5' },
+  renameRow: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
+  renameInput: {
+    padding: '6px 10px', borderRadius: 6, minWidth: 160,
+    background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(243,192,54,0.5)',
+    color: '#fff', fontFamily: 'inherit', fontSize: 14, fontWeight: 600, outline: 'none',
+  },
+  miniSave: {
+    padding: '6px 12px', borderRadius: 6, cursor: 'pointer',
+    background: 'linear-gradient(135deg, #F3C036 0%, #ec4899 100%)', border: 'none',
+    color: '#1a1028', fontFamily: 'inherit', fontSize: 12, fontWeight: 700,
+  },
+  miniCancel: {
+    padding: '6px 12px', borderRadius: 6, cursor: 'pointer',
+    background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.12)',
+    color: 'rgba(255,255,255,0.7)', fontFamily: 'inherit', fontSize: 12, fontWeight: 600,
+  },
+  // ---- B3b-1 confirm modal (portal) ----
+  modalBackdrop: {
+    position: 'fixed', inset: 0, background: 'rgba(14,8,32,0.72)',
+    backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)',
+    zIndex: 9999, display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
+    padding: '5vh 20px', overflowY: 'auto',
+    fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
+  },
+  modalCard: {
+    position: 'relative', width: '100%', maxWidth: 440,
+    background: 'linear-gradient(135deg, #1a1028 0%, #2d1f42 60%, #3d2856 100%)',
+    border: '1px solid rgba(255,255,255,0.12)', borderRadius: 18,
+    boxShadow: '0 24px 80px rgba(0,0,0,0.6)', color: '#fff', overflow: 'visible',
+  },
+  modalAccent: {
+    position: 'absolute', top: 0, left: 0, right: 0, height: 3, borderRadius: '18px 18px 0 0',
+    background: 'linear-gradient(90deg, #ef4444, #f87171, #fca5a5)',
+  },
+  modalHeader: {
+    padding: '22px 26px 14px', borderBottom: '1px solid rgba(255,255,255,0.06)',
+    display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12,
+  },
+  modalTitle: { fontSize: 18, fontWeight: 700, letterSpacing: '-0.3px' },
+  modalClose: {
+    width: 32, height: 32, flexShrink: 0, borderRadius: 8, cursor: 'pointer',
+    background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)',
+    color: 'rgba(255,255,255,0.6)', fontFamily: 'inherit', fontSize: 14,
+    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+  },
+  modalBody: { padding: '20px 26px', fontSize: 13, color: 'rgba(255,255,255,0.78)', lineHeight: 1.55 },
+  modalFooter: {
+    padding: '14px 26px 22px', display: 'flex', justifyContent: 'flex-end', gap: 10,
+    borderTop: '1px solid rgba(255,255,255,0.06)',
+  },
+  modalDangerBtn: {
+    padding: '10px 18px', borderRadius: 10, cursor: 'pointer', border: 'none',
+    background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)', color: '#fff',
+    fontFamily: 'inherit', fontSize: 12.5, fontWeight: 600,
+    boxShadow: '0 6px 24px rgba(239,68,68,0.3)',
+  },
   previewBadge: {
     marginLeft: 'auto',
     fontSize: 10, fontWeight: 700, letterSpacing: '1px',
