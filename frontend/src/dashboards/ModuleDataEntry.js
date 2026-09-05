@@ -644,11 +644,11 @@ export default function ModuleDataEntry({ config, user, year, month, onStatusCha
                   style={styles.addSectionInput}
                 />
                 <select value={newSectionLayout} onChange={(e) => setNewSectionLayout(e.target.value)} style={styles.addSectionSelect}>
-                  <option value="kpi">kpi</option>
-                  <option value="ho_op">ho_op</option>
-                  <option value="labeled_grid">labeled_grid</option>
-                  <option value="matrix">matrix</option>
-                  <option value="group">group</option>
+                  <option style={OPT} value="kpi">kpi</option>
+                  <option style={OPT} value="ho_op">ho_op</option>
+                  <option style={OPT} value="labeled_grid">labeled_grid</option>
+                  <option style={OPT} value="matrix">matrix</option>
+                  <option style={OPT} value="group">group</option>
                 </select>
                 <button type="button" style={styles.miniSave} onClick={handleAddSection}>Add</button>
                 <button type="button" style={styles.miniCancel} onClick={() => { setAddSectionOpen(false); setNewSectionTitle(''); }}>Cancel</button>
@@ -802,13 +802,13 @@ export default function ModuleDataEntry({ config, user, year, month, onStatusCha
                             style={styles.addFieldInput}
                           />
                           <select value={newFieldType[section.id] || 'number'} onChange={(e) => setNewFieldType((m) => ({ ...m, [section.id]: e.target.value }))} style={styles.addFieldSelect}>
-                            <option value="number">number</option>
-                            <option value="percentage">percentage</option>
-                            <option value="currency">currency</option>
-                            <option value="text">text</option>
-                            <option value="longtext">longtext</option>
-                            <option value="ratio">ratio</option>
-                            <option value="calculated">Calculated…</option>
+                            <option style={OPT} value="number">number</option>
+                            <option style={OPT} value="percentage">percentage</option>
+                            <option style={OPT} value="currency">currency</option>
+                            <option style={OPT} value="text">text</option>
+                            <option style={OPT} value="longtext">longtext</option>
+                            <option style={OPT} value="ratio">ratio</option>
+                            <option style={OPT} value="calculated">Calculated…</option>
                           </select>
                           {(newFieldType[section.id] || 'number') !== 'calculated' && (
                             <input
@@ -837,9 +837,9 @@ export default function ModuleDataEntry({ config, user, year, month, onStatusCha
                               onChange={(e) => setAddCalc((c) => ({ ...c, displayType: e.target.value, displayTypeTouched: true }))}
                               style={styles.modalInput}
                             >
-                              <option value="percentage">percentage</option>
-                              <option value="number">number</option>
-                              <option value="currency">currency</option>
+                              <option style={OPT} value="percentage">percentage</option>
+                              <option style={OPT} value="number">number</option>
+                              <option style={OPT} value="currency">currency</option>
                             </select>
                             <input
                               type="text"
@@ -1014,13 +1014,13 @@ function FieldEditModal({ field, form, setForm, numericFields, sections, onCance
             }}
             style={styles.modalInput}
           >
-            <option value="number">number</option>
-            <option value="percentage">percentage</option>
-            <option value="currency">currency</option>
-            <option value="text">text</option>
-            <option value="longtext">longtext</option>
-            <option value="ratio">ratio</option>
-            <option value="calculated">Calculated…</option>
+            <option style={OPT} value="number">number</option>
+            <option style={OPT} value="percentage">percentage</option>
+            <option style={OPT} value="currency">currency</option>
+            <option style={OPT} value="text">text</option>
+            <option style={OPT} value="longtext">longtext</option>
+            <option style={OPT} value="ratio">ratio</option>
+            <option style={OPT} value="calculated">Calculated…</option>
           </select>
 
           {isCalc && (
@@ -1048,9 +1048,9 @@ function FieldEditModal({ field, form, setForm, numericFields, sections, onCance
                 onChange={(e) => setForm((s) => ({ ...s, displayType: e.target.value, displayTypeTouched: true }))}
                 style={styles.modalInput}
               >
-                <option value="percentage">percentage</option>
-                <option value="number">number</option>
-                <option value="currency">currency</option>
+                <option style={OPT} value="percentage">percentage</option>
+                <option style={OPT} value="number">number</option>
+                <option style={OPT} value="currency">currency</option>
               </select>
             </div>
           )}
@@ -1120,6 +1120,11 @@ function ConfirmModal({ open, title, body, confirmLabel, busy, onCancel, onConfi
 // Helpers
 // =============================================
 const GENERIC_SECTION_ICON = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>';
+
+// Shared <option> style so open dropdown lists are readable (dark bg + light
+// text) instead of the browser-default white-on-light. Applied to every
+// native <select> option in the builder UI. Styling only.
+const OPT = { backgroundColor: '#2d1f42', color: '#ffffff' };
 
 // =============================================
 // B4 — computed / calculator field helpers + picker
@@ -1204,19 +1209,19 @@ function FormulaPicker({ formulaType, formulaArgs, onChange, numericFields, sect
     <div style={styles.pickerWrap}>
       <label style={styles.fieldEditLabel}>Formula</label>
       <select value={formulaType || ''} onChange={(e) => setType(e.target.value)} style={styles.modalInput}>
-        <option value="">Choose…</option>
-        <option value="sum">Total of a section (sum)</option>
-        <option value="percent_of">Percentage (part of a total)</option>
-        <option value="avg">Average of fields</option>
-        <option value="ratio">Ratio (A ÷ B)</option>
+        <option style={OPT} value="">Choose…</option>
+        <option style={OPT} value="sum">Total of a section (sum)</option>
+        <option style={OPT} value="percent_of">Percentage (part of a total)</option>
+        <option style={OPT} value="avg">Average of fields</option>
+        <option style={OPT} value="ratio">Ratio (A ÷ B)</option>
       </select>
 
       {formulaType === 'sum' && (
         <>
           <div style={styles.pickerHint}>Add up all number fields in:</div>
           <select value={args.section || ''} onChange={(e) => setArgs({ section: e.target.value })} style={styles.modalInput}>
-            <option value="">Choose section…</option>
-            {sections.map((s) => <option key={s.key} value={s.key}>{s.title}</option>)}
+            <option style={OPT} value="">Choose section…</option>
+            {sections.map((s) => <option style={OPT} key={s.key} value={s.key}>{s.title}</option>)}
           </select>
         </>
       )}
@@ -1225,8 +1230,8 @@ function FormulaPicker({ formulaType, formulaArgs, onChange, numericFields, sect
         <>
           <div style={styles.pickerHint}>This value =</div>
           <select value={args.numerator || ''} onChange={(e) => setArgs({ ...args, numerator: e.target.value })} style={styles.modalInput}>
-            <option value="">Choose the part…</option>
-            {numericFields.map((f) => <option key={f.key} value={f.key}>{f.label}</option>)}
+            <option style={OPT} value="">Choose the part…</option>
+            {numericFields.map((f) => <option style={OPT} key={f.key} value={f.key}>{f.label}</option>)}
           </select>
           <div style={styles.pickerHint}>as a % of the total of:</div>
           <MultiSelect options={numericFields} value={args.over || []} onChange={(over) => setArgs({ ...args, over })} />
@@ -1243,13 +1248,13 @@ function FormulaPicker({ formulaType, formulaArgs, onChange, numericFields, sect
       {formulaType === 'ratio' && (
         <div style={styles.ratioRow}>
           <select value={args.numerator || ''} onChange={(e) => setArgs({ ...args, numerator: e.target.value })} style={{ ...styles.modalInput, flex: 1 }}>
-            <option value="">A…</option>
-            {numericFields.map((f) => <option key={f.key} value={f.key}>{f.label}</option>)}
+            <option style={OPT} value="">A…</option>
+            {numericFields.map((f) => <option style={OPT} key={f.key} value={f.key}>{f.label}</option>)}
           </select>
           <span style={styles.ratioDiv}>÷</span>
           <select value={args.denominator || ''} onChange={(e) => setArgs({ ...args, denominator: e.target.value })} style={{ ...styles.modalInput, flex: 1 }}>
-            <option value="">B…</option>
-            {numericFields.map((f) => <option key={f.key} value={f.key}>{f.label}</option>)}
+            <option style={OPT} value="">B…</option>
+            {numericFields.map((f) => <option style={OPT} key={f.key} value={f.key}>{f.label}</option>)}
           </select>
         </div>
       )}
