@@ -52,6 +52,9 @@ export default function ModuleDataEntry({ config, user, year, month, onStatusCha
   // edit-mode "Show hidden" list.
   const SECTIONS = useMemo(() => ALL_SECTIONS.filter((s) => s.is_active !== false), [ALL_SECTIONS]);
   const HIDDEN_SECTIONS = useMemo(() => ALL_SECTIONS.filter((s) => s.is_active === false), [ALL_SECTIONS]);
+  // B4 — reference choices for the formula picker.
+  const pickerSections = useMemo(() => sectionChoices(config), [config]);
+  const numericFields = useMemo(() => numericFieldChoices(config, null), [config]);
 
   const canEdit = canEditStructure && editMode;
   const code = config.code;
@@ -71,6 +74,8 @@ export default function ModuleDataEntry({ config, user, year, month, onStatusCha
   const [newFieldLabel, setNewFieldLabel] = useState({}); // { [sectionId]: string }
   const [newFieldType, setNewFieldType] = useState({});   // { [sectionId]: type }
   const [newFieldUnit, setNewFieldUnit] = useState({});   // { [sectionId]: string }
+  // B4 — calculated-field draft for the Add form (one add form open at a time).
+  const [addCalc, setAddCalc] = useState({ formula_type: '', formula_args: {}, displayType: 'number' });
   const [editingField, setEditingField] = useState(null); // the field row being edited | null
   const [editFieldForm, setEditFieldForm] = useState({ label: '', type: 'number', unit: '' });
   const [showHiddenFieldsFor, setShowHiddenFieldsFor] = useState({}); // { [sectionKey]: bool }
@@ -312,18 +317,33 @@ export default function ModuleDataEntry({ config, user, year, month, onStatusCha
     const label = (newFieldLabel[section.id] || '').trim();
     if (!label) { setStructureMsg({ type: 'error', text: 'Field label cannot be empty.' }); return; }
     if (isTempId(section.id)) { setStructureMsg({ type: 'error', text: 'That section is still saving — try again in a moment.' }); return; }
-    const type = newFieldType[section.id] || 'number';
+    const sel = newFieldType[section.id] || 'number';
+    const isCalc = sel === 'calculated';
     const unit = (newFieldUnit[section.id] || '').trim() || null;
     const prevSections = (config.sections || []).slice();
     const tempId = `tmp_${Date.now()}`;
     const sectionFields = (section.fields || []);
     const maxOrder = sectionFields.reduce((m, f) => Math.max(m, f.sort_order ?? 0), 0);
 
+    // B4 — calculated field: validate the curated formula before anything.
+    let displayType = sel;
+    let formula_type = null;
+    let formula_args = null;
+    let source = 'manual';
+    if (isCalc) {
+      const err = validateFormula(addCalc.formula_type, addCalc.formula_args);
+      if (err) { setStructureMsg({ type: 'error', text: err }); return; }
+      source = 'computed';
+      formula_type = addCalc.formula_type;
+      formula_args = addCalc.formula_args;
+      displayType = addCalc.displayType || defaultDisplayType(formula_type);
+    }
+
     setStructureMsg(null);
     patchSectionFields(section.key, (fields) => [...fields, {
-      id: tempId, key: tempId, label, type, unit,
-      section: section.key, source: 'manual',
-      formula_type: null, formula_args: null, dimension: null,
+      id: tempId, key: tempId, label, type: displayType, unit,
+      section: section.key, source,
+      formula_type, formula_args, dimension: null,
       dimension_row: null, dimension_col: null, subsection: null,
       sort_order: maxOrder + 10, is_active: true, _pending: true,
     }]);
@@ -331,10 +351,15 @@ export default function ModuleDataEntry({ config, user, year, month, onStatusCha
     setNewFieldLabel((m) => ({ ...m, [section.id]: '' }));
     setNewFieldType((m) => ({ ...m, [section.id]: 'number' }));
     setNewFieldUnit((m) => ({ ...m, [section.id]: '' }));
+    setAddCalc({ formula_type: '', formula_args: {}, displayType: 'number' });
     setAddFieldOpenFor(null);
 
+    const payload = isCalc
+      ? { label, type: displayType, unit, source: 'computed', formula_type, formula_args }
+      : { label, type: displayType, unit };
+
     fireBackground(
-      () => structureAPI.createField(code, section.id, { label, type, unit }),
+      () => structureAPI.createField(code, section.id, payload),
       prevSections,
       'Could not add field',
       (row) => patchSectionFields(section.key, (fields) => fields.map((f) => (
@@ -349,17 +374,33 @@ export default function ModuleDataEntry({ config, user, year, month, onStatusCha
     if (isTempId(f.id)) { setStructureMsg({ type: 'error', text: 'Still saving that field — try again in a moment.' }); return; }
     const label = (editFieldForm.label || '').trim();
     if (!label) { setStructureMsg({ type: 'error', text: 'Field label cannot be empty.' }); return; }
-    const type = editFieldForm.type || f.type;
     const unit = (editFieldForm.unit || '').trim() || null;
     const prevSections = (config.sections || []).slice();
+    const isCalc = editFieldForm.type === 'calculated';
 
-    // Only send the simple attributes the form controls. Never touch
-    // formula_type/formula_args/dimension_* — computed + HO/OP editing is B4.
-    const payload = { label, type, unit };
+    let payload;
+    let localPatch;
+    if (isCalc) {
+      // B4 — computed field: validate + send source/formula. This UNLOCKS what
+      // B3b-2 kept read-only. Display type stored in editFieldForm.displayType.
+      const err = validateFormula(editFieldForm.formula_type, editFieldForm.formula_args);
+      if (err) { setStructureMsg({ type: 'error', text: err }); return; }
+      const displayType = editFieldForm.displayType || defaultDisplayType(editFieldForm.formula_type);
+      payload = {
+        label, type: displayType, unit, source: 'computed',
+        formula_type: editFieldForm.formula_type, formula_args: editFieldForm.formula_args,
+      };
+      localPatch = { label, type: displayType, unit, source: 'computed', formula_type: editFieldForm.formula_type, formula_args: editFieldForm.formula_args };
+    } else {
+      // Simple field. If it WAS computed, null out the formula on the switch.
+      const type = editFieldForm.type || f.type;
+      payload = { label, type, unit, source: 'manual', formula_type: null, formula_args: null };
+      localPatch = { label, type, unit, source: 'manual', formula_type: null, formula_args: null };
+    }
 
     setStructureMsg(null);
     patchSectionFields(f.section, (fields) => fields.map((x) => (
-      x.id === f.id ? { ...x, label, type, unit } : x
+      x.id === f.id ? { ...x, ...localPatch } : x
     )));
     setEditingField(null);
 
@@ -729,7 +770,18 @@ export default function ModuleDataEntry({ config, user, year, month, onStatusCha
                           <span style={styles.fieldEditControls}>
                             <button type="button" title="Move up" style={styles.editIconBtn} disabled={isTempId(f.id) || fieldIndex === 0} onClick={() => handleReorderField(section, fieldIndex, -1)}>↑</button>
                             <button type="button" title="Move down" style={styles.editIconBtn} disabled={isTempId(f.id) || fieldIndex === fields.length - 1} onClick={() => handleReorderField(section, fieldIndex, 1)}>↓</button>
-                            <button type="button" title="Edit" style={styles.editIconBtn} disabled={isTempId(f.id)} onClick={() => { setEditingField(f); setEditFieldForm({ label: f.label, type: f.type, unit: f.unit || '' }); }}>✎</button>
+                            <button type="button" title="Edit" style={styles.editIconBtn} disabled={isTempId(f.id)} onClick={() => {
+                              setEditingField(f);
+                              const isComp = f.source === 'computed';
+                              setEditFieldForm({
+                                label: f.label,
+                                type: isComp ? 'calculated' : f.type,
+                                displayType: isComp ? (f.type || defaultDisplayType(f.formula_type)) : f.type,
+                                unit: f.unit || '',
+                                formula_type: f.formula_type || '',
+                                formula_args: f.formula_args || {},
+                              });
+                            }}>✎</button>
                             <button type="button" title="Hide field" style={{ ...styles.editIconBtn, ...styles.editIconDanger }} disabled={isTempId(f.id)} onClick={() => setConfirmDeleteField({ id: f.id, label: f.label, sectionKey: section.key })}>🗑</button>
                           </span>
                         </div>
@@ -738,36 +790,69 @@ export default function ModuleDataEntry({ config, user, year, month, onStatusCha
 
                     {/* + Add Field */}
                     {addFieldOpenFor === section.id ? (
-                      <div style={styles.addFieldForm} onClick={(e) => e.stopPropagation()}>
-                        <input
-                          type="text"
-                          autoFocus
-                          placeholder="Field label"
-                          value={newFieldLabel[section.id] || ''}
-                          onChange={(e) => setNewFieldLabel((m) => ({ ...m, [section.id]: e.target.value }))}
-                          onKeyDown={(e) => { if (e.key === 'Enter') handleAddField(section); if (e.key === 'Escape') setAddFieldOpenFor(null); }}
-                          style={styles.addFieldInput}
-                        />
-                        <select value={newFieldType[section.id] || 'number'} onChange={(e) => setNewFieldType((m) => ({ ...m, [section.id]: e.target.value }))} style={styles.addFieldSelect}>
-                          <option value="number">number</option>
-                          <option value="percentage">percentage</option>
-                          <option value="currency">currency</option>
-                          <option value="text">text</option>
-                          <option value="longtext">longtext</option>
-                          <option value="ratio">ratio</option>
-                        </select>
-                        <input
-                          type="text"
-                          placeholder="unit (opt)"
-                          value={newFieldUnit[section.id] || ''}
-                          onChange={(e) => setNewFieldUnit((m) => ({ ...m, [section.id]: e.target.value }))}
-                          style={styles.addFieldUnit}
-                        />
-                        <button type="button" style={styles.miniSave} onClick={() => handleAddField(section)}>Add</button>
-                        <button type="button" style={styles.miniCancel} onClick={() => setAddFieldOpenFor(null)}>Cancel</button>
+                      <div style={styles.addFieldFormWrap} onClick={(e) => e.stopPropagation()}>
+                        <div style={styles.addFieldForm}>
+                          <input
+                            type="text"
+                            autoFocus
+                            placeholder="Field label"
+                            value={newFieldLabel[section.id] || ''}
+                            onChange={(e) => setNewFieldLabel((m) => ({ ...m, [section.id]: e.target.value }))}
+                            onKeyDown={(e) => { if (e.key === 'Enter' && (newFieldType[section.id] || 'number') !== 'calculated') handleAddField(section); if (e.key === 'Escape') setAddFieldOpenFor(null); }}
+                            style={styles.addFieldInput}
+                          />
+                          <select value={newFieldType[section.id] || 'number'} onChange={(e) => setNewFieldType((m) => ({ ...m, [section.id]: e.target.value }))} style={styles.addFieldSelect}>
+                            <option value="number">number</option>
+                            <option value="percentage">percentage</option>
+                            <option value="currency">currency</option>
+                            <option value="text">text</option>
+                            <option value="longtext">longtext</option>
+                            <option value="ratio">ratio</option>
+                            <option value="calculated">Calculated…</option>
+                          </select>
+                          {(newFieldType[section.id] || 'number') !== 'calculated' && (
+                            <input
+                              type="text"
+                              placeholder="unit (opt)"
+                              value={newFieldUnit[section.id] || ''}
+                              onChange={(e) => setNewFieldUnit((m) => ({ ...m, [section.id]: e.target.value }))}
+                              style={styles.addFieldUnit}
+                            />
+                          )}
+                          <button type="button" style={styles.miniSave} onClick={() => handleAddField(section)}>Add</button>
+                          <button type="button" style={styles.miniCancel} onClick={() => { setAddFieldOpenFor(null); setAddCalc({ formula_type: '', formula_args: {}, displayType: 'number' }); }}>Cancel</button>
+                        </div>
+                        {(newFieldType[section.id] || 'number') === 'calculated' && (
+                          <div style={styles.calcBox}>
+                            <FormulaPicker
+                              formulaType={addCalc.formula_type}
+                              formulaArgs={addCalc.formula_args}
+                              numericFields={numericFields}
+                              sections={pickerSections}
+                              onChange={(ft, args) => setAddCalc((c) => ({ ...c, formula_type: ft, formula_args: args, displayType: c.displayTypeTouched ? c.displayType : defaultDisplayType(ft) }))}
+                            />
+                            <label style={styles.fieldEditLabel}>Display as</label>
+                            <select
+                              value={addCalc.displayType}
+                              onChange={(e) => setAddCalc((c) => ({ ...c, displayType: e.target.value, displayTypeTouched: true }))}
+                              style={styles.modalInput}
+                            >
+                              <option value="percentage">percentage</option>
+                              <option value="number">number</option>
+                              <option value="currency">currency</option>
+                            </select>
+                            <input
+                              type="text"
+                              placeholder="unit (opt, e.g. %, SR)"
+                              value={newFieldUnit[section.id] || ''}
+                              onChange={(e) => setNewFieldUnit((m) => ({ ...m, [section.id]: e.target.value }))}
+                              style={{ ...styles.modalInput, marginTop: 8 }}
+                            />
+                          </div>
+                        )}
                       </div>
                     ) : (
-                      <button type="button" style={styles.addFieldBtn} onClick={() => setAddFieldOpenFor(section.id)}>+ Add Field</button>
+                      <button type="button" style={styles.addFieldBtn} onClick={() => { setAddFieldOpenFor(section.id); setAddCalc({ formula_type: '', formula_args: {}, displayType: 'number' }); }}>+ Add Field</button>
                     )}
 
                     {/* Show hidden fields */}
@@ -861,6 +946,8 @@ export default function ModuleDataEntry({ config, user, year, month, onStatusCha
         field={editingField}
         form={editFieldForm}
         setForm={setEditFieldForm}
+        numericFields={numericFieldChoices(config, editingField?.key)}
+        sections={pickerSections}
         onCancel={() => setEditingField(null)}
         onSave={handleSaveFieldEdit}
       />
@@ -869,13 +956,14 @@ export default function ModuleDataEntry({ config, user, year, month, onStatusCha
 }
 
 // =============================================
-// FieldEditModal — B3b-2 (portal). Edits label + type + unit for simple
-// fields. For computed / HO-OP fields, label + unit stay editable but the
-// formula / dimension are shown read-only with a note (editing them is B4).
-// Only the simple attributes are ever sent, so a simple edit never wipes
-// formula_type/formula_args/dimension_*.
+// FieldEditModal — B4. Edits label + type + unit, and for Calculated fields
+// exposes the editable curated FORMULA PICKER (unlocks what B3b-2 kept
+// read-only). HO/OP dimension editing is still deferred (shown read-only).
+// The type dropdown includes 'calculated'; picking it reveals the picker +
+// a display-type selector. Simple↔computed switches send the right source +
+// formula fields (computed→simple nulls formula_type/args).
 // =============================================
-function FieldEditModal({ field, form, setForm, onCancel, onSave }) {
+function FieldEditModal({ field, form, setForm, numericFields, sections, onCancel, onSave }) {
   useEffect(() => {
     if (!field) return undefined;
     function onKey(e) { if (e.key === 'Escape') onCancel && onCancel(); }
@@ -886,9 +974,8 @@ function FieldEditModal({ field, form, setForm, onCancel, onSave }) {
   }, [field, onCancel]);
 
   if (!field) return null;
-  const isComputed = field.source === 'computed';
   const isHoOp = field.dimension === 'ho_op';
-  const locked = isComputed || isHoOp;
+  const isCalc = form.type === 'calculated';
 
   return createPortal(
     <div
@@ -913,14 +1000,61 @@ function FieldEditModal({ field, form, setForm, onCancel, onSave }) {
             style={styles.modalInput}
           />
           <label style={styles.fieldEditLabel}>Type</label>
-          <select value={form.type} onChange={(e) => setForm((s) => ({ ...s, type: e.target.value }))} style={styles.modalInput}>
+          <select
+            value={form.type}
+            onChange={(e) => {
+              const v = e.target.value;
+              setForm((s) => {
+                if (v === 'calculated') {
+                  const ft = s.formula_type || '';
+                  return { ...s, type: 'calculated', displayType: s.displayType || (ft ? defaultDisplayType(ft) : 'percentage') };
+                }
+                return { ...s, type: v };
+              });
+            }}
+            style={styles.modalInput}
+          >
             <option value="number">number</option>
             <option value="percentage">percentage</option>
             <option value="currency">currency</option>
             <option value="text">text</option>
             <option value="longtext">longtext</option>
             <option value="ratio">ratio</option>
+            <option value="calculated">Calculated…</option>
           </select>
+
+          {isCalc && (
+            <div style={styles.calcBox}>
+              {isHoOp && (
+                <div style={styles.fieldLockNote}>
+                  This is an HO/OP field. Editing the HO/OP dimension comes later; the formula below still applies.
+                </div>
+              )}
+              <FormulaPicker
+                formulaType={form.formula_type}
+                formulaArgs={form.formula_args}
+                numericFields={numericFields}
+                sections={sections}
+                onChange={(ft, args) => setForm((s) => ({
+                  ...s,
+                  formula_type: ft,
+                  formula_args: args,
+                  displayType: s.displayTypeTouched ? s.displayType : defaultDisplayType(ft),
+                }))}
+              />
+              <label style={styles.fieldEditLabel}>Display as</label>
+              <select
+                value={form.displayType || 'percentage'}
+                onChange={(e) => setForm((s) => ({ ...s, displayType: e.target.value, displayTypeTouched: true }))}
+                style={styles.modalInput}
+              >
+                <option value="percentage">percentage</option>
+                <option value="number">number</option>
+                <option value="currency">currency</option>
+              </select>
+            </div>
+          )}
+
           <label style={styles.fieldEditLabel}>Unit (optional)</label>
           <input
             type="text"
@@ -929,12 +1063,6 @@ function FieldEditModal({ field, form, setForm, onCancel, onSave }) {
             placeholder="e.g. %, SR, days"
             style={styles.modalInput}
           />
-          {locked && (
-            <div style={styles.fieldLockNote}>
-              {isComputed ? `Formula: ${field.formula_type || '—'} (read-only)` : `Dimension: HO/OP ${field.dimension_col ? `· ${String(field.dimension_col).toUpperCase()}` : ''} (read-only)`}
-              <br />Editing formulas / HO-OP comes later.
-            </div>
-          )}
         </div>
         <div style={styles.modalFooter}>
           <button type="button" style={styles.btnGhost} onClick={onCancel}>Cancel</button>
@@ -945,6 +1073,7 @@ function FieldEditModal({ field, form, setForm, onCancel, onSave }) {
     document.body
   );
 }
+
 
 // =============================================
 // ConfirmModal — portal + Esc + backdrop-click (Principle 6B.11)
@@ -991,6 +1120,143 @@ function ConfirmModal({ open, title, body, confirmLabel, busy, onCancel, onConfi
 // Helpers
 // =============================================
 const GENERIC_SECTION_ICON = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>';
+
+// =============================================
+// B4 — computed / calculator field helpers + picker
+// =============================================
+const B4_NUMERIC_TYPES = ['number', 'percentage', 'currency'];
+
+// Active numeric fields across the module (for formula reference pickers),
+// excluding a given key (a computed field can't reference itself).
+function numericFieldChoices(config, excludeKey) {
+  const out = [];
+  for (const s of (config.sections || [])) {
+    if (s.is_active === false) continue;
+    for (const f of (s.fields || [])) {
+      if (f.is_active === false) continue;
+      if (!B4_NUMERIC_TYPES.includes(f.type)) continue;
+      if (excludeKey && f.key === excludeKey) continue;
+      out.push({ key: f.key, label: f.label });
+    }
+  }
+  return out;
+}
+
+function sectionChoices(config) {
+  return (config.sections || [])
+    .filter((s) => s.is_active !== false)
+    .map((s) => ({ key: s.key, title: s.title }));
+}
+
+// Sensible default display type for a formula.
+function defaultDisplayType(ft) {
+  return (ft === 'percent_of' || ft === 'avg') ? 'percentage' : 'number';
+}
+
+// Validate a curated formula; returns an error string or null.
+function validateFormula(ft, args) {
+  const a = args || {};
+  if (ft === 'sum') return a.section ? null : 'Choose a section to total.';
+  if (ft === 'percent_of') {
+    if (!a.numerator) return 'Choose the part field.';
+    if (!Array.isArray(a.over) || a.over.length < 1) return 'Choose at least one field for the total.';
+    return null;
+  }
+  if (ft === 'avg') {
+    if (!Array.isArray(a.over) || a.over.length < 1) return 'Choose at least one field to average.';
+    return null;
+  }
+  if (ft === 'ratio') {
+    if (!a.numerator || !a.denominator) return 'Choose both A and B.';
+    return null;
+  }
+  return 'Choose a formula.';
+}
+
+// Simple checkbox multi-select for field references.
+function MultiSelect({ options, value, onChange }) {
+  const set = new Set(value || []);
+  function toggle(k) {
+    const n = new Set(set);
+    if (n.has(k)) n.delete(k); else n.add(k);
+    onChange([...n]);
+  }
+  return (
+    <div style={styles.multiSelect}>
+      {options.length === 0 ? (
+        <div style={styles.hiddenEmpty}>No numeric fields available.</div>
+      ) : options.map((o) => (
+        <label key={o.key} style={styles.multiOpt}>
+          <input type="checkbox" checked={set.has(o.key)} onChange={() => toggle(o.key)} /> {o.label}
+        </label>
+      ))}
+    </div>
+  );
+}
+
+// Curated formula picker — friendly labels, references fields by label,
+// stores keys in formula_args. Controlled: onChange(formula_type, formula_args).
+function FormulaPicker({ formulaType, formulaArgs, onChange, numericFields, sections }) {
+  const args = formulaArgs || {};
+  const setType = (ft) => onChange(ft, {}); // reset args when the formula changes
+  const setArgs = (next) => onChange(formulaType, next);
+  return (
+    <div style={styles.pickerWrap}>
+      <label style={styles.fieldEditLabel}>Formula</label>
+      <select value={formulaType || ''} onChange={(e) => setType(e.target.value)} style={styles.modalInput}>
+        <option value="">Choose…</option>
+        <option value="sum">Total of a section (sum)</option>
+        <option value="percent_of">Percentage (part of a total)</option>
+        <option value="avg">Average of fields</option>
+        <option value="ratio">Ratio (A ÷ B)</option>
+      </select>
+
+      {formulaType === 'sum' && (
+        <>
+          <div style={styles.pickerHint}>Add up all number fields in:</div>
+          <select value={args.section || ''} onChange={(e) => setArgs({ section: e.target.value })} style={styles.modalInput}>
+            <option value="">Choose section…</option>
+            {sections.map((s) => <option key={s.key} value={s.key}>{s.title}</option>)}
+          </select>
+        </>
+      )}
+
+      {formulaType === 'percent_of' && (
+        <>
+          <div style={styles.pickerHint}>This value =</div>
+          <select value={args.numerator || ''} onChange={(e) => setArgs({ ...args, numerator: e.target.value })} style={styles.modalInput}>
+            <option value="">Choose the part…</option>
+            {numericFields.map((f) => <option key={f.key} value={f.key}>{f.label}</option>)}
+          </select>
+          <div style={styles.pickerHint}>as a % of the total of:</div>
+          <MultiSelect options={numericFields} value={args.over || []} onChange={(over) => setArgs({ ...args, over })} />
+        </>
+      )}
+
+      {formulaType === 'avg' && (
+        <>
+          <div style={styles.pickerHint}>Average of:</div>
+          <MultiSelect options={numericFields} value={args.over || []} onChange={(over) => setArgs({ ...args, over })} />
+        </>
+      )}
+
+      {formulaType === 'ratio' && (
+        <div style={styles.ratioRow}>
+          <select value={args.numerator || ''} onChange={(e) => setArgs({ ...args, numerator: e.target.value })} style={{ ...styles.modalInput, flex: 1 }}>
+            <option value="">A…</option>
+            {numericFields.map((f) => <option key={f.key} value={f.key}>{f.label}</option>)}
+          </select>
+          <span style={styles.ratioDiv}>÷</span>
+          <select value={args.denominator || ''} onChange={(e) => setArgs({ ...args, denominator: e.target.value })} style={{ ...styles.modalInput, flex: 1 }}>
+            <option value="">B…</option>
+            {numericFields.map((f) => <option key={f.key} value={f.key}>{f.label}</option>)}
+          </select>
+        </div>
+      )}
+    </div>
+  );
+}
+
 
 // Flatten config/structure sections → flat field list, carrying section onto
 // each field and NORMALIZING both shapes:
@@ -1362,6 +1628,22 @@ const styles = {
     background: 'rgba(168,85,247,0.08)', border: '1px solid rgba(168,85,247,0.25)',
     color: '#c4b5fd', fontSize: 11.5, lineHeight: 1.5,
   },
+  // ---- B4 formula picker styles ----
+  addFieldFormWrap: { display: 'flex', flexDirection: 'column', gap: 8 },
+  calcBox: {
+    marginTop: 4, padding: '12px 14px', borderRadius: 10,
+    background: 'rgba(243,192,54,0.05)', border: '1px solid rgba(243,192,54,0.2)',
+  },
+  pickerWrap: { display: 'flex', flexDirection: 'column' },
+  pickerHint: { fontSize: 11.5, color: 'rgba(255,255,255,0.6)', margin: '10px 0 4px' },
+  ratioRow: { display: 'flex', alignItems: 'center', gap: 8 },
+  ratioDiv: { fontSize: 18, fontWeight: 700, color: '#F3C036' },
+  multiSelect: {
+    display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 160, overflowY: 'auto',
+    padding: '8px 10px', background: 'rgba(0,0,0,0.2)',
+    border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8,
+  },
+  multiOpt: { display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: 'rgba(255,255,255,0.82)', cursor: 'pointer' },
   miniSaveLarge: {
     padding: '10px 18px', borderRadius: 10, cursor: 'pointer', border: 'none',
     background: 'linear-gradient(135deg, #F3C036 0%, #ec4899 100%)', color: '#1a1028',
