@@ -1,80 +1,66 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { createPortal } from 'react-dom';
 import {
-  computeFieldValue,
+  FIELDS,
+  SECTIONS,
+  getFieldsForSection,
+  computeField,
+  computeSectionHeaderTotal,
   formatValue,
   buildYearOptions,
   buildMonthOptions,
-} from '../engine/computers';
-import { dashboardsAPI, structureAPI } from '../services/api';
+} from '../config/hrOpsFields';
+import { dashboardsAPI } from '../services/api';
+import StatusBadge from './StatusBadge';
 import Dropdown from './Dropdown';
 
 // =============================================
-// ModuleDataEntry — Module Engine generic data-entry renderer
+// HROpsDataEntry
 // =============================================
-// MODULE ENGINE — Step 2b-2.
+// Phase 2A: the data entry form for HR Operations.
 //
-// Draws a data-entry form from a MODULE CONFIG (e.g. hrOpsConfig) instead
-// of a module-specific FIELDS/SECTIONS pair. Reproduces the live
-// HROpsDataEntry behavior generically: same load → values/lastSaved,
-// same period selector, same section/subsection render, same HO/OP
-// paired rows, same computed cells + footer total, same target helper,
-// same send-changed-only save + submit-gate + beforeunload + period-switch
-// + negative-value guards, same isMobile layout.
+// Rule 13 patterns:
+//   - variant prop ('full'|'mini') — Phase 6.5 will use 'mini' inside
+//     composite views from this same source. Phase 2A uses 'full' only.
+//   - Field rendering iterates over FIELDS config; no hardcoded JSX
+//     per field. Adding/editing fields = touching hrOpsFields.js only.
+//   - Section render mode reads from SECTIONS[i].dimensionLayout /
+//     servicesLayout — extensible to future layout types.
+//   - Computed fields evaluated via COMPUTERS map; this component
+//     knows nothing about which calculations exist.
 //
-// PREVIEW ONLY (Step 2b-2). Wired at /hub/dashboards/:moduleCode/entry-v2.
-// It reuses the SAME submission + save endpoints as the live entry, so a
-// change here writes to the same (module, year, month) submission — that
-// shared data is what makes side-by-side parity checkable. The live
-// HROpsDataEntry is untouched.
+// Workflow state machine (read-only states gray out inputs):
+//   empty     → editable, no submission ID yet
+//   draft     → editable, Save Draft + Submit for Review
+//   submitted → read-only, info banner
+//   rejected  → editable, red banner with reason, "Save Draft will resume"
+//   approved  → read-only, gold banner
+//   published → read-only, green banner
 //
-// SCOPE: everything EXCEPT the labeled_grid type. The services section
-// renders as plain number fields for now (labeled_grid is Step 2b-3).
-//
-// CONFIG RENDER-HINT GAPS (noted, not invented — the 2b-1 canonical
-// config intentionally dropped these live render hints; the preview uses
-// sensible defaults and does NOT fabricate live-divergent behavior):
-//   - section header-total pills (live: headerTotalCompute/headerTotalKey)
-//     → OMITTED in preview (summing would diverge from live's specific
-//     expressions). Footer totals (services) ARE reproduced.
-//   - per-section header icons (live: section.iconPath) → generic icon.
-//   - per-subsection display labels (live: hardcoded map) → humanized key.
-//   - field helper text / required marks → omitted (not needed for preview).
-// These are cosmetic; field keys, types, computed values, footer totals,
-// the target helper, save, and guards all match live exactly.
+// Edit lockout (Option C from audit Section 6.7.4):
+//   Backend enforces. UI reflects by disabling inputs when status is
+//   in {submitted, head_reviewed, director_reviewed, approved, published}.
 // =============================================
 
-export default function ModuleDataEntry({ config, user, year, month, onStatusChange, onPeriodChange, canEditStructure = false, editMode = false, onStructureChanged, onStructurePatch }) {
-  // Flatten config → a FIELDS-like list (adds engine-friendly accessors).
-  const FIELDS = useMemo(() => flattenConfigFields(config), [config]);
-  const ALL_SECTIONS = useMemo(() => (config.sections || []).slice().sort((a, b) => ((a.order ?? a.sort_order ?? 0) - (b.order ?? b.sort_order ?? 0))), [config]);
-  // Active sections render as the dashboard; hidden ones only appear in the
-  // edit-mode "Show hidden" list.
-  const SECTIONS = useMemo(() => ALL_SECTIONS.filter((s) => s.is_active !== false), [ALL_SECTIONS]);
-  const HIDDEN_SECTIONS = useMemo(() => ALL_SECTIONS.filter((s) => s.is_active === false), [ALL_SECTIONS]);
-
-  const canEdit = canEditStructure && editMode;
-  const code = config.code;
-
-  // ---- B3b-1 section-edit UI state ----
-  const [addSectionOpen, setAddSectionOpen] = useState(false);
-  const [newSectionTitle, setNewSectionTitle] = useState('');
-  const [newSectionLayout, setNewSectionLayout] = useState('kpi');
-  const [renamingSectionId, setRenamingSectionId] = useState(null);
-  const [renameTitle, setRenameTitle] = useState('');
-  const [showHidden, setShowHidden] = useState(false);
-  const [confirmDeleteSection, setConfirmDeleteSection] = useState(null); // { id, title } | null
-  const [structureMsg, setStructureMsg] = useState(null);
-
+export default function HROpsDataEntry({
+  user,
+  year,
+  month,
+  variant = 'full',
+  onStatusChange,   // (newStatus) → void — parent updates its state badge
+  onPeriodChange,   // (year, month) → void — parent navigates via URL (Phase 2A Extension)
+}) {
+  // Submission state
   const [submission, setSubmission] = useState(null);
-  const [values, setValues] = useState({});
-  const [lastSaved, setLastSaved] = useState({});
-  const [history, setHistory] = useState([]);
+  const [values, setValues] = useState({});           // { field_key: stringValue }
+  const [lastSaved, setLastSaved] = useState({});     // snapshot of values at last save
+  const [history, setHistory] = useState([]);          // workflow_history rows
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [message, setMessage] = useState(null);
+  const [message, setMessage] = useState(null);        // { type: 'success'|'error', text }
 
+  // MOBILE — canonical isMobile pattern (DashboardPage / TargetsManager /
+  // ApprovalsManager). Layout-only; no logic depends on it.
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth <= 768);
@@ -82,20 +68,21 @@ export default function ModuleDataEntry({ config, user, year, month, onStatusCha
     return () => window.removeEventListener('resize', handleResize);
   }, []);
   const [expandedSections, setExpandedSections] = useState(
-    () => Object.fromEntries((config.sections || []).map((s) => [s.key, true]))
+    () => Object.fromEntries(SECTIONS.map((s) => [s.key, true]))
   );
 
   const status = submission?.status || 'empty';
   const isReadOnly = isStatusReadOnly(status);
   const isRejected = status === 'rejected';
 
-  // ---------- LOAD (same as live, config.code driven) ----------
+  // ---------- LOAD ----------
+  // Load any existing submission for this (HR_OPS, year, month).
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     setMessage(null);
 
-    dashboardsAPI.listSubmissions(config.code, { year })
+    dashboardsAPI.listSubmissions('HR_OPS', { year })
       .then((rows) => {
         if (cancelled) return;
         const match = (rows || []).find((r) => r.month === month && r.year === year);
@@ -107,6 +94,7 @@ export default function ModuleDataEntry({ config, user, year, month, onStatusCha
           if (onStatusChange) onStatusChange('empty');
           return;
         }
+        // Found one — fetch detail to get values + history
         return dashboardsAPI.getSubmission(match.id);
       })
       .then((detail) => {
@@ -122,7 +110,8 @@ export default function ModuleDataEntry({ config, user, year, month, onStatusCha
       })
       .catch((err) => {
         if (cancelled) return;
-        console.error('[ModuleDataEntry] load failed:', err);
+        // Rule 5: visible error
+        console.error('[HROpsDataEntry] load failed:', err);
         setMessage({ type: 'error', text: `Could not load submission: ${err.message || 'unknown error'}` });
       })
       .finally(() => {
@@ -130,20 +119,34 @@ export default function ModuleDataEntry({ config, user, year, month, onStatusCha
       });
 
     return () => { cancelled = true; };
-  }, [config.code, year, month, onStatusChange]);
+  }, [year, month, onStatusChange]);
 
-  const hasUnsavedChanges = useMemo(() => valuesDiffer(values, lastSaved), [values, lastSaved]);
+  // ---------- DERIVED ----------
+  // Unsaved-changes indicator: compare values vs lastSaved
+  const hasUnsavedChanges = useMemo(
+    () => valuesDiffer(values, lastSaved),
+    [values, lastSaved]
+  );
 
-  // beforeunload guard (same as live)
+  // MULTI-USER SAFE SAVE (Fix 3a) — warn on tab close/refresh with unsaved
+  // edits. Listener added/removed as hasUnsavedChanges flips so we don't
+  // nag when there's nothing to lose.
   useEffect(() => {
     if (!hasUnsavedChanges) return undefined;
-    function onBeforeUnload(e) { e.preventDefault(); e.returnValue = ''; return ''; }
+    function onBeforeUnload(e) {
+      e.preventDefault();
+      // Modern browsers show a generic message; returnValue must be set.
+      e.returnValue = '';
+      return '';
+    }
     window.addEventListener('beforeunload', onBeforeUnload);
     return () => window.removeEventListener('beforeunload', onBeforeUnload);
   }, [hasUnsavedChanges]);
 
+  // Latest rejection reason (for the rejected banner)
   const latestRejection = useMemo(() => {
     if (!isRejected) return null;
+    // History is ordered DESC; first 'admin_rejected' or 'rejected' action wins
     return (history || []).find((h) =>
       h.to_state === 'rejected' || h.action === 'admin_rejected' || h.action === 'rejected'
     );
@@ -159,151 +162,21 @@ export default function ModuleDataEntry({ config, user, year, month, onStatusCha
     setExpandedSections((prev) => ({ ...prev, [sectionKey]: !prev[sectionKey] }));
   }
 
-  // ---- B3b-1 section-edit handlers (B3b PERF v2: OPTIMISTIC) ----
-  // Each action updates local structure IMMEDIATELY (no awaiting the network),
-  // fires the ONE structureAPI call in the BACKGROUND, and REVERTS to the
-  // pre-change snapshot only if that call fails (+ a short error). No spinner,
-  // no wait, no getStructure/targets refetch. ADD uses a temp id until the
-  // real row returns; controls on a still-pending (temp) section are disabled.
-  //
-  // patchSections(updater) mutates the preview-owned config.sections in place
-  // (single source the renderer reads). Falls back to onStructureChanged only
-  // if the patch callback wasn't provided (never in production).
-  function patchSections(updater) {
-    if (typeof onStructurePatch === 'function') {
-      onStructurePatch(updater);
-    } else if (typeof onStructureChanged === 'function') {
-      onStructureChanged();
-    }
-  }
-
-  const isTempId = (id) => typeof id === 'string' && id.startsWith('tmp_');
-
-  // Fire an API call in the background. On error, revert to the snapshot and
-  // show an error. UI already reflects the optimistic change before this runs.
-  function fireBackground(apiCall, prevSections, errMsg, onSuccess) {
-    Promise.resolve()
-      .then(apiCall)
-      .then((result) => { if (onSuccess) onSuccess(result); })
-      .catch((err) => {
-        console.error('[ModuleDataEntry] structure op failed (reverting):', err);
-        patchSections(() => prevSections);   // snapshot-and-restore
-        setStructureMsg({ type: 'error', text: `${errMsg}: ${err.message || 'unknown error'}` });
-      });
-  }
-
-  function handleAddSection() {
-    const title = newSectionTitle.trim();
-    if (!title) { setStructureMsg({ type: 'error', text: 'Section title cannot be empty.' }); return; }
-    const layout = newSectionLayout;
-    const prevSections = (config.sections || []).slice();
-    const tempId = `tmp_${Date.now()}`;
-    const maxOrder = prevSections.reduce((m, s) => Math.max(m, s.sort_order ?? 0), 0);
-
-    // Optimistic: insert immediately with a temp id, empty fields.
-    setStructureMsg(null);
-    patchSections((secs) => [...secs, {
-      id: tempId, key: tempId, title, layout,
-      sort_order: maxOrder + 1, is_active: true, fields: [], _pending: true,
-    }]);
-    // Reset the form right away — the section is already on screen.
-    setNewSectionTitle('');
-    setNewSectionLayout('kpi');
-    setAddSectionOpen(false);
-
-    fireBackground(
-      () => structureAPI.createSection(code, { title, layout }),
-      prevSections,
-      'Could not add section',
-      // Success: swap the temp row for the real one (real id + key), keep it in place.
-      (row) => patchSections((secs) => secs.map((s) => (
-        s.id === tempId ? { ...row, fields: [] } : s
-      )))
-    );
-  }
-
-  function handleRenameSection(id) {
-    if (isTempId(id)) { setStructureMsg({ type: 'error', text: 'Still saving that section — try again in a moment.' }); return; }
-    const title = renameTitle.trim();
-    if (!title) { setStructureMsg({ type: 'error', text: 'Section title cannot be empty.' }); return; }
-    const prevSections = (config.sections || []).slice();
-
-    setStructureMsg(null);
-    patchSections((secs) => secs.map((s) => (s.id === id ? { ...s, title } : s)));
-    setRenamingSectionId(null);
-    setRenameTitle('');
-
-    fireBackground(
-      () => structureAPI.updateSection(code, id, { title }),
-      prevSections,
-      'Could not rename section'
-    );
-  }
-
-  function handleReorderSection(index, dir) {
-    const target = index + dir;
-    if (target < 0 || target >= SECTIONS.length) return;
-    const ids = SECTIONS.map((s) => s.id);
-    if (ids.some(isTempId)) { setStructureMsg({ type: 'error', text: 'A section is still saving — try again in a moment.' }); return; }
-    const [moved] = ids.splice(index, 1);
-    ids.splice(target, 0, moved);
-    const prevSections = (config.sections || []).slice();
-
-    // Optimistic: apply the new order locally (mirror backend sort_order = pos+1).
-    setStructureMsg(null);
-    patchSections((secs) => {
-      const orderByIds = new Map(ids.map((sid, i) => [sid, i + 1]));
-      return secs
-        .map((s) => (orderByIds.has(s.id) ? { ...s, sort_order: orderByIds.get(s.id) } : s))
-        .slice()
-        .sort((a, b) => ((a.sort_order ?? 0) - (b.sort_order ?? 0)));
-    });
-
-    fireBackground(
-      () => structureAPI.reorderSections(code, ids),
-      prevSections,
-      'Could not reorder sections'
-    );
-  }
-
-  function handleDeleteSectionConfirmed() {
-    const targetRow = confirmDeleteSection;
-    setConfirmDeleteSection(null);
-    if (!targetRow) return;
-    if (isTempId(targetRow.id)) { setStructureMsg({ type: 'error', text: 'Still saving that section — try again in a moment.' }); return; }
-    const prevSections = (config.sections || []).slice();
-
-    // Optimistic: flip is_active=false (moves to hidden list).
-    setStructureMsg(null);
-    patchSections((secs) => secs.map((s) => (s.id === targetRow.id ? { ...s, is_active: false } : s)));
-
-    fireBackground(
-      () => structureAPI.deleteSection(code, targetRow.id),
-      prevSections,
-      'Could not hide section'
-    );
-  }
-
-  function handleRestoreSection(id) {
-    if (isTempId(id)) return;
-    const prevSections = (config.sections || []).slice();
-
-    // Optimistic: flip is_active=true.
-    setStructureMsg(null);
-    patchSections((secs) => secs.map((s) => (s.id === id ? { ...s, is_active: true } : s)));
-
-    fireBackground(
-      () => structureAPI.restoreSection(code, id),
-      prevSections,
-      'Could not restore section'
-    );
-  }
-
-  // Negative-value guard (same as live, config-driven)
+  // Save Draft. Hits POST /dashboards/HR_OPS/submissions which upserts.
+  // When status is 'rejected', backend auto-transitions to 'draft' via
+  // resumed_editing action (Phase 0 Option C contract).
+  // =============================================
+  // POLISH — no-negatives validation (HR_OPS scope, client-side).
+  // All HR_OPS entry fields are counts / percentages / currency, so a
+  // negative value is always invalid (a −3 slipped into production).
+  // Returns array of offending field labels, e.g.
+  // ['Sponsorship Transfer (OP): value cannot be negative'].
+  // 0 and empty stay valid. Backend stays generic for future modules.
+  // =============================================
   function findNegativeValues() {
     const offenders = [];
     for (const f of FIELDS) {
-      if (f.source === 'computed') continue;
+      if (!f.active || f.source === 'computed') continue;
       const raw = values[f.key];
       if (raw === undefined || raw === null || raw === '') continue;
       const n = Number(raw);
@@ -316,14 +189,21 @@ export default function ModuleDataEntry({ config, user, year, month, onStatusCha
   }
 
   async function handleSaveDraft() {
+    // POLISH — block save when any entered value is negative.
     const negatives = findNegativeValues();
     if (negatives.length > 0) {
       setMessage({ type: 'error', text: `Cannot save — ${negatives.join(' · ')}` });
       return false;
     }
-    // send-changed-only (diff vs lastSaved) — identical to live
+
+    // MULTI-USER SAFE SAVE — send ONLY fields that changed vs the last saved
+    // snapshot. Combined with the backend's per-field UPSERT (no DELETE-all),
+    // this means one employee's save never overwrites another's section: we
+    // only touch the field_keys this person actually edited. A field cleared
+    // to empty is sent as value:null so the clear propagates; fields the user
+    // never touched are omitted entirely and left untouched server-side.
     const changed = FIELDS
-      .filter((f) => f.source !== 'computed')
+      .filter((f) => f.active && f.source !== 'computed')
       .filter((f) => {
         const cur = values[f.key];
         const prev = lastSaved[f.key];
@@ -337,6 +217,7 @@ export default function ModuleDataEntry({ config, user, year, month, onStatusCha
         value: values[f.key] === undefined || values[f.key] === '' ? null : String(values[f.key]),
       }));
 
+    // Nothing changed → don't send an empty write.
     if (changed.length === 0) {
       setMessage({ type: 'info', text: 'No changes to save.' });
       return true;
@@ -345,20 +226,25 @@ export default function ModuleDataEntry({ config, user, year, month, onStatusCha
     setSaving(true);
     setMessage(null);
     try {
-      const resp = await dashboardsAPI.saveSubmission(config.code, { year, month, data: changed });
+      const resp = await dashboardsAPI.saveSubmission('HR_OPS', { year, month, data: changed });
+      // resp = { submission, data, created }
       const sub = resp.submission;
       setSubmission(sub);
+      // Refresh from server response — it returns the FULL merged month, so
+      // each person sees the combined latest (their edits + others') after save.
+      // Also handles auto-resume rejected→draft.
       const v = {};
       (resp.data || []).forEach((row) => { v[row.field_key] = row.value ?? ''; });
       setValues(v);
       setLastSaved(v);
+      // Refresh history to surface the resumed_editing event if applicable
       const detail = await dashboardsAPI.getSubmission(sub.id);
       setHistory(detail.history || []);
       if (onStatusChange) onStatusChange(sub.status);
       setMessage({ type: 'success', text: resp.created ? 'Draft created.' : 'Draft saved.' });
       return true;
     } catch (err) {
-      console.error('[ModuleDataEntry] save failed:', err);
+      console.error('[HROpsDataEntry] save failed:', err);
       setMessage({ type: 'error', text: `Save failed: ${err.message || 'unknown error'}` });
       return false;
     } finally {
@@ -366,19 +252,29 @@ export default function ModuleDataEntry({ config, user, year, month, onStatusCha
     }
   }
 
+  // Submit for Review. Requires an existing submission ID.
   async function handleSubmit() {
     if (!submission || !submission.id) {
       setMessage({ type: 'error', text: 'Save a draft first before submitting for review.' });
       return;
     }
+    // POLISH — same no-negatives guard as save. Covers the path where
+    // values are already saved (hasUnsavedChanges=false skips handleSaveDraft)
+    // but a previously-saved negative is still on screen.
     const negatives = findNegativeValues();
     if (negatives.length > 0) {
       setMessage({ type: 'error', text: `Cannot submit — ${negatives.join(' · ')}` });
       return;
     }
     if (hasUnsavedChanges) {
+      // Save before submitting so reviewer sees latest. ABORT the submit if
+      // that save did not succeed (e.g. negative value or network error) —
+      // previously submit proceeded regardless, which could submit stale data.
       const ok = await handleSaveDraft();
-      if (!ok) return;
+      if (!ok) {
+        // handleSaveDraft already surfaced the reason via setMessage.
+        return;
+      }
     }
     setSubmitting(true);
     setMessage(null);
@@ -386,12 +282,13 @@ export default function ModuleDataEntry({ config, user, year, month, onStatusCha
       const resp = await dashboardsAPI.submitSubmission(submission.id);
       const sub = resp.submission;
       setSubmission(sub);
+      // Refresh history
       const detail = await dashboardsAPI.getSubmission(sub.id);
       setHistory(detail.history || []);
       if (onStatusChange) onStatusChange(sub.status);
       setMessage({ type: 'success', text: 'Submitted for review.' });
     } catch (err) {
-      console.error('[ModuleDataEntry] submit failed:', err);
+      console.error('[HROpsDataEntry] submit failed:', err);
       setMessage({ type: 'error', text: `Submit failed: ${err.message || 'unknown error'}` });
     } finally {
       setSubmitting(false);
@@ -408,10 +305,19 @@ export default function ModuleDataEntry({ config, user, year, month, onStatusCha
     );
   }
 
+  // Build a synthetic numeric values map for computed fields (parse-once)
+  // Note: we pass the raw string map to computeField; helpers in COMPUTERS
+  // parse to number themselves. This keeps the form simple.
+
+  // Period selector options — Rule 13 (config-driven year list with
+  // SYSTEM_START_YEAR floor). Month list is always all 12 — Entry view
+  // allows submission for any month within the floor.
   const yearOptions = buildYearOptions();
   const monthOptions = buildMonthOptions();
 
   function handlePeriodChange(nextYear, nextMonth) {
+    // MULTI-USER SAFE SAVE (Fix 3b) — guard against losing unsaved edits when
+    // switching month/year. Cancel keeps the user on the current period.
     if (hasUnsavedChanges) {
       const proceed = window.confirm('You have unsaved changes. Switch period and lose them?');
       if (!proceed) return;
@@ -423,162 +329,138 @@ export default function ModuleDataEntry({ config, user, year, month, onStatusCha
 
   return (
     <div style={{ ...styles.canvas, ...(isMobile ? styles.canvasMobile : {}) }}>
+      {/* Period selector (Phase 2A Extension) — historical entry */}
       <div style={{ ...styles.periodSelector, ...(isMobile ? styles.periodSelectorMobile : {}) }}>
         <span style={styles.periodSelectorLabel}>ENTERING</span>
+        {/* MOBILE: grid wrappers stretch the inline-block Dropdown root to
+            full column width (can't set width:100% on root without editing
+            Dropdown.js, which is out of scope). Desktop path unchanged. */}
         {isMobile ? (
           <>
             <div style={styles.dropdownFill}>
-              <Dropdown label="Year" value={String(year)} options={yearOptions} onChange={(v) => handlePeriodChange(v, month)} width="100%" />
+              <Dropdown
+                label="Year"
+                value={String(year)}
+                options={yearOptions}
+                onChange={(v) => handlePeriodChange(v, month)}
+                width="100%"
+              />
             </div>
             <div style={styles.dropdownFill}>
-              <Dropdown label="Month" value={String(month)} options={monthOptions} onChange={(v) => handlePeriodChange(year, v)} width="100%" />
+              <Dropdown
+                label="Month"
+                value={String(month)}
+                options={monthOptions}
+                onChange={(v) => handlePeriodChange(year, v)}
+                width="100%"
+              />
             </div>
           </>
         ) : (
           <>
-            <Dropdown label="Year" value={String(year)} options={yearOptions} onChange={(v) => handlePeriodChange(v, month)} width={120} />
-            <Dropdown label="Month" value={String(month)} options={monthOptions} onChange={(v) => handlePeriodChange(year, v)} width={150} />
+            <Dropdown
+              label="Year"
+              value={String(year)}
+              options={yearOptions}
+              onChange={(v) => handlePeriodChange(v, month)}
+              width={120}
+            />
+            <Dropdown
+              label="Month"
+              value={String(month)}
+              options={monthOptions}
+              onChange={(v) => handlePeriodChange(year, v)}
+              width={150}
+            />
           </>
         )}
-        <span style={styles.previewBadge}>PREVIEW · engine v2</span>
       </div>
 
+      {/* Status banners */}
       {renderStatusBanner(status, latestRejection)}
 
+      {/* Inline message (success/error) */}
       {message && (
         <div style={message.type === 'error' ? styles.alertError : styles.alertSuccess}>
           {message.text}
         </div>
       )}
 
-      {/* B3b-1 — section-edit toolbar (admin edit mode only) */}
-      {canEdit && (
-        <div style={styles.editToolbar}>
-          <div style={styles.editToolbarRow}>
-            {!addSectionOpen ? (
-              <button type="button" style={styles.addSectionBtn} onClick={() => setAddSectionOpen(true)}>
-                + Add Section
-              </button>
-            ) : (
-              <div style={styles.addSectionForm} onClick={(e) => e.stopPropagation()}>
-                <input
-                  type="text"
-                  autoFocus
-                  placeholder="Section title"
-                  value={newSectionTitle}
-                  onChange={(e) => setNewSectionTitle(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') handleAddSection(); if (e.key === 'Escape') setAddSectionOpen(false); }}
-                  style={styles.addSectionInput}
-                />
-                <select value={newSectionLayout} onChange={(e) => setNewSectionLayout(e.target.value)} style={styles.addSectionSelect}>
-                  <option value="kpi">kpi</option>
-                  <option value="ho_op">ho_op</option>
-                  <option value="labeled_grid">labeled_grid</option>
-                  <option value="matrix">matrix</option>
-                  <option value="group">group</option>
-                </select>
-                <button type="button" style={styles.miniSave} onClick={handleAddSection}>Add</button>
-                <button type="button" style={styles.miniCancel} onClick={() => { setAddSectionOpen(false); setNewSectionTitle(''); }}>Cancel</button>
-              </div>
-            )}
-            <button type="button" style={{ ...styles.showHiddenBtn, ...(showHidden ? styles.showHiddenOn : {}) }} onClick={() => setShowHidden((v) => !v)}>
-              {showHidden ? 'Hide hidden sections' : `Show hidden sections${HIDDEN_SECTIONS.length ? ` (${HIDDEN_SECTIONS.length})` : ''}`}
-            </button>
-          </div>
-          {structureMsg && (
-            <div style={structureMsg.type === 'error' ? styles.alertError : styles.alertSuccess}>
-              {structureMsg.text}
-            </div>
-          )}
-          {showHidden && (
-            <div style={styles.hiddenList}>
-              {HIDDEN_SECTIONS.length === 0 ? (
-                <div style={styles.hiddenEmpty}>No hidden sections.</div>
-              ) : HIDDEN_SECTIONS.map((s) => (
-                <div key={s.id} style={styles.hiddenRow}>
-                  <span style={styles.hiddenName}>{s.title} <span style={styles.hiddenKey}>{s.key}</span></span>
-                  <button type="button" style={styles.restoreBtn} onClick={() => handleRestoreSection(s.id)}>Restore</button>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {SECTIONS.map((section, sectionIndex) => {
-        const expanded = expandedSections[section.key] !== false;
-        const fields = FIELDS.filter((f) => f.section === section.key && f.is_active !== false);
+      {/* Sections */}
+      {SECTIONS.map((section) => {
+        const expanded = expandedSections[section.key];
+        const fields = getFieldsForSection(section.key);
         const filledCount = countFilledManual(fields, values);
         const totalManual = fields.filter((f) => f.source !== 'computed').length;
-        const isRenaming = renamingSectionId === section.id;
+        const headerTotal = computeSectionHeaderTotal(section, values);
 
         return (
-          <div key={section.key} style={{ ...styles.section, ...(expanded ? {} : styles.sectionCollapsed) }}>
+          <div
+            key={section.key}
+            style={{ ...styles.section, ...(expanded ? {} : styles.sectionCollapsed) }}
+          >
             <div style={styles.sectionAccent} />
             <div
               role="button"
               tabIndex={0}
               onClick={() => toggleSection(section.key)}
               onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleSection(section.key); } }}
-              style={{ ...styles.sectionHeader, ...(expanded ? styles.sectionHeaderExpanded : {}) }}
+              style={{
+                ...styles.sectionHeader,
+                ...(expanded ? styles.sectionHeaderExpanded : {}),
+              }}
             >
               <div style={styles.sectionHeaderLeft}>
                 <div style={styles.sectionIcon}>
                   <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor"
-                       dangerouslySetInnerHTML={{ __html: config.icon || GENERIC_SECTION_ICON }} />
+                       dangerouslySetInnerHTML={{ __html: section.iconPath }} />
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  {isRenaming ? (
-                    <div style={styles.renameRow} onClick={(e) => e.stopPropagation()}>
-                      <input
-                        type="text"
-                        autoFocus
-                        value={renameTitle}
-                        onChange={(e) => setRenameTitle(e.target.value)}
-                        onKeyDown={(e) => { if (e.key === 'Enter') handleRenameSection(section.id); if (e.key === 'Escape') { setRenamingSectionId(null); } }}
-                        style={styles.renameInput}
-                      />
-                      <button type="button" style={styles.miniSave} onClick={() => handleRenameSection(section.id)}>Save</button>
-                      <button type="button" style={styles.miniCancel} onClick={() => setRenamingSectionId(null)}>Cancel</button>
-                    </div>
-                  ) : (
-                    <div style={styles.sectionTitle}>
-                      {section.title}
-                      {isTempId(section.id) && <span style={styles.savingHint}>saving…</span>}
-                    </div>
-                  )}
+                  <div style={styles.sectionTitle}>
+                    {section.title}
+                    {headerTotal != null && (
+                      <span style={styles.headerTotal}>
+                        {headerTotal} {section.headerTotalLabel || ''}
+                      </span>
+                    )}
+                  </div>
                   <div style={styles.sectionMeta}>
                     <span style={styles.progressMini}>
                       <span style={styles.progressBar}>
-                        <span style={{ ...styles.progressBarFill, width: totalManual === 0 ? '0%' : `${(filledCount / totalManual) * 100}%` }} />
+                        <span
+                          style={{
+                            ...styles.progressBarFill,
+                            width: totalManual === 0 ? '0%' : `${(filledCount / totalManual) * 100}%`,
+                          }}
+                        />
                       </span>
                       {filledCount}/{totalManual} fields
                     </span>
                   </div>
                 </div>
               </div>
-              {canEdit && !isRenaming && (
-                <div style={styles.sectionEditControls} onClick={(e) => e.stopPropagation()}>
-                  <button type="button" title="Move up" style={styles.editIconBtn} disabled={isTempId(section.id) || sectionIndex === 0} onClick={() => handleReorderSection(sectionIndex, -1)}>↑</button>
-                  <button type="button" title="Move down" style={styles.editIconBtn} disabled={isTempId(section.id) || sectionIndex === SECTIONS.length - 1} onClick={() => handleReorderSection(sectionIndex, 1)}>↓</button>
-                  <button type="button" title="Rename" style={styles.editIconBtn} disabled={isTempId(section.id)} onClick={() => { setRenamingSectionId(section.id); setRenameTitle(section.title); }}>✎</button>
-                  <button type="button" title="Hide section" style={{ ...styles.editIconBtn, ...styles.editIconDanger }} disabled={isTempId(section.id)} onClick={() => setConfirmDeleteSection({ id: section.id, title: section.title })}>🗑</button>
-                </div>
-              )}
-              <svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"
-                style={{ color: 'rgba(255,255,255,0.5)', flexShrink: 0, transform: expanded ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.25s ease' }}>
+              <svg
+                width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"
+                style={{
+                  color: 'rgba(255,255,255,0.5)',
+                  flexShrink: 0,
+                  transform: expanded ? 'rotate(180deg)' : 'rotate(0deg)',
+                  transition: 'transform 0.25s ease',
+                }}
+              >
                 <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7"/>
               </svg>
             </div>
 
             {expanded && (
               <div style={{ ...styles.sectionBody, ...(isMobile ? styles.sectionBodyMobile : {}) }}>
-                {section.layout === 'ho_op'
+                {section.dimensionLayout === 'ho_op'
                   ? renderDimensionGrid(section, fields, values, handleFieldChange, isReadOnly, isMobile)
-                  : section.layout === 'grid'
+                  : section.servicesLayout
                     ? renderServicesGrid(fields, values, handleFieldChange, isReadOnly, isMobile)
-                    : renderSubsectionedGrid(fields, values, handleFieldChange, isReadOnly, isMobile)
+                    : renderHeadcountGrid(fields, values, handleFieldChange, isReadOnly, isMobile)
                 }
+                {/* Section footer for computed totals (Q4 pattern a) */}
                 {renderSectionFooter(section, fields, values)}
               </div>
             )}
@@ -586,115 +468,54 @@ export default function ModuleDataEntry({ config, user, year, month, onStatusCha
         );
       })}
 
+      {/* Form actions */}
       <div style={{ ...styles.formActions, ...(isMobile ? styles.formActionsMobile : {}) }}>
         <div style={styles.saveState}>
           {hasUnsavedChanges && !isReadOnly ? (
-            <><span style={styles.dotUnsaved}>•</span>Unsaved changes</>
+            <>
+              <span style={styles.dotUnsaved}>•</span>
+              Unsaved changes
+            </>
           ) : isReadOnly ? (
             <>Locked while under review.</>
           ) : submission && submission.updated_at ? (
-            <><span style={styles.dotSaved} />All changes saved</>
+            <>
+              <span style={styles.dotSaved} />
+              All changes saved
+            </>
           ) : (
             <>No draft saved yet</>
           )}
         </div>
         {!isReadOnly && (
           <div style={{ ...styles.actionsRight, ...(isMobile ? styles.actionsRightMobile : {}) }}>
-            <button type="button" style={{ ...styles.btnGhost, ...(isMobile ? styles.btnGhostMobile : {}) }} onClick={handleSaveDraft} disabled={saving || submitting}>
+            <button
+              type="button"
+              style={{ ...styles.btnGhost, ...(isMobile ? styles.btnGhostMobile : {}) }}
+              onClick={handleSaveDraft}
+              disabled={saving || submitting}
+            >
               {saving ? 'Saving…' : 'Save Draft'}
             </button>
-            <button type="button" style={{ ...styles.btnPrimary, ...(isMobile ? styles.btnPrimaryMobile : {}) }} onClick={handleSubmit} disabled={submitting || saving || !submission} title={!submission ? 'Save a draft first' : ''}>
+            <button
+              type="button"
+              style={{ ...styles.btnPrimary, ...(isMobile ? styles.btnPrimaryMobile : {}) }}
+              onClick={handleSubmit}
+              disabled={submitting || saving || !submission}
+              title={!submission ? 'Save a draft first' : ''}
+            >
               {submitting ? 'Submitting…' : (isRejected ? 'Re-submit for Review →' : 'Submit for Review →')}
             </button>
           </div>
         )}
       </div>
-
-      {/* B3b-1 — confirm hide-section modal (portal, Principle 6B.11) */}
-      <ConfirmModal
-        open={!!confirmDeleteSection}
-        title="Hide this section?"
-        body={confirmDeleteSection
-          ? `"${confirmDeleteSection.title}" and its fields will be hidden. Its data is preserved and you can restore it from "Show hidden sections".`
-          : ''}
-        confirmLabel="Hide section"
-        busy={false}
-        onCancel={() => setConfirmDeleteSection(null)}
-        onConfirm={handleDeleteSectionConfirmed}
-      />
     </div>
-  );
-}
-
-// =============================================
-// ConfirmModal — portal + Esc + backdrop-click (Principle 6B.11)
-// =============================================
-function ConfirmModal({ open, title, body, confirmLabel, busy, onCancel, onConfirm }) {
-  useEffect(() => {
-    if (!open) return undefined;
-    function onKey(e) { if (e.key === 'Escape' && !busy) onCancel && onCancel(); }
-    document.addEventListener('keydown', onKey);
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => { document.removeEventListener('keydown', onKey); document.body.style.overflow = prev; };
-  }, [open, busy, onCancel]);
-
-  if (!open) return null;
-
-  return createPortal(
-    <div
-      style={styles.modalBackdrop}
-      onClick={(e) => { if (e.target === e.currentTarget && !busy) onCancel && onCancel(); }}
-      role="dialog"
-      aria-modal="true"
-    >
-      <div style={styles.modalCard}>
-        <div style={styles.modalAccent} />
-        <div style={styles.modalHeader}>
-          <div style={styles.modalTitle}>{title}</div>
-          <button type="button" aria-label="Close" style={styles.modalClose} disabled={busy} onClick={onCancel}>✕</button>
-        </div>
-        <div style={styles.modalBody}>{body}</div>
-        <div style={styles.modalFooter}>
-          <button type="button" style={styles.btnGhost} onClick={onCancel} disabled={busy}>Cancel</button>
-          <button type="button" style={styles.modalDangerBtn} onClick={onConfirm} disabled={busy}>
-            {busy ? 'Working…' : confirmLabel}
-          </button>
-        </div>
-      </div>
-    </div>,
-    document.body
   );
 }
 
 // =============================================
 // Helpers
 // =============================================
-const GENERIC_SECTION_ICON = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>';
-
-// Flatten config/structure sections → flat field list, carrying section onto
-// each field and NORMALIZING both shapes:
-//   - DB structure (B1): dimension_row/dimension_col/formula_type/formula_args
-//   - file config (2b-1): dimensionRow/dimensionCol/formula
-// so the render helpers + curated evaluator work regardless of source.
-function flattenConfigFields(config) {
-  const out = [];
-  for (const s of (config.sections || [])) {
-    for (const f of (s.fields || [])) {
-      out.push({
-        ...f,
-        section: f.section || s.key,
-        dimensionRow: f.dimensionRow || f.dimension_row || null,
-        dimensionCol: f.dimensionCol || f.dimension_col || null,
-        // curated-formula fields (DB); harmless when absent (file config)
-        formula_type: f.formula_type || null,
-        formula_args: f.formula_args || null,
-      });
-    }
-  }
-  return out;
-}
-
 function isStatusReadOnly(status) {
   return ['submitted', 'head_reviewed', 'director_reviewed', 'approved', 'published'].includes(status);
 }
@@ -719,12 +540,6 @@ function countFilledManual(fields, values) {
     if (v !== undefined && v !== null && String(v).trim() !== '') n += 1;
   }
   return n;
-}
-
-// Humanize a subsection key as a sensible default (config lacks display labels).
-function humanizeKey(k) {
-  if (!k || k === 'default') return '';
-  return k.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 function renderStatusBanner(status, rejection) {
@@ -766,7 +581,9 @@ function renderStatusBanner(status, rejection) {
     return (
       <div style={styles.bannerApproved}>
         <span style={styles.bannerIcon}>★</span>
-        <div><strong style={styles.bannerStrong}>Approved.</strong> Your submission was approved and will appear in dashboards shortly. The form is locked.</div>
+        <div>
+          <strong style={styles.bannerStrong}>Approved.</strong> Your submission was approved and will appear in dashboards shortly. The form is locked.
+        </div>
       </div>
     );
   }
@@ -774,35 +591,44 @@ function renderStatusBanner(status, rejection) {
     return (
       <div style={styles.bannerPublished}>
         <span style={styles.bannerIcon}>✓</span>
-        <div><strong style={styles.bannerStrong}>Published.</strong> Data is visible across HR Dashboards. To make changes, contact an administrator to reopen the submission.</div>
+        <div>
+          <strong style={styles.bannerStrong}>Published.</strong> Data is visible across HR Dashboards. To make changes, contact an administrator to reopen the submission.
+        </div>
       </div>
     );
   }
   return null;
 }
 
-// Subsectioned grid (headcount): group by subsection, render all fields inline.
-function renderSubsectionedGrid(fields, values, onChange, readOnly, isMobile = false) {
+function renderHeadcountGrid(fields, values, onChange, readOnly, isMobile = false) {
+  // Group by subsection; render 2-col rows (manual + computed pairs).
   const bySubsection = {};
   for (const f of fields) {
     const sub = f.subsection || 'default';
     if (!bySubsection[sub]) bySubsection[sub] = [];
     bySubsection[sub].push(f);
   }
+  const labels = {
+    composition: 'Headcount Composition',
+    gender: 'Gender Breakdown',
+    location: 'Location Breakdown (HO / OP)',
+    turnover: 'Turnover',
+    compliance: 'Compliance & HRDF',
+  };
   return Object.entries(bySubsection).map(([subKey, subFields]) => (
     <div key={subKey} style={styles.subsection}>
-      {humanizeKey(subKey) && <div style={styles.subsectionLabel}>{humanizeKey(subKey)}</div>}
+      <div style={styles.subsectionLabel}>{labels[subKey] || subKey}</div>
       <div style={{ ...styles.fieldGrid, ...(isMobile ? styles.fieldGridMobile : {}) }}>
         {subFields.map((f) => (
-          <FieldCell key={f.key} field={f} values={values} onChange={onChange} readOnly={readOnly} allFields={fields} />
+          <FieldCell key={f.key} field={f} values={values} onChange={onChange} readOnly={readOnly} />
         ))}
       </div>
     </div>
   ));
 }
 
-// HO/OP dimension grid — identical layout to live.
 function renderDimensionGrid(section, fields, values, onChange, readOnly, isMobile = false) {
+  // Group fields by dimensionRow; render as rows with HO/OP columns.
   const rows = {};
   for (const f of fields) {
     if (f.source === 'computed') continue;
@@ -814,6 +640,9 @@ function renderDimensionGrid(section, fields, values, onChange, readOnly, isMobi
     if (f.dimensionCol === 'op') rows[r].op = f;
   }
 
+  // MOBILE: stack each row — label on its own line, then HO input full-width
+  // with an inline "HO" tag, then OP input full-width with "OP" tag. The
+  // standalone HO/OP column header row is hidden (tags carry the meaning now).
   if (isMobile) {
     return (
       <>
@@ -821,15 +650,24 @@ function renderDimensionGrid(section, fields, values, onChange, readOnly, isMobi
           <div key={rowKey} style={styles.dimensionRowMobile}>
             <div style={styles.dimensionRowLabel}>
               {row.label}
-              {row.helper && (<div style={styles.dimensionRowHelper}>{row.helper}</div>)}
+              {row.helper && (
+                <div style={styles.dimensionRowHelper}>{row.helper}</div>
+              )}
             </div>
             {[{ f: row.ho, tag: 'HO' }, { f: row.op, tag: 'OP' }].map(({ f, tag }, i) => (
               f ? (
                 <div key={f.key} style={styles.dimensionMobileField}>
                   <span style={styles.dimensionMobileTag}>{tag}</span>
-                  <input type="number" min="0" style={{ ...styles.dimensionInput, ...styles.dimensionInputMobile }}
-                    value={values[f.key] ?? ''} onChange={(e) => onChange(f.key, e.target.value)}
-                    readOnly={readOnly} disabled={readOnly} inputMode="numeric" />
+                  <input
+                    type="number"
+                    min="0"
+                    style={{ ...styles.dimensionInput, ...styles.dimensionInputMobile }}
+                    value={values[f.key] ?? ''}
+                    onChange={(e) => onChange(f.key, e.target.value)}
+                    readOnly={readOnly}
+                    disabled={readOnly}
+                    inputMode="numeric"
+                  />
                 </div>
               ) : <div key={i} />
             ))}
@@ -850,13 +688,23 @@ function renderDimensionGrid(section, fields, values, onChange, readOnly, isMobi
         <div key={rowKey} style={styles.dimensionRow}>
           <div style={styles.dimensionRowLabel}>
             {row.label}
-            {row.helper && (<div style={styles.dimensionRowHelper}>{row.helper}</div>)}
+            {row.helper && (
+              <div style={styles.dimensionRowHelper}>{row.helper}</div>
+            )}
           </div>
           {[row.ho, row.op].map((f, i) => (
             f ? (
-              <input key={f.key} type="number" min="0" style={styles.dimensionInput}
-                value={values[f.key] ?? ''} onChange={(e) => onChange(f.key, e.target.value)}
-                readOnly={readOnly} disabled={readOnly} inputMode="numeric" />
+              <input
+                key={f.key}
+                type="number"
+                min="0"
+                style={styles.dimensionInput}
+                value={values[f.key] ?? ''}
+                onChange={(e) => onChange(f.key, e.target.value)}
+                readOnly={readOnly}
+                disabled={readOnly}
+                inputMode="numeric"
+              />
             ) : <div key={i} />
           ))}
         </div>
@@ -865,7 +713,6 @@ function renderDimensionGrid(section, fields, values, onChange, readOnly, isMobi
   );
 }
 
-// Services grid — plain number fields (labeled_grid is Step 2b-3).
 function renderServicesGrid(fields, values, onChange, readOnly, isMobile = false) {
   const manualFields = fields.filter((f) => f.source !== 'computed');
   return (
@@ -876,22 +723,30 @@ function renderServicesGrid(fields, values, onChange, readOnly, isMobile = false
             {f.label}
             {f.helper && <span style={styles.fieldHelper}>{f.helper}</span>}
           </label>
-          <input type="number" min="0" style={styles.serviceInput}
-            value={values[f.key] ?? ''} onChange={(e) => onChange(f.key, e.target.value)}
-            readOnly={readOnly} disabled={readOnly} inputMode="numeric" />
+          <input
+            type="number"
+            min="0"
+            style={styles.serviceInput}
+            value={values[f.key] ?? ''}
+            onChange={(e) => onChange(f.key, e.target.value)}
+            readOnly={readOnly}
+            disabled={readOnly}
+            inputMode="numeric"
+          />
         </div>
       ))}
     </div>
   );
 }
 
-// Footer total — any computed field in the section (e.g. total_handled_requests).
 function renderSectionFooter(section, fields, values) {
-  // A computed field with no subsection is the section aggregate/footer.
-  // (Headcount's computed pct fields have subsections → rendered inline.)
-  const footerField = fields.find((f) => f.source === 'computed' && !f.subsection);
-  if (!footerField) return null;
-  const computedDisplay = computeFieldValue(footerField, values, fields);
+  // Find an explicit footer-total field
+  const footerField = fields.find((f) => f.isFooterTotal);
+  if (!footerField) {
+    // Sections without an explicit footer total: render nothing
+    return null;
+  }
+  const computedDisplay = computeField(footerField, values);
   const empty = computedDisplay === '—';
   return (
     <div style={styles.sectionFooter}>
@@ -903,12 +758,15 @@ function renderSectionFooter(section, fields, values) {
   );
 }
 
-// FieldCell — single field (manual or computed), identical to live.
-function FieldCell({ field, values, onChange, readOnly, allFields }) {
+// =============================================
+// FieldCell — single field render (manual or computed)
+// =============================================
+function FieldCell({ field, values, onChange, readOnly }) {
   const isComputed = field.source === 'computed';
-  const display = isComputed ? computeFieldValue(field, values, allFields) : null;
+  const display = isComputed ? computeField(field, values) : null;
   const isEmptyComputed = isComputed && display === '—';
 
+  // Build Entry-view inline target helper: "(target: 85%)" per Q3
   const targetHelper = field.target
     ? `(target: ${formatValue(field, field.target.value)})`
     : null;
@@ -917,145 +775,51 @@ function FieldCell({ field, values, onChange, readOnly, allFields }) {
     <div style={styles.field}>
       <label style={styles.fieldLabel}>
         {field.label}
-        {targetHelper && (<span style={styles.fieldHelper}>{targetHelper}</span>)}
-        {field.helper && !targetHelper && (<span style={styles.fieldHelper}>{field.helper}</span>)}
+        {field.required && <span style={styles.req}>*</span>}
+        {targetHelper && (
+          <span style={styles.fieldHelper}>{targetHelper}</span>
+        )}
+        {field.helper && !targetHelper && (
+          <span style={styles.fieldHelper}>{field.helper}</span>
+        )}
       </label>
       <div style={styles.inputWrap}>
         {isComputed ? (
-          <input type="text" readOnly value={display}
-            style={{ ...styles.input, ...styles.inputComputed, ...(isEmptyComputed ? styles.inputComputedEmpty : {}) }} />
+          <input
+            type="text"
+            readOnly
+            value={display}
+            style={{
+              ...styles.input,
+              ...styles.inputComputed,
+              ...(isEmptyComputed ? styles.inputComputedEmpty : {}),
+            }}
+          />
         ) : (
-          <input type="number" min="0"
-            step={field.step || (field.type === 'percentage' ? '0.1' : '1')}
-            value={values[field.key] ?? ''} onChange={(e) => onChange(field.key, e.target.value)}
-            readOnly={readOnly} disabled={readOnly} inputMode="decimal" style={styles.input} />
+          <input
+            type="number"
+            min="0"
+            step={field.step || (field.dataType === 'percentage' ? '0.1' : '1')}
+            value={values[field.key] ?? ''}
+            onChange={(e) => onChange(field.key, e.target.value)}
+            readOnly={readOnly}
+            disabled={readOnly}
+            inputMode="decimal"
+            style={styles.input}
+          />
         )}
-        {field.unit && (<span style={styles.unit}>{field.unit}</span>)}
+        {field.unit && (
+          <span style={styles.unit}>{field.unit}</span>
+        )}
       </div>
     </div>
   );
 }
 
-
+// =============================================
+// STYLES
+// =============================================
 const styles = {
-  // ---- B3b-1 section-edit styles ----
-  editToolbar: {
-    margin: '0 0 18px', padding: '14px 16px',
-    background: 'rgba(243,192,54,0.05)', border: '1px solid rgba(243,192,54,0.2)',
-    borderRadius: 12,
-  },
-  editToolbarRow: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' },
-  addSectionBtn: {
-    padding: '8px 16px', borderRadius: 8, cursor: 'pointer',
-    background: 'linear-gradient(135deg, #F3C036 0%, #ec4899 100%)', border: 'none',
-    color: '#1a1028', fontFamily: 'inherit', fontSize: 13, fontWeight: 700,
-  },
-  addSectionForm: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
-  addSectionInput: {
-    padding: '8px 12px', borderRadius: 8, minWidth: 180,
-    background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.15)',
-    color: '#fff', fontFamily: 'inherit', fontSize: 13, outline: 'none',
-  },
-  addSectionSelect: {
-    padding: '8px 12px', borderRadius: 8,
-    background: '#2d1f42', border: '1px solid rgba(255,255,255,0.15)',
-    color: '#fff', fontFamily: 'inherit', fontSize: 13, outline: 'none',
-  },
-  showHiddenBtn: {
-    marginLeft: 'auto', padding: '8px 14px', borderRadius: 8, cursor: 'pointer',
-    background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.15)',
-    color: 'rgba(255,255,255,0.8)', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 600,
-  },
-  showHiddenOn: { background: 'rgba(255,255,255,0.1)', color: '#fff' },
-  hiddenList: {
-    marginTop: 12, display: 'flex', flexDirection: 'column', gap: 6,
-  },
-  hiddenEmpty: { fontSize: 12.5, color: 'rgba(255,255,255,0.4)', fontStyle: 'italic' },
-  hiddenRow: {
-    display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
-    padding: '8px 12px', background: 'rgba(0,0,0,0.2)',
-    border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8,
-  },
-  hiddenName: { fontSize: 13, color: 'rgba(255,255,255,0.8)' },
-  hiddenKey: { fontSize: 10.5, color: 'rgba(255,255,255,0.4)', marginLeft: 6, fontFamily: 'monospace' },
-  restoreBtn: {
-    padding: '6px 14px', borderRadius: 6, cursor: 'pointer',
-    background: 'rgba(34,197,94,0.12)', border: '1px solid rgba(34,197,94,0.35)',
-    color: '#86efac', fontFamily: 'inherit', fontSize: 12, fontWeight: 600,
-  },
-  savingHint: { marginLeft: 8, fontSize: 10.5, fontWeight: 600, color: 'rgba(243,192,54,0.8)', fontStyle: 'italic' },
-  sectionEditControls: { display: 'inline-flex', gap: 4, flexShrink: 0, marginRight: 8 },
-  editIconBtn: {
-    width: 30, height: 30, borderRadius: 6, cursor: 'pointer',
-    background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)',
-    color: 'rgba(255,255,255,0.75)', fontFamily: 'inherit', fontSize: 13,
-    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-  },
-  editIconDanger: { background: 'rgba(239,68,68,0.1)', borderColor: 'rgba(239,68,68,0.3)', color: '#fca5a5' },
-  renameRow: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
-  renameInput: {
-    padding: '6px 10px', borderRadius: 6, minWidth: 160,
-    background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(243,192,54,0.5)',
-    color: '#fff', fontFamily: 'inherit', fontSize: 14, fontWeight: 600, outline: 'none',
-  },
-  miniSave: {
-    padding: '6px 12px', borderRadius: 6, cursor: 'pointer',
-    background: 'linear-gradient(135deg, #F3C036 0%, #ec4899 100%)', border: 'none',
-    color: '#1a1028', fontFamily: 'inherit', fontSize: 12, fontWeight: 700,
-  },
-  miniCancel: {
-    padding: '6px 12px', borderRadius: 6, cursor: 'pointer',
-    background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.12)',
-    color: 'rgba(255,255,255,0.7)', fontFamily: 'inherit', fontSize: 12, fontWeight: 600,
-  },
-  // ---- B3b-1 confirm modal (portal) ----
-  modalBackdrop: {
-    position: 'fixed', inset: 0, background: 'rgba(14,8,32,0.72)',
-    backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)',
-    zIndex: 9999, display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
-    padding: '5vh 20px', overflowY: 'auto',
-    fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
-  },
-  modalCard: {
-    position: 'relative', width: '100%', maxWidth: 440,
-    background: 'linear-gradient(135deg, #1a1028 0%, #2d1f42 60%, #3d2856 100%)',
-    border: '1px solid rgba(255,255,255,0.12)', borderRadius: 18,
-    boxShadow: '0 24px 80px rgba(0,0,0,0.6)', color: '#fff', overflow: 'visible',
-  },
-  modalAccent: {
-    position: 'absolute', top: 0, left: 0, right: 0, height: 3, borderRadius: '18px 18px 0 0',
-    background: 'linear-gradient(90deg, #ef4444, #f87171, #fca5a5)',
-  },
-  modalHeader: {
-    padding: '22px 26px 14px', borderBottom: '1px solid rgba(255,255,255,0.06)',
-    display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12,
-  },
-  modalTitle: { fontSize: 18, fontWeight: 700, letterSpacing: '-0.3px' },
-  modalClose: {
-    width: 32, height: 32, flexShrink: 0, borderRadius: 8, cursor: 'pointer',
-    background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)',
-    color: 'rgba(255,255,255,0.6)', fontFamily: 'inherit', fontSize: 14,
-    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-  },
-  modalBody: { padding: '20px 26px', fontSize: 13, color: 'rgba(255,255,255,0.78)', lineHeight: 1.55 },
-  modalFooter: {
-    padding: '14px 26px 22px', display: 'flex', justifyContent: 'flex-end', gap: 10,
-    borderTop: '1px solid rgba(255,255,255,0.06)',
-  },
-  modalDangerBtn: {
-    padding: '10px 18px', borderRadius: 10, cursor: 'pointer', border: 'none',
-    background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)', color: '#fff',
-    fontFamily: 'inherit', fontSize: 12.5, fontWeight: 600,
-    boxShadow: '0 6px 24px rgba(239,68,68,0.3)',
-  },
-  previewBadge: {
-    marginLeft: 'auto',
-    fontSize: 10, fontWeight: 700, letterSpacing: '1px',
-    color: '#F3C036',
-    background: 'rgba(243,192,54,0.12)',
-    border: '1px solid rgba(243,192,54,0.3)',
-    borderRadius: 6, padding: '4px 8px',
-  },
   canvas: {
     position: 'relative',
     maxWidth: 1100,
