@@ -64,8 +64,17 @@ export default function ModuleDataEntry({ config, user, year, month, onStatusCha
   const [renameTitle, setRenameTitle] = useState('');
   const [showHidden, setShowHidden] = useState(false);
   const [confirmDeleteSection, setConfirmDeleteSection] = useState(null); // { id, title } | null
-  const [structureBusy, setStructureBusy] = useState(false);
   const [structureMsg, setStructureMsg] = useState(null);
+
+  // ---- B3b-2 field-edit UI state ----
+  const [addFieldOpenFor, setAddFieldOpenFor] = useState(null); // section.id | null
+  const [newFieldLabel, setNewFieldLabel] = useState({}); // { [sectionId]: string }
+  const [newFieldType, setNewFieldType] = useState({});   // { [sectionId]: type }
+  const [newFieldUnit, setNewFieldUnit] = useState({});   // { [sectionId]: string }
+  const [editingField, setEditingField] = useState(null); // the field row being edited | null
+  const [editFieldForm, setEditFieldForm] = useState({ label: '', type: 'number', unit: '' });
+  const [showHiddenFieldsFor, setShowHiddenFieldsFor] = useState({}); // { [sectionKey]: bool }
+  const [confirmDeleteField, setConfirmDeleteField] = useState(null); // { id, label, sectionKey } | null
 
   const [submission, setSubmission] = useState(null);
   const [values, setValues] = useState({});
@@ -160,16 +169,14 @@ export default function ModuleDataEntry({ config, user, year, month, onStatusCha
     setExpandedSections((prev) => ({ ...prev, [sectionKey]: !prev[sectionKey] }));
   }
 
-  // ---- B3b-1 section-edit handlers (B3b PERF: response-driven local update) ----
-  // Each action makes exactly ONE network call (the mutation) and updates the
-  // local structure state FROM THE RESPONSE (or, for reorder, the sent order).
-  // No getStructure refetch, no targets refetch — targets don't change on a
-  // structure edit. On failure we DON'T apply the local change and surface a
-  // short error, so the screen never drifts from server truth.
+  // ---- B3b section-edit handlers (OPTIMISTIC) ----
+  // Instant local update → one background structureAPI call → revert on error.
+  // NOTE: this delivery (B3b-2) converts the section handlers to the optimistic
+  // pattern AND adds the field handlers below, so both behave identically.
   //
   // patchSections(updater) mutates the preview-owned config.sections in place
-  // (single source the renderer reads). Falls back to onStructureChanged (full
-  // refresh) only if the patch callback wasn't provided.
+  // (single source the renderer reads). Falls back to onStructureChanged only
+  // if the patch callback wasn't provided (never in production).
   function patchSections(updater) {
     if (typeof onStructurePatch === 'function') {
       onStructurePatch(updater);
@@ -178,98 +185,249 @@ export default function ModuleDataEntry({ config, user, year, month, onStatusCha
     }
   }
 
-  // Run one API call; on success apply the local patch + optional message;
-  // on error surface it and apply nothing. Returns true/false.
-  async function runStructureCall(apiCall, applyLocal, successMsg) {
-    setStructureBusy(true);
-    setStructureMsg(null);
-    try {
-      const result = await apiCall();
-      if (applyLocal) applyLocal(result);
-      if (successMsg) setStructureMsg({ type: 'success', text: successMsg });
-      return true;
-    } catch (err) {
-      console.error('[ModuleDataEntry] structure op failed:', err);
-      setStructureMsg({ type: 'error', text: `Structure change failed: ${err.message || 'unknown error'}` });
-      return false;
-    } finally {
-      setStructureBusy(false);
-    }
+  const isTempId = (id) => typeof id === 'string' && id.startsWith('tmp_');
+
+  // Fire an API call in the background. On error, revert to the snapshot and
+  // show an error. UI already reflects the optimistic change before this runs.
+  function fireBackground(apiCall, prevSections, errMsg, onSuccess) {
+    Promise.resolve()
+      .then(apiCall)
+      .then((result) => { if (onSuccess) onSuccess(result); })
+      .catch((err) => {
+        console.error('[ModuleDataEntry] structure op failed (reverting):', err);
+        patchSections(() => prevSections);   // snapshot-and-restore
+        setStructureMsg({ type: 'error', text: `${errMsg}: ${err.message || 'unknown error'}` });
+      });
   }
 
-  async function handleAddSection() {
+  // ===== SECTION handlers (optimistic) =====
+  function handleAddSection() {
     const title = newSectionTitle.trim();
     if (!title) { setStructureMsg({ type: 'error', text: 'Section title cannot be empty.' }); return; }
-    const ok = await runStructureCall(
-      () => structureAPI.createSection(code, { title, layout: newSectionLayout }),
-      // createSection returns the new row → append with empty fields.
-      (row) => patchSections((secs) => [...secs, { ...row, fields: [] }]),
-      'Section added.'
+    const layout = newSectionLayout;
+    const prevSections = (config.sections || []).slice();
+    const tempId = `tmp_${Date.now()}`;
+    const maxOrder = prevSections.reduce((m, s) => Math.max(m, s.sort_order ?? 0), 0);
+
+    setStructureMsg(null);
+    patchSections((secs) => [...secs, {
+      id: tempId, key: tempId, title, layout,
+      sort_order: maxOrder + 1, is_active: true, fields: [], _pending: true,
+    }]);
+    setNewSectionTitle('');
+    setNewSectionLayout('kpi');
+    setAddSectionOpen(false);
+
+    fireBackground(
+      () => structureAPI.createSection(code, { title, layout }),
+      prevSections,
+      'Could not add section',
+      (row) => patchSections((secs) => secs.map((s) => (s.id === tempId ? { ...row, fields: [] } : s)))
     );
-    if (ok) {
-      setNewSectionTitle('');
-      setNewSectionLayout('kpi');
-      setAddSectionOpen(false);
-    }
   }
 
-  async function handleRenameSection(id) {
+  function handleRenameSection(id) {
+    if (isTempId(id)) { setStructureMsg({ type: 'error', text: 'Still saving that section — try again in a moment.' }); return; }
     const title = renameTitle.trim();
     if (!title) { setStructureMsg({ type: 'error', text: 'Section title cannot be empty.' }); return; }
-    const ok = await runStructureCall(
+    const prevSections = (config.sections || []).slice();
+
+    setStructureMsg(null);
+    patchSections((secs) => secs.map((s) => (s.id === id ? { ...s, title } : s)));
+    setRenamingSectionId(null);
+    setRenameTitle('');
+
+    fireBackground(
       () => structureAPI.updateSection(code, id, { title }),
-      // updateSection returns the updated row → replace title/layout/order,
-      // keep the section's existing fields.
-      (row) => patchSections((secs) => secs.map((s) => (
-        s.id === row.id ? { ...s, title: row.title, layout: row.layout, sort_order: row.sort_order, is_active: row.is_active } : s
-      ))),
-      'Section renamed.'
+      prevSections,
+      'Could not rename section'
     );
-    if (ok) {
-      setRenamingSectionId(null);
-      setRenameTitle('');
-    }
   }
 
-  async function handleReorderSection(index, dir) {
+  function handleReorderSection(index, dir) {
     const target = index + dir;
     if (target < 0 || target >= SECTIONS.length) return;
     const ids = SECTIONS.map((s) => s.id);
+    if (ids.some(isTempId)) { setStructureMsg({ type: 'error', text: 'A section is still saving — try again in a moment.' }); return; }
     const [moved] = ids.splice(index, 1);
     ids.splice(target, 0, moved);
-    // reorder returns a count, not rows → apply the SENT order locally,
-    // mirroring the backend's sort_order = (position+1) for active sections.
-    await runStructureCall(
+    const prevSections = (config.sections || []).slice();
+
+    setStructureMsg(null);
+    patchSections((secs) => {
+      const orderByIds = new Map(ids.map((sid, i) => [sid, i + 1]));
+      return secs
+        .map((s) => (orderByIds.has(s.id) ? { ...s, sort_order: orderByIds.get(s.id) } : s))
+        .slice()
+        .sort((a, b) => ((a.sort_order ?? 0) - (b.sort_order ?? 0)));
+    });
+
+    fireBackground(
       () => structureAPI.reorderSections(code, ids),
-      () => patchSections((secs) => {
-        const orderByIds = new Map(ids.map((sid, i) => [sid, i + 1]));
-        return secs
-          .map((s) => (orderByIds.has(s.id) ? { ...s, sort_order: orderByIds.get(s.id) } : s))
-          .slice()
-          .sort((a, b) => ((a.sort_order ?? 0) - (b.sort_order ?? 0)));
-      }),
-      null
+      prevSections,
+      'Could not reorder sections'
     );
   }
 
-  async function handleDeleteSectionConfirmed() {
-    const target = confirmDeleteSection;
+  function handleDeleteSectionConfirmed() {
+    const targetRow = confirmDeleteSection;
     setConfirmDeleteSection(null);
-    if (!target) return;
-    await runStructureCall(
-      () => structureAPI.deleteSection(code, target.id),
-      // delete returns { id } → flip is_active=false locally (moves to hidden).
-      () => patchSections((secs) => secs.map((s) => (s.id === target.id ? { ...s, is_active: false } : s))),
-      'Section hidden.'
+    if (!targetRow) return;
+    if (isTempId(targetRow.id)) { setStructureMsg({ type: 'error', text: 'Still saving that section — try again in a moment.' }); return; }
+    const prevSections = (config.sections || []).slice();
+
+    setStructureMsg(null);
+    patchSections((secs) => secs.map((s) => (s.id === targetRow.id ? { ...s, is_active: false } : s)));
+
+    fireBackground(
+      () => structureAPI.deleteSection(code, targetRow.id),
+      prevSections,
+      'Could not hide section'
     );
   }
 
-  async function handleRestoreSection(id) {
-    await runStructureCall(
+  function handleRestoreSection(id) {
+    if (isTempId(id)) return;
+    const prevSections = (config.sections || []).slice();
+
+    setStructureMsg(null);
+    patchSections((secs) => secs.map((s) => (s.id === id ? { ...s, is_active: true } : s)));
+
+    fireBackground(
       () => structureAPI.restoreSection(code, id),
-      // restore returns the row → flip is_active=true locally.
-      (row) => patchSections((secs) => secs.map((s) => (s.id === (row?.id ?? id) ? { ...s, is_active: true } : s))),
-      'Section restored.'
+      prevSections,
+      'Could not restore section'
+    );
+  }
+
+  // ===== FIELD handlers (B3b-2, optimistic) =====
+  // Patch a single section's fields array by section key.
+  function patchSectionFields(sectionKey, fieldUpdater) {
+    patchSections((secs) => secs.map((s) => (
+      s.key === sectionKey ? { ...s, fields: fieldUpdater(s.fields || []) } : s
+    )));
+  }
+
+  function handleAddField(section) {
+    const label = (newFieldLabel[section.id] || '').trim();
+    if (!label) { setStructureMsg({ type: 'error', text: 'Field label cannot be empty.' }); return; }
+    if (isTempId(section.id)) { setStructureMsg({ type: 'error', text: 'That section is still saving — try again in a moment.' }); return; }
+    const type = newFieldType[section.id] || 'number';
+    const unit = (newFieldUnit[section.id] || '').trim() || null;
+    const prevSections = (config.sections || []).slice();
+    const tempId = `tmp_${Date.now()}`;
+    const sectionFields = (section.fields || []);
+    const maxOrder = sectionFields.reduce((m, f) => Math.max(m, f.sort_order ?? 0), 0);
+
+    setStructureMsg(null);
+    patchSectionFields(section.key, (fields) => [...fields, {
+      id: tempId, key: tempId, label, type, unit,
+      section: section.key, source: 'manual',
+      formula_type: null, formula_args: null, dimension: null,
+      dimension_row: null, dimension_col: null, subsection: null,
+      sort_order: maxOrder + 10, is_active: true, _pending: true,
+    }]);
+    // Reset that section's add-field form.
+    setNewFieldLabel((m) => ({ ...m, [section.id]: '' }));
+    setNewFieldType((m) => ({ ...m, [section.id]: 'number' }));
+    setNewFieldUnit((m) => ({ ...m, [section.id]: '' }));
+    setAddFieldOpenFor(null);
+
+    fireBackground(
+      () => structureAPI.createField(code, section.id, { label, type, unit }),
+      prevSections,
+      'Could not add field',
+      (row) => patchSectionFields(section.key, (fields) => fields.map((f) => (
+        f.id === tempId ? { ...row, section: section.key } : f
+      )))
+    );
+  }
+
+  function handleSaveFieldEdit() {
+    const f = editingField;
+    if (!f) return;
+    if (isTempId(f.id)) { setStructureMsg({ type: 'error', text: 'Still saving that field — try again in a moment.' }); return; }
+    const label = (editFieldForm.label || '').trim();
+    if (!label) { setStructureMsg({ type: 'error', text: 'Field label cannot be empty.' }); return; }
+    const type = editFieldForm.type || f.type;
+    const unit = (editFieldForm.unit || '').trim() || null;
+    const prevSections = (config.sections || []).slice();
+
+    // Only send the simple attributes the form controls. Never touch
+    // formula_type/formula_args/dimension_* — computed + HO/OP editing is B4.
+    const payload = { label, type, unit };
+
+    setStructureMsg(null);
+    patchSectionFields(f.section, (fields) => fields.map((x) => (
+      x.id === f.id ? { ...x, label, type, unit } : x
+    )));
+    setEditingField(null);
+
+    fireBackground(
+      () => structureAPI.updateField(code, f.id, payload),
+      prevSections,
+      'Could not update field'
+    );
+  }
+
+  function handleReorderField(section, index, dir) {
+    const fields = (section.fields || []).filter((f) => f.is_active !== false);
+    const target = index + dir;
+    if (target < 0 || target >= fields.length) return;
+    const ids = fields.map((f) => f.id);
+    if (ids.some(isTempId)) { setStructureMsg({ type: 'error', text: 'A field is still saving — try again in a moment.' }); return; }
+    const [moved] = ids.splice(index, 1);
+    ids.splice(target, 0, moved);
+    const prevSections = (config.sections || []).slice();
+
+    setStructureMsg(null);
+    patchSectionFields(section.key, (allFields) => {
+      const orderByIds = new Map(ids.map((fid, i) => [fid, (i + 1) * 10]));
+      return allFields
+        .map((f) => (orderByIds.has(f.id) ? { ...f, sort_order: orderByIds.get(f.id) } : f))
+        .slice()
+        .sort((a, b) => ((a.sort_order ?? 0) - (b.sort_order ?? 0)));
+    });
+
+    fireBackground(
+      () => structureAPI.reorderFields(code, ids),
+      prevSections,
+      'Could not reorder fields'
+    );
+  }
+
+  function handleDeleteFieldConfirmed() {
+    const target = confirmDeleteField; // { id, label, sectionKey }
+    setConfirmDeleteField(null);
+    if (!target) return;
+    if (isTempId(target.id)) { setStructureMsg({ type: 'error', text: 'Still saving that field — try again in a moment.' }); return; }
+    const prevSections = (config.sections || []).slice();
+
+    setStructureMsg(null);
+    patchSectionFields(target.sectionKey, (fields) => fields.map((f) => (
+      f.id === target.id ? { ...f, is_active: false } : f
+    )));
+
+    fireBackground(
+      () => structureAPI.deleteField(code, target.id),
+      prevSections,
+      'Could not hide field'
+    );
+  }
+
+  function handleRestoreField(sectionKey, id) {
+    if (isTempId(id)) return;
+    const prevSections = (config.sections || []).slice();
+
+    setStructureMsg(null);
+    patchSectionFields(sectionKey, (fields) => fields.map((f) => (
+      f.id === id ? { ...f, is_active: true } : f
+    )));
+
+    fireBackground(
+      () => structureAPI.restoreField(code, id),
+      prevSections,
+      'Could not restore field'
     );
   }
 
@@ -430,7 +588,7 @@ export default function ModuleDataEntry({ config, user, year, month, onStatusCha
         <div style={styles.editToolbar}>
           <div style={styles.editToolbarRow}>
             {!addSectionOpen ? (
-              <button type="button" style={styles.addSectionBtn} disabled={structureBusy} onClick={() => setAddSectionOpen(true)}>
+              <button type="button" style={styles.addSectionBtn} onClick={() => setAddSectionOpen(true)}>
                 + Add Section
               </button>
             ) : (
@@ -451,7 +609,7 @@ export default function ModuleDataEntry({ config, user, year, month, onStatusCha
                   <option value="matrix">matrix</option>
                   <option value="group">group</option>
                 </select>
-                <button type="button" style={styles.miniSave} disabled={structureBusy} onClick={handleAddSection}>Add</button>
+                <button type="button" style={styles.miniSave} onClick={handleAddSection}>Add</button>
                 <button type="button" style={styles.miniCancel} onClick={() => { setAddSectionOpen(false); setNewSectionTitle(''); }}>Cancel</button>
               </div>
             )}
@@ -471,7 +629,7 @@ export default function ModuleDataEntry({ config, user, year, month, onStatusCha
               ) : HIDDEN_SECTIONS.map((s) => (
                 <div key={s.id} style={styles.hiddenRow}>
                   <span style={styles.hiddenName}>{s.title} <span style={styles.hiddenKey}>{s.key}</span></span>
-                  <button type="button" style={styles.restoreBtn} disabled={structureBusy} onClick={() => handleRestoreSection(s.id)}>Restore</button>
+                  <button type="button" style={styles.restoreBtn} onClick={() => handleRestoreSection(s.id)}>Restore</button>
                 </div>
               ))}
             </div>
@@ -512,11 +670,14 @@ export default function ModuleDataEntry({ config, user, year, month, onStatusCha
                         onKeyDown={(e) => { if (e.key === 'Enter') handleRenameSection(section.id); if (e.key === 'Escape') { setRenamingSectionId(null); } }}
                         style={styles.renameInput}
                       />
-                      <button type="button" style={styles.miniSave} disabled={structureBusy} onClick={() => handleRenameSection(section.id)}>Save</button>
+                      <button type="button" style={styles.miniSave} onClick={() => handleRenameSection(section.id)}>Save</button>
                       <button type="button" style={styles.miniCancel} onClick={() => setRenamingSectionId(null)}>Cancel</button>
                     </div>
                   ) : (
-                    <div style={styles.sectionTitle}>{section.title}</div>
+                    <div style={styles.sectionTitle}>
+                      {section.title}
+                      {isTempId(section.id) && <span style={styles.savingHint}>saving…</span>}
+                    </div>
                   )}
                   <div style={styles.sectionMeta}>
                     <span style={styles.progressMini}>
@@ -530,10 +691,10 @@ export default function ModuleDataEntry({ config, user, year, month, onStatusCha
               </div>
               {canEdit && !isRenaming && (
                 <div style={styles.sectionEditControls} onClick={(e) => e.stopPropagation()}>
-                  <button type="button" title="Move up" style={styles.editIconBtn} disabled={structureBusy || sectionIndex === 0} onClick={() => handleReorderSection(sectionIndex, -1)}>↑</button>
-                  <button type="button" title="Move down" style={styles.editIconBtn} disabled={structureBusy || sectionIndex === SECTIONS.length - 1} onClick={() => handleReorderSection(sectionIndex, 1)}>↓</button>
-                  <button type="button" title="Rename" style={styles.editIconBtn} disabled={structureBusy} onClick={() => { setRenamingSectionId(section.id); setRenameTitle(section.title); }}>✎</button>
-                  <button type="button" title="Hide section" style={{ ...styles.editIconBtn, ...styles.editIconDanger }} disabled={structureBusy} onClick={() => setConfirmDeleteSection({ id: section.id, title: section.title })}>🗑</button>
+                  <button type="button" title="Move up" style={styles.editIconBtn} disabled={isTempId(section.id) || sectionIndex === 0} onClick={() => handleReorderSection(sectionIndex, -1)}>↑</button>
+                  <button type="button" title="Move down" style={styles.editIconBtn} disabled={isTempId(section.id) || sectionIndex === SECTIONS.length - 1} onClick={() => handleReorderSection(sectionIndex, 1)}>↓</button>
+                  <button type="button" title="Rename" style={styles.editIconBtn} disabled={isTempId(section.id)} onClick={() => { setRenamingSectionId(section.id); setRenameTitle(section.title); }}>✎</button>
+                  <button type="button" title="Hide section" style={{ ...styles.editIconBtn, ...styles.editIconDanger }} disabled={isTempId(section.id)} onClick={() => setConfirmDeleteSection({ id: section.id, title: section.title })}>🗑</button>
                 </div>
               )}
               <svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"
@@ -546,11 +707,99 @@ export default function ModuleDataEntry({ config, user, year, month, onStatusCha
               <div style={{ ...styles.sectionBody, ...(isMobile ? styles.sectionBodyMobile : {}) }}>
                 {section.layout === 'ho_op'
                   ? renderDimensionGrid(section, fields, values, handleFieldChange, isReadOnly, isMobile)
-                  : section.layout === 'grid'
+                  : (section.layout === 'grid' || section.layout === 'labeled_grid')
                     ? renderServicesGrid(fields, values, handleFieldChange, isReadOnly, isMobile)
                     : renderSubsectionedGrid(fields, values, handleFieldChange, isReadOnly, isMobile)
                 }
                 {renderSectionFooter(section, fields, values)}
+
+                {/* B3b-2 — field-edit controls (admin edit mode only) */}
+                {canEdit && !isTempId(section.id) && (
+                  <div style={styles.fieldEditZone}>
+                    {/* per-field controls (active fields) */}
+                    <div style={styles.fieldEditList}>
+                      {fields.map((f, fieldIndex) => (
+                        <div key={f.id} style={styles.fieldEditRow}>
+                          <span style={styles.fieldEditName}>
+                            {f.label}
+                            {f.dimension_col ? <span style={styles.fieldEditTag}>{String(f.dimension_col).toUpperCase()}</span> : null}
+                            {f.source === 'computed' ? <span style={styles.fieldEditComputedTag}>computed</span> : null}
+                            {isTempId(f.id) && <span style={styles.savingHint}>saving…</span>}
+                          </span>
+                          <span style={styles.fieldEditControls}>
+                            <button type="button" title="Move up" style={styles.editIconBtn} disabled={isTempId(f.id) || fieldIndex === 0} onClick={() => handleReorderField(section, fieldIndex, -1)}>↑</button>
+                            <button type="button" title="Move down" style={styles.editIconBtn} disabled={isTempId(f.id) || fieldIndex === fields.length - 1} onClick={() => handleReorderField(section, fieldIndex, 1)}>↓</button>
+                            <button type="button" title="Edit" style={styles.editIconBtn} disabled={isTempId(f.id)} onClick={() => { setEditingField(f); setEditFieldForm({ label: f.label, type: f.type, unit: f.unit || '' }); }}>✎</button>
+                            <button type="button" title="Hide field" style={{ ...styles.editIconBtn, ...styles.editIconDanger }} disabled={isTempId(f.id)} onClick={() => setConfirmDeleteField({ id: f.id, label: f.label, sectionKey: section.key })}>🗑</button>
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* + Add Field */}
+                    {addFieldOpenFor === section.id ? (
+                      <div style={styles.addFieldForm} onClick={(e) => e.stopPropagation()}>
+                        <input
+                          type="text"
+                          autoFocus
+                          placeholder="Field label"
+                          value={newFieldLabel[section.id] || ''}
+                          onChange={(e) => setNewFieldLabel((m) => ({ ...m, [section.id]: e.target.value }))}
+                          onKeyDown={(e) => { if (e.key === 'Enter') handleAddField(section); if (e.key === 'Escape') setAddFieldOpenFor(null); }}
+                          style={styles.addFieldInput}
+                        />
+                        <select value={newFieldType[section.id] || 'number'} onChange={(e) => setNewFieldType((m) => ({ ...m, [section.id]: e.target.value }))} style={styles.addFieldSelect}>
+                          <option value="number">number</option>
+                          <option value="percentage">percentage</option>
+                          <option value="currency">currency</option>
+                          <option value="text">text</option>
+                          <option value="longtext">longtext</option>
+                          <option value="ratio">ratio</option>
+                        </select>
+                        <input
+                          type="text"
+                          placeholder="unit (opt)"
+                          value={newFieldUnit[section.id] || ''}
+                          onChange={(e) => setNewFieldUnit((m) => ({ ...m, [section.id]: e.target.value }))}
+                          style={styles.addFieldUnit}
+                        />
+                        <button type="button" style={styles.miniSave} onClick={() => handleAddField(section)}>Add</button>
+                        <button type="button" style={styles.miniCancel} onClick={() => setAddFieldOpenFor(null)}>Cancel</button>
+                      </div>
+                    ) : (
+                      <button type="button" style={styles.addFieldBtn} onClick={() => setAddFieldOpenFor(section.id)}>+ Add Field</button>
+                    )}
+
+                    {/* Show hidden fields */}
+                    {(() => {
+                      const hiddenFields = (section.fields || []).filter((f) => f.is_active === false);
+                      const shown = !!showHiddenFieldsFor[section.key];
+                      return (
+                        <>
+                          <button
+                            type="button"
+                            style={styles.showHiddenFieldsBtn}
+                            onClick={() => setShowHiddenFieldsFor((m) => ({ ...m, [section.key]: !shown }))}
+                          >
+                            {shown ? 'Hide hidden fields' : `Show hidden fields${hiddenFields.length ? ` (${hiddenFields.length})` : ''}`}
+                          </button>
+                          {shown && (
+                            <div style={styles.hiddenList}>
+                              {hiddenFields.length === 0 ? (
+                                <div style={styles.hiddenEmpty}>No hidden fields.</div>
+                              ) : hiddenFields.map((f) => (
+                                <div key={f.id} style={styles.hiddenRow}>
+                                  <span style={styles.hiddenName}>{f.label} <span style={styles.hiddenKey}>{f.key}</span></span>
+                                  <button type="button" style={styles.restoreBtn} onClick={() => handleRestoreField(section.key, f.id)}>Restore</button>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </>
+                      );
+                    })()}
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -589,11 +838,111 @@ export default function ModuleDataEntry({ config, user, year, month, onStatusCha
           ? `"${confirmDeleteSection.title}" and its fields will be hidden. Its data is preserved and you can restore it from "Show hidden sections".`
           : ''}
         confirmLabel="Hide section"
-        busy={structureBusy}
+        busy={false}
         onCancel={() => setConfirmDeleteSection(null)}
         onConfirm={handleDeleteSectionConfirmed}
       />
+
+      {/* B3b-2 — confirm hide-field modal */}
+      <ConfirmModal
+        open={!!confirmDeleteField}
+        title="Hide this field?"
+        body={confirmDeleteField
+          ? `"${confirmDeleteField.label}" will be hidden. Its data is preserved and you can restore it from "Show hidden fields".`
+          : ''}
+        confirmLabel="Hide field"
+        busy={false}
+        onCancel={() => setConfirmDeleteField(null)}
+        onConfirm={handleDeleteFieldConfirmed}
+      />
+
+      {/* B3b-2 — edit-field modal (label + type + unit; formula/HO-OP read-only) */}
+      <FieldEditModal
+        field={editingField}
+        form={editFieldForm}
+        setForm={setEditFieldForm}
+        onCancel={() => setEditingField(null)}
+        onSave={handleSaveFieldEdit}
+      />
     </div>
+  );
+}
+
+// =============================================
+// FieldEditModal — B3b-2 (portal). Edits label + type + unit for simple
+// fields. For computed / HO-OP fields, label + unit stay editable but the
+// formula / dimension are shown read-only with a note (editing them is B4).
+// Only the simple attributes are ever sent, so a simple edit never wipes
+// formula_type/formula_args/dimension_*.
+// =============================================
+function FieldEditModal({ field, form, setForm, onCancel, onSave }) {
+  useEffect(() => {
+    if (!field) return undefined;
+    function onKey(e) { if (e.key === 'Escape') onCancel && onCancel(); }
+    document.addEventListener('keydown', onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.removeEventListener('keydown', onKey); document.body.style.overflow = prev; };
+  }, [field, onCancel]);
+
+  if (!field) return null;
+  const isComputed = field.source === 'computed';
+  const isHoOp = field.dimension === 'ho_op';
+  const locked = isComputed || isHoOp;
+
+  return createPortal(
+    <div
+      style={styles.modalBackdrop}
+      onClick={(e) => { if (e.target === e.currentTarget) onCancel && onCancel(); }}
+      role="dialog"
+      aria-modal="true"
+    >
+      <div style={{ ...styles.modalCard, maxWidth: 460 }}>
+        <div style={{ ...styles.modalAccent, background: 'linear-gradient(90deg, #F3C036, #ec4899, #a855f7)' }} />
+        <div style={styles.modalHeader}>
+          <div style={styles.modalTitle}>Edit field</div>
+          <button type="button" aria-label="Close" style={styles.modalClose} onClick={onCancel}>✕</button>
+        </div>
+        <div style={styles.modalBody}>
+          <label style={styles.fieldEditLabel}>Label</label>
+          <input
+            type="text"
+            autoFocus
+            value={form.label}
+            onChange={(e) => setForm((s) => ({ ...s, label: e.target.value }))}
+            style={styles.modalInput}
+          />
+          <label style={styles.fieldEditLabel}>Type</label>
+          <select value={form.type} onChange={(e) => setForm((s) => ({ ...s, type: e.target.value }))} style={styles.modalInput}>
+            <option value="number">number</option>
+            <option value="percentage">percentage</option>
+            <option value="currency">currency</option>
+            <option value="text">text</option>
+            <option value="longtext">longtext</option>
+            <option value="ratio">ratio</option>
+          </select>
+          <label style={styles.fieldEditLabel}>Unit (optional)</label>
+          <input
+            type="text"
+            value={form.unit}
+            onChange={(e) => setForm((s) => ({ ...s, unit: e.target.value }))}
+            placeholder="e.g. %, SR, days"
+            style={styles.modalInput}
+          />
+          {locked && (
+            <div style={styles.fieldLockNote}>
+              {isComputed ? `Formula: ${field.formula_type || '—'} (read-only)` : `Dimension: HO/OP ${field.dimension_col ? `· ${String(field.dimension_col).toUpperCase()}` : ''} (read-only)`}
+              <br />Editing formulas / HO-OP comes later.
+            </div>
+          )}
+        </div>
+        <div style={styles.modalFooter}>
+          <button type="button" style={styles.btnGhost} onClick={onCancel}>Cancel</button>
+          <button type="button" style={styles.miniSaveLarge} onClick={onSave}>Save</button>
+        </div>
+      </div>
+    </div>,
+    document.body
   );
 }
 
@@ -953,6 +1302,70 @@ const styles = {
     padding: '6px 14px', borderRadius: 6, cursor: 'pointer',
     background: 'rgba(34,197,94,0.12)', border: '1px solid rgba(34,197,94,0.35)',
     color: '#86efac', fontFamily: 'inherit', fontSize: 12, fontWeight: 600,
+  },
+  savingHint: { marginLeft: 8, fontSize: 10.5, fontWeight: 600, color: 'rgba(243,192,54,0.8)', fontStyle: 'italic' },
+  // ---- B3b-2 field-edit styles ----
+  fieldEditZone: {
+    marginTop: 14, paddingTop: 14, borderTop: '1px dashed rgba(255,255,255,0.12)',
+    display: 'flex', flexDirection: 'column', gap: 8,
+  },
+  fieldEditList: { display: 'flex', flexDirection: 'column', gap: 4 },
+  fieldEditRow: {
+    display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
+    padding: '6px 10px', background: 'rgba(0,0,0,0.15)',
+    border: '1px solid rgba(255,255,255,0.06)', borderRadius: 6,
+  },
+  fieldEditName: { fontSize: 12.5, color: 'rgba(255,255,255,0.82)', display: 'inline-flex', alignItems: 'center', gap: 6, minWidth: 0 },
+  fieldEditTag: {
+    fontSize: 9, fontWeight: 700, letterSpacing: '0.5px', padding: '1px 5px', borderRadius: 3,
+    background: 'rgba(243,192,54,0.15)', color: '#F3C036',
+  },
+  fieldEditComputedTag: {
+    fontSize: 9, fontWeight: 700, letterSpacing: '0.5px', padding: '1px 5px', borderRadius: 3,
+    background: 'rgba(168,85,247,0.18)', color: '#c4b5fd',
+  },
+  fieldEditControls: { display: 'inline-flex', gap: 4, flexShrink: 0 },
+  addFieldBtn: {
+    alignSelf: 'flex-start', padding: '7px 14px', borderRadius: 8, cursor: 'pointer',
+    background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.15)',
+    color: 'rgba(255,255,255,0.85)', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 600,
+  },
+  addFieldForm: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
+  addFieldInput: {
+    padding: '8px 12px', borderRadius: 8, minWidth: 150, flex: 1,
+    background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.15)',
+    color: '#fff', fontFamily: 'inherit', fontSize: 13, outline: 'none',
+  },
+  addFieldSelect: {
+    padding: '8px 12px', borderRadius: 8,
+    background: '#2d1f42', border: '1px solid rgba(255,255,255,0.15)',
+    color: '#fff', fontFamily: 'inherit', fontSize: 13, outline: 'none',
+  },
+  addFieldUnit: {
+    padding: '8px 12px', borderRadius: 8, width: 100,
+    background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.15)',
+    color: '#fff', fontFamily: 'inherit', fontSize: 13, outline: 'none',
+  },
+  showHiddenFieldsBtn: {
+    alignSelf: 'flex-start', padding: '5px 10px', borderRadius: 6, cursor: 'pointer',
+    background: 'transparent', border: '1px solid rgba(255,255,255,0.1)',
+    color: 'rgba(255,255,255,0.55)', fontFamily: 'inherit', fontSize: 11.5, fontWeight: 600,
+  },
+  fieldEditLabel: { display: 'block', fontSize: 11.5, fontWeight: 600, color: 'rgba(255,255,255,0.75)', margin: '10px 0 5px' },
+  modalInput: {
+    width: '100%', boxSizing: 'border-box', padding: '10px 12px', borderRadius: 8,
+    background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.15)',
+    color: '#fff', fontFamily: 'inherit', fontSize: 14, outline: 'none',
+  },
+  fieldLockNote: {
+    marginTop: 12, padding: '10px 12px', borderRadius: 8,
+    background: 'rgba(168,85,247,0.08)', border: '1px solid rgba(168,85,247,0.25)',
+    color: '#c4b5fd', fontSize: 11.5, lineHeight: 1.5,
+  },
+  miniSaveLarge: {
+    padding: '10px 18px', borderRadius: 10, cursor: 'pointer', border: 'none',
+    background: 'linear-gradient(135deg, #F3C036 0%, #ec4899 100%)', color: '#1a1028',
+    fontFamily: 'inherit', fontSize: 12.5, fontWeight: 700,
   },
   sectionEditControls: { display: 'inline-flex', gap: 4, flexShrink: 0, marginRight: 8 },
   editIconBtn: {
