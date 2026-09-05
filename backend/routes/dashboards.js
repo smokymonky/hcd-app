@@ -1160,6 +1160,9 @@ router.put('/:moduleCode/fields/:id', authenticateToken, isAdmin, async (req, re
     const formulaArgsSql = hasFormulaArgs
       ? (formula_args ? JSON.stringify(formula_args) : null)
       : null;
+    // formula_type: same treatment — allow explicit null so a computed→simple
+    // switch can clear it (COALESCE alone can't null). B4.
+    const hasFormulaType = Object.prototype.hasOwnProperty.call(req.body, 'formula_type');
 
     const r = await pool.query(
       `UPDATE module_fields
@@ -1167,21 +1170,22 @@ router.put('/:moduleCode/fields/:id', authenticateToken, isAdmin, async (req, re
            type = COALESCE($2, type),
            unit = COALESCE($3, unit),
            source = COALESCE($4, source),
-           formula_type = COALESCE($5, formula_type),
-           formula_args = CASE WHEN $6 THEN $7::jsonb ELSE formula_args END,
-           dimension = COALESCE($8, dimension),
-           dimension_row = COALESCE($9, dimension_row),
-           dimension_col = COALESCE($10, dimension_col),
-           subsection = COALESCE($11, subsection),
-           sort_order = COALESCE($12, sort_order),
-           section_id = COALESCE($13, section_id),
+           formula_type = CASE WHEN $5 THEN $6 ELSE formula_type END,
+           formula_args = CASE WHEN $7 THEN $8::jsonb ELSE formula_args END,
+           dimension = COALESCE($9, dimension),
+           dimension_row = COALESCE($10, dimension_row),
+           dimension_col = COALESCE($11, dimension_col),
+           subsection = COALESCE($12, subsection),
+           sort_order = COALESCE($13, sort_order),
+           section_id = COALESCE($14, section_id),
            updated_at = CURRENT_TIMESTAMP
-       WHERE id = $14 AND module_code = $15
+       WHERE id = $15 AND module_code = $16
        RETURNING id, module_code, section_id, key, label, type, unit, dimension, dimension_row,
                  dimension_col, source, formula_type, formula_args, subsection, sort_order, is_active`,
       [
         label !== undefined ? label.trim() : null,
-        type ?? null, unit ?? null, source ?? null, formula_type ?? null,
+        type ?? null, unit ?? null, source ?? null,
+        hasFormulaType, (hasFormulaType ? (formula_type ?? null) : null),
         hasFormulaArgs, formulaArgsSql,
         dimension ?? null, dimension_row ?? null, dimension_col ?? null,
         subsection ?? null, sort_order ?? null, section_id ?? null,
