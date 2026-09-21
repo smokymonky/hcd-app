@@ -822,6 +822,20 @@ router.get('/:moduleCode/structure', authenticateToken, checkModuleAccessParam('
       fieldsBySection[f.section_id].push(f);
     }
 
+    // B3b-3a: subsections per section (active-only unless includeHidden), ordered.
+    const subsRes = await pool.query(
+      `SELECT id, section_id, key, title, sort_order, is_active
+       FROM module_subsections
+       WHERE module_code = $1 ${includeHidden ? '' : 'AND is_active = true'}
+       ORDER BY sort_order ASC, id ASC`,
+      [moduleCode]
+    );
+    const subsBySection = {};
+    for (const ss of subsRes.rows) {
+      if (!subsBySection[ss.section_id]) subsBySection[ss.section_id] = [];
+      subsBySection[ss.section_id].push(ss);
+    }
+
     const sections = sectionsRes.rows.map((s) => ({
       id: s.id,
       key: s.key,
@@ -829,6 +843,13 @@ router.get('/:moduleCode/structure', authenticateToken, checkModuleAccessParam('
       layout: s.layout,
       sort_order: s.sort_order,
       is_active: s.is_active,
+      subsections: (subsBySection[s.id] || []).map((ss) => ({
+        id: ss.id,
+        key: ss.key,
+        title: ss.title,
+        sort_order: ss.sort_order,
+        is_active: ss.is_active,
+      })),
       fields: (fieldsBySection[s.id] || []).map((f) => ({
         id: f.id,
         key: f.key,
@@ -1239,6 +1260,158 @@ router.post('/:moduleCode/fields/:id/restore', authenticateToken, isAdmin, async
   } catch (err) {
     console.error('POST /:moduleCode/fields/:id/restore error:', err);
     res.status(500).json({ error: 'Server error restoring field.' });
+  }
+});
+
+// =============================================
+// DASHBOARD BUILDER (Step B3b-3a) — subsection CRUD (ADMIN ONLY)
+// =============================================
+// Nested groups within a section. Admin-gated, scoped by module_code (+ the
+// parent section on create). Keys IMMUTABLE after create (fields reference
+// them via module_fields.subsection). Soft-delete only. Mirrors the section
+// endpoints (B3a). reorder is declared BEFORE '/subsections/:id' so
+// "reorder" isn't captured as an :id.
+
+// PUT /:moduleCode/subsections/reorder  { orderedIds:[...] }
+router.put('/:moduleCode/subsections/reorder', authenticateToken, isAdmin, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { moduleCode } = req.params;
+    const { orderedIds } = req.body;
+    if (!Array.isArray(orderedIds)) {
+      return res.status(400).json({ error: 'orderedIds must be an array.' });
+    }
+    await client.query('BEGIN');
+    for (let i = 0; i < orderedIds.length; i++) {
+      await client.query(
+        'UPDATE module_subsections SET sort_order = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 AND module_code = $3',
+        [i + 1, orderedIds[i], moduleCode]
+      );
+    }
+    await client.query('COMMIT');
+    res.json({ message: 'Subsections reordered.', count: orderedIds.length });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('PUT /:moduleCode/subsections/reorder error:', err);
+    res.status(500).json({ error: 'Server error reordering subsections.' });
+  } finally {
+    client.release();
+  }
+});
+
+// POST /:moduleCode/sections/:sectionId/subsections  { title, sort_order? }
+router.post('/:moduleCode/sections/:sectionId/subsections', authenticateToken, isAdmin, async (req, res) => {
+  try {
+    const { moduleCode, sectionId } = req.params;
+    const { title, sort_order } = req.body;
+    if (!(await assertModuleExists(moduleCode))) {
+      return res.status(404).json({ error: `Unknown module '${moduleCode}'.` });
+    }
+    // Section must exist and belong to this module.
+    const sec = await pool.query(
+      'SELECT id FROM module_sections WHERE id = $1 AND module_code = $2',
+      [sectionId, moduleCode]
+    );
+    if (sec.rows.length === 0) {
+      return res.status(404).json({ error: 'Section not found for this module.' });
+    }
+    if (!title || !String(title).trim()) {
+      return res.status(400).json({ error: 'title cannot be empty.' });
+    }
+
+    // Unique key within (module, section) across active + inactive.
+    const existing = await pool.query(
+      'SELECT key FROM module_subsections WHERE module_code = $1 AND section_id = $2',
+      [moduleCode, sectionId]
+    );
+    const usedKeys = new Set(existing.rows.map((r) => r.key));
+    const finalKey = uniqueKey(slugify(title), usedKeys);
+
+    let order = sort_order;
+    if (order == null) {
+      const ord = await pool.query(
+        'SELECT COALESCE(MAX(sort_order), 0) + 1 AS next FROM module_subsections WHERE module_code = $1 AND section_id = $2 AND is_active = true',
+        [moduleCode, sectionId]
+      );
+      order = ord.rows[0].next;
+    }
+
+    const r = await pool.query(
+      `INSERT INTO module_subsections (module_code, section_id, key, title, sort_order, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING id, module_code, section_id, key, title, sort_order, is_active`,
+      [moduleCode, sectionId, finalKey, title.trim(), order, req.user.id]
+    );
+    res.status(201).json(r.rows[0]);
+  } catch (err) {
+    console.error('POST /:moduleCode/sections/:sectionId/subsections error:', err);
+    res.status(500).json({ error: 'Server error creating subsection.' });
+  }
+});
+
+// PUT /:moduleCode/subsections/:id  { title?, sort_order? }  (key IMMUTABLE)
+router.put('/:moduleCode/subsections/:id', authenticateToken, isAdmin, async (req, res) => {
+  try {
+    const { moduleCode, id } = req.params;
+    const { title, sort_order } = req.body;
+    if (title !== undefined && !String(title).trim()) {
+      return res.status(400).json({ error: 'title cannot be empty.' });
+    }
+    const r = await pool.query(
+      `UPDATE module_subsections
+       SET title = COALESCE($1, title),
+           sort_order = COALESCE($2, sort_order),
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = $3 AND module_code = $4
+       RETURNING id, module_code, section_id, key, title, sort_order, is_active`,
+      [title !== undefined ? title.trim() : null, sort_order ?? null, id, moduleCode]
+    );
+    if (r.rows.length === 0) {
+      return res.status(404).json({ error: 'Subsection not found for this module.' });
+    }
+    res.json(r.rows[0]);
+  } catch (err) {
+    console.error('PUT /:moduleCode/subsections/:id error:', err);
+    res.status(500).json({ error: 'Server error updating subsection.' });
+  }
+});
+
+// DELETE /:moduleCode/subsections/:id  → soft-hide (fields keep their tag)
+router.delete('/:moduleCode/subsections/:id', authenticateToken, isAdmin, async (req, res) => {
+  try {
+    const { moduleCode, id } = req.params;
+    const r = await pool.query(
+      `UPDATE module_subsections SET is_active = false, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $1 AND module_code = $2 RETURNING id`,
+      [id, moduleCode]
+    );
+    if (r.rows.length === 0) {
+      return res.status(404).json({ error: 'Subsection not found for this module.' });
+    }
+    res.json({ message: 'Subsection hidden.', id: r.rows[0].id });
+  } catch (err) {
+    console.error('DELETE /:moduleCode/subsections/:id error:', err);
+    res.status(500).json({ error: 'Server error hiding subsection.' });
+  }
+});
+
+// POST /:moduleCode/subsections/:id/restore
+router.post('/:moduleCode/subsections/:id/restore', authenticateToken, isAdmin, async (req, res) => {
+  try {
+    const { moduleCode, id } = req.params;
+    const r = await pool.query(
+      `UPDATE module_subsections SET is_active = true, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $1 AND module_code = $2
+       RETURNING id, module_code, section_id, key, title, sort_order, is_active`,
+      [id, moduleCode]
+    );
+    if (r.rows.length === 0) {
+      return res.status(404).json({ error: 'Subsection not found for this module.' });
+    }
+    res.json(r.rows[0]);
+  } catch (err) {
+    console.error('POST /:moduleCode/subsections/:id/restore error:', err);
+    res.status(500).json({ error: 'Server error restoring subsection.' });
   }
 });
 
