@@ -330,6 +330,10 @@ const initDatabase = async () => {
     await pool.query('ALTER TABLE role_permissions ADD COLUMN IF NOT EXISTS can_publish_dashboard BOOLEAN DEFAULT false');
     await pool.query('ALTER TABLE role_permissions ADD COLUMN IF NOT EXISTS can_view_dashboard BOOLEAN DEFAULT true');
 
+    // DASHBOARD BUILDER (B5-1): module_fields.featured — marks a field for the
+    // snapshot hero row. Idempotent; existing rows default false.
+    await pool.query('ALTER TABLE module_fields ADD COLUMN IF NOT EXISTS featured BOOLEAN DEFAULT false');
+
     // =============================================
     // ACCESS MGMT: source tag on user_module_access ('auto' | 'manual').
     // Idempotent migration for the existing prod table. Existing rows were
@@ -625,6 +629,25 @@ const initDatabase = async () => {
       }
     } else {
       console.log('[Builder B3b-3a] HR_OPS subsections already exist — skipping subsection seed.');
+    }
+
+    // =============================================
+    // DASHBOARD BUILDER (B5-1): Seed HR_OPS snapshot hero fields (idempotent)
+    // =============================================
+    // Mark the 4 headline fields featured=true for the snapshot hero row.
+    // Guard on whether ANY HR_OPS field is already featured, so this runs once.
+    const existingFeatured = await pool.query(
+      "SELECT 1 FROM module_fields WHERE module_code = 'HR_OPS' AND featured = true LIMIT 1"
+    );
+    if (existingFeatured.rowCount === 0) {
+      const heroKeys = ['saudization_pct', 'turnover_overall_pct', 'total_handled_requests', 'total_employees'];
+      const upd = await pool.query(
+        "UPDATE module_fields SET featured = true WHERE module_code = 'HR_OPS' AND key = ANY($1::text[])",
+        [heroKeys]
+      );
+      console.log(`[Builder B5-1] Marked ${upd.rowCount} HR_OPS fields featured (hero row).`);
+    } else {
+      console.log('[Builder B5-1] HR_OPS featured fields already set — skipping.');
     }
 
     // =============================================
