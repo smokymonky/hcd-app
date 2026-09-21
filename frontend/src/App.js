@@ -6,6 +6,7 @@ import AdminPage from './pages/AdminPage';
 import HubPage from './pages/HubPage';
 import HROpsPage from './pages/HROpsPage';
 import ModuleEntryPreview from './pages/ModuleEntryPreview';
+import ModuleSnapshotPreview from './pages/ModuleSnapshotPreview';
 
 function App() {
   const [user, setUser] = useState(null);
@@ -76,6 +77,11 @@ function App() {
             :view. Live routes above are untouched. Preview URL for HR Ops:
             /hub/preview/HR_OPS/entry-v2 */}
         <Route path="/hub/preview/:moduleCode/entry-v2" element={user ? <ModuleEntryPreview user={user} onLogout={handleLogout} /> : <Navigate to="/login" />} />
+        {/* MODULE ENGINE Step B5-1 — additive generic-snapshot PREVIEW route.
+            Read-only published view rendered from DB structure + published data.
+            Same /hub/preview/* namespace (avoids the HR_OPS/:view capture). The
+            live HROpsSnapshot + /hub/dashboards/HR_OPS/snapshot are untouched. */}
+        <Route path="/hub/preview/:moduleCode/snapshot-v2" element={user ? <ModuleSnapshotPreview user={user} onLogout={handleLogout} /> : <Navigate to="/login" />} />
         <Route path="*" element={<Navigate to={user ? "/dashboard" : "/login"} />} />
       </Routes>
     </BrowserRouter>
