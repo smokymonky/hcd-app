@@ -128,7 +128,7 @@ function renderGrouped(section, fields, values, allFields, isMobile) {
         return (
           <div key={ss.id || ss.key} style={styles.snapSubsection}>
             <div style={styles.snapSubLabel}>{ss.title}</div>
-            <div style={{ ...styles.valueGrid, gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)' }}>
+            <div style={{ ...styles.valueGrid, gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)' }}>
               {gf.map((f) => <ValueCell key={f.key} field={f} values={values} allFields={allFields} />)}
             </div>
           </div>
@@ -137,7 +137,7 @@ function renderGrouped(section, fields, values, allFields, isMobile) {
       {ungrouped.length > 0 && (
         <div style={styles.snapSubsection}>
           {activeSubs.length > 0 && <div style={styles.snapSubLabel}>Other</div>}
-          <div style={{ ...styles.valueGrid, gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)' }}>
+          <div style={{ ...styles.valueGrid, gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)' }}>
             {ungrouped.map((f) => <ValueCell key={f.key} field={f} values={values} allFields={allFields} />)}
           </div>
         </div>
@@ -185,7 +185,7 @@ function renderGrid(section, fields, values, allFields, isMobile) {
   const footer = fields.find((f) => f.source === 'computed' && !f.subsection);
   return (
     <>
-      <div style={{ ...styles.valueGrid, gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(3, 1fr)' }}>
+      <div style={{ ...styles.valueGrid, gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)' }}>
         {manual.map((f) => <ValueCell key={f.key} field={f} values={values} allFields={allFields} />)}
       </div>
       {footer && (
@@ -203,11 +203,14 @@ function ValueCell({ field, values, allFields }) {
   const isComputed = field.source === 'computed';
   const val = displayValue(field, values, allFields);
   const evaln = field.target ? evaluateTarget(field, values[field.key]) : null;
+  const goldValue = isComputed || !!field.target;
   return (
-    <div style={styles.valueCell}>
-      <div style={styles.valueLabel}>{field.label}</div>
-      <div style={{ ...styles.valueNum, ...(isComputed ? styles.valueComputed : {}), ...(field.target ? { color: '#F3C036' } : {}) }}>
-        {val}{field.unit && val !== '—' ? <span style={styles.valueUnit}> {field.unit}</span> : null}
+    <div style={{ ...styles.valueCell, ...(isComputed ? styles.valueCellComputed : {}) }}>
+      <div style={styles.cellRow}>
+        <div style={styles.valueLabel}>{field.label}</div>
+        <div style={{ ...styles.valueNum, ...(goldValue ? { color: '#F3C036' } : {}) }}>
+          {val}{field.unit && val !== '—' ? <span style={styles.valueUnit}> {field.unit}</span> : null}
+        </div>
       </div>
       {evaln && <TargetIndicator evaluation={evaln} />}
     </div>
@@ -222,14 +225,18 @@ const styles = {
     fontSize: 10.5, fontWeight: 700, letterSpacing: '1.5px', textTransform: 'uppercase',
     color: 'rgba(255,255,255,0.5)', marginBottom: 10,
   },
-  valueGrid: { display: 'grid', gap: 14, marginBottom: 4 },
+  valueGrid: { display: 'grid', gap: 12, marginBottom: 4 },
   valueCell: {
-    background: 'rgba(0,0,0,0.18)', border: '1px solid rgba(255,255,255,0.06)',
+    display: 'flex', flexDirection: 'column', gap: 0,
+    background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)',
     borderRadius: 10, padding: '12px 14px',
   },
-  valueLabel: { fontSize: 11, color: 'rgba(255,255,255,0.55)', marginBottom: 6, lineHeight: 1.3 },
-  valueNum: { fontSize: 20, fontWeight: 700, color: '#fff', fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.3px' },
-  valueComputed: { color: 'rgba(243,192,54,0.9)' },
+  valueCellComputed: {
+    background: 'rgba(243,192,54,0.06)', borderColor: 'rgba(243,192,54,0.18)',
+  },
+  cellRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 },
+  valueLabel: { fontSize: 13, color: 'rgba(255,255,255,0.75)' },
+  valueNum: { fontSize: 16, fontWeight: 700, color: '#fff', fontVariantNumeric: 'tabular-nums', textAlign: 'right' },
   valueUnit: { fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.45)' },
   snapFooter: {
     marginTop: 14, paddingTop: 14, borderTop: '1px solid rgba(255,255,255,0.1)',
