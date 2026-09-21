@@ -219,11 +219,11 @@ function ValueCell({ field, values, allFields }) {
 
 
 const styles = {
-  heroUnit: { fontSize: 14, fontWeight: 600, color: 'rgba(255,255,255,0.5)' },
-  snapSubsection: { marginBottom: 18 },
+  heroUnit: { fontSize: 16, fontWeight: 700, color: 'rgba(255,255,255,0.5)' },
+  snapSubsection: { marginBottom: 4 },
   snapSubLabel: {
-    fontSize: 10.5, fontWeight: 700, letterSpacing: '1.5px', textTransform: 'uppercase',
-    color: 'rgba(255,255,255,0.5)', marginBottom: 10,
+    fontSize: 11, fontWeight: 700, letterSpacing: '1.2px', textTransform: 'uppercase',
+    color: 'rgba(255,255,255,0.45)', margin: '18px 0 10px',
   },
   valueGrid: { display: 'grid', gap: 12, marginBottom: 4 },
   valueCell: {
@@ -247,7 +247,7 @@ const styles = {
 
   canvas: {
     position: 'relative', zIndex: 5,
-    maxWidth: 1100, margin: '24px auto 0',
+    maxWidth: 1200, margin: '24px auto 0',
     padding: '0 48px',
     animation: 'hrFadeInUp 0.5s 0.05s ease both',
   },
@@ -338,44 +338,44 @@ const styles = {
   heroGrid: {
     display: 'grid',
     gridTemplateColumns: 'repeat(4, 1fr)',
-    gap: 14, marginBottom: 22,
+    gap: 16, marginBottom: 30,
   },
   heroKpi: {
     position: 'relative',
-    background: 'rgba(255,255,255,0.03)',
+    background: 'rgba(255,255,255,0.04)',
     backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
     border: '1px solid rgba(255,255,255,0.1)',
-    borderRadius: 14,
-    padding: '18px 18px 16px',
+    borderRadius: 16,
+    padding: '20px 22px',
     overflow: 'hidden',
   },
   heroAccent: {
     position: 'absolute', top: 0, left: 0, right: 0,
-    height: 2,
+    height: 3,
     background: 'linear-gradient(90deg, #F3C036, #ec4899, #a855f7)',
   },
   heroLabel: {
-    fontSize: 10, fontWeight: 700,
-    letterSpacing: '1.5px', textTransform: 'uppercase',
-    color: 'rgba(255,255,255,0.55)', marginBottom: 8,
+    fontSize: 11, fontWeight: 700,
+    letterSpacing: '1px', textTransform: 'uppercase',
+    color: 'rgba(255,255,255,0.55)',
   },
   heroValue: {
-    fontSize: 32, fontWeight: 700,
+    fontSize: 38, fontWeight: 800,
     letterSpacing: '-1px', color: '#fff',
     fontVariantNumeric: 'tabular-nums',
-    lineHeight: 1.05, marginBottom: 4,
+    lineHeight: 1.05, marginTop: 8,
   },
   heroSub: {
-    fontSize: 11, color: 'rgba(255,255,255,0.5)', fontWeight: 500,
+    fontSize: 12, color: 'rgba(255,255,255,0.5)', fontWeight: 500, marginTop: 6,
   },
 
   snapSection: {
     background: 'rgba(255,255,255,0.03)',
     backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
     border: '1px solid rgba(255,255,255,0.1)',
-    borderRadius: 16,
-    padding: '22px 24px',
-    marginBottom: 18,
+    borderRadius: 18,
+    padding: '22px 26px',
+    marginBottom: 20,
     position: 'relative', overflow: 'hidden',
   },
   snapSectionMobile: {
@@ -385,10 +385,11 @@ const styles = {
     position: 'absolute', top: 0, left: 0, right: 0,
     height: 3,
     background: 'linear-gradient(90deg, #F3C036, #ec4899, #a855f7)',
+    opacity: 0.7,
   },
   snapTitle: {
-    fontSize: 14, fontWeight: 700, letterSpacing: '-0.1px',
-    marginBottom: 16,
+    fontSize: 18, fontWeight: 700, letterSpacing: '-0.2px',
+    marginBottom: 4,
     display: 'flex', alignItems: 'center', gap: 10,
   },
   snapTitleAccent: {
@@ -436,23 +437,22 @@ const styles = {
     display: 'grid',
     gridTemplateColumns: '1fr 1fr 1fr',
     gap: 12,
-    padding: '4px 14px',
+    padding: '0 14px 2px',
   },
   hoOpRow: {
     display: 'grid',
     gridTemplateColumns: '1fr 1fr 1fr',
     gap: 12,
-    padding: '10px 14px',
-    background: 'rgba(0,0,0,0.15)',
-    border: '1px solid rgba(255,255,255,0.04)',
-    borderRadius: 10, marginBottom: 6, alignItems: 'center',
+    padding: '11px 14px',
+    background: 'rgba(255,255,255,0.03)',
+    borderRadius: 10, marginBottom: 8, alignItems: 'center',
   },
   hoOpLabel: {
-    fontSize: 12.5, fontWeight: 500, color: 'rgba(255,255,255,0.85)',
+    fontSize: 14, fontWeight: 500, color: 'rgba(255,255,255,0.8)',
   },
   hoOpNum: {
     fontSize: 14, fontWeight: 700, color: '#fff',
-    textAlign: 'center', fontVariantNumeric: 'tabular-nums',
+    textAlign: 'right', fontVariantNumeric: 'tabular-nums',
   },
   hoOpPct: {
     color: 'rgba(243,192,54,0.7)', fontSize: 11, fontWeight: 600,
@@ -460,8 +460,8 @@ const styles = {
   },
   hoOpColHead: {
     fontSize: 10, fontWeight: 700,
-    letterSpacing: '1.5px', textTransform: 'uppercase',
-    color: 'rgba(243,192,54,0.6)', textAlign: 'center',
+    letterSpacing: '1px', textTransform: 'uppercase',
+    color: 'rgba(255,255,255,0.4)', textAlign: 'right',
   },
 
   servicesGrid: {
