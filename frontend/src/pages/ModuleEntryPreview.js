@@ -114,6 +114,16 @@ export default function ModuleEntryPreview({ user, onLogout }) {
           layout: s.layout,
           sort_order: s.sort_order,
           is_active: s.is_active,
+          // B3b-3b: carry the section's subsections (groups) through to the
+          // renderer. Present when the backend (B3b-3a) returns them; empty
+          // array otherwise. includeHidden in edit mode brings hidden groups.
+          subsections: (s.subsections || []).map((ss) => ({
+            id: ss.id,
+            key: ss.key,
+            title: ss.title,
+            sort_order: ss.sort_order,
+            is_active: ss.is_active,
+          })),
           fields: (s.fields || []).map((f) => ({
             ...f,
             section: s.key,
