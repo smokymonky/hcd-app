@@ -6,7 +6,7 @@ import {
   buildYearOptions,
   buildMonthOptions,
 } from '../engine/computers';
-import { dashboardsAPI, structureAPI } from '../services/api';
+import { dashboardsAPI, structureAPI, subsectionsAPI } from '../services/api';
 import Dropdown from './Dropdown';
 
 // =============================================
@@ -74,12 +74,21 @@ export default function ModuleDataEntry({ config, user, year, month, onStatusCha
   const [newFieldLabel, setNewFieldLabel] = useState({}); // { [sectionId]: string }
   const [newFieldType, setNewFieldType] = useState({});   // { [sectionId]: type }
   const [newFieldUnit, setNewFieldUnit] = useState({});   // { [sectionId]: string }
+  const [newFieldGroup, setNewFieldGroup] = useState({}); // { [sectionId]: subsection key | '' }
   // B4 — calculated-field draft for the Add form (one add form open at a time).
   const [addCalc, setAddCalc] = useState({ formula_type: '', formula_args: {}, displayType: 'number' });
   const [editingField, setEditingField] = useState(null); // the field row being edited | null
   const [editFieldForm, setEditFieldForm] = useState({ label: '', type: 'number', unit: '' });
   const [showHiddenFieldsFor, setShowHiddenFieldsFor] = useState({}); // { [sectionKey]: bool }
   const [confirmDeleteField, setConfirmDeleteField] = useState(null); // { id, label, sectionKey } | null
+
+  // ---- B3b-3b subsection (group) edit state ----
+  const [addGroupOpenFor, setAddGroupOpenFor] = useState(null);   // section.id | null
+  const [newGroupTitle, setNewGroupTitle] = useState('');
+  const [renamingSubId, setRenamingSubId] = useState(null);
+  const [renameSubTitle, setRenameSubTitle] = useState('');
+  const [showHiddenGroupsFor, setShowHiddenGroupsFor] = useState({}); // { [sectionKey]: bool }
+  const [confirmDeleteSub, setConfirmDeleteSub] = useState(null);  // { id, title, sectionKey } | null
 
   const [submission, setSubmission] = useState(null);
   const [values, setValues] = useState({});
@@ -320,6 +329,7 @@ export default function ModuleDataEntry({ config, user, year, month, onStatusCha
     const sel = newFieldType[section.id] || 'number';
     const isCalc = sel === 'calculated';
     const unit = (newFieldUnit[section.id] || '').trim() || null;
+    const groupKey = (newFieldGroup[section.id] || '') || null; // chosen subsection key or none
     const prevSections = (config.sections || []).slice();
     const tempId = `tmp_${Date.now()}`;
     const sectionFields = (section.fields || []);
@@ -344,19 +354,20 @@ export default function ModuleDataEntry({ config, user, year, month, onStatusCha
       id: tempId, key: tempId, label, type: displayType, unit,
       section: section.key, source,
       formula_type, formula_args, dimension: null,
-      dimension_row: null, dimension_col: null, subsection: null,
+      dimension_row: null, dimension_col: null, subsection: groupKey,
       sort_order: maxOrder + 10, is_active: true, _pending: true,
     }]);
     // Reset that section's add-field form.
     setNewFieldLabel((m) => ({ ...m, [section.id]: '' }));
     setNewFieldType((m) => ({ ...m, [section.id]: 'number' }));
     setNewFieldUnit((m) => ({ ...m, [section.id]: '' }));
+    setNewFieldGroup((m) => ({ ...m, [section.id]: '' }));
     setAddCalc({ formula_type: '', formula_args: {}, displayType: 'number' });
     setAddFieldOpenFor(null);
 
     const payload = isCalc
-      ? { label, type: displayType, unit, source: 'computed', formula_type, formula_args }
-      : { label, type: displayType, unit };
+      ? { label, type: displayType, unit, source: 'computed', formula_type, formula_args, subsection: groupKey }
+      : { label, type: displayType, unit, subsection: groupKey };
 
     fireBackground(
       () => structureAPI.createField(code, section.id, payload),
@@ -377,6 +388,7 @@ export default function ModuleDataEntry({ config, user, year, month, onStatusCha
     const unit = (editFieldForm.unit || '').trim() || null;
     const prevSections = (config.sections || []).slice();
     const isCalc = editFieldForm.type === 'calculated';
+    const groupKey = (editFieldForm.subsection || '') || null; // chosen group key or none
 
     let payload;
     let localPatch;
@@ -389,13 +401,14 @@ export default function ModuleDataEntry({ config, user, year, month, onStatusCha
       payload = {
         label, type: displayType, unit, source: 'computed',
         formula_type: editFieldForm.formula_type, formula_args: editFieldForm.formula_args,
+        subsection: groupKey,
       };
-      localPatch = { label, type: displayType, unit, source: 'computed', formula_type: editFieldForm.formula_type, formula_args: editFieldForm.formula_args };
+      localPatch = { label, type: displayType, unit, source: 'computed', formula_type: editFieldForm.formula_type, formula_args: editFieldForm.formula_args, subsection: groupKey };
     } else {
       // Simple field. If it WAS computed, null out the formula on the switch.
       const type = editFieldForm.type || f.type;
-      payload = { label, type, unit, source: 'manual', formula_type: null, formula_args: null };
-      localPatch = { label, type, unit, source: 'manual', formula_type: null, formula_args: null };
+      payload = { label, type, unit, source: 'manual', formula_type: null, formula_args: null, subsection: groupKey };
+      localPatch = { label, type, unit, source: 'manual', formula_type: null, formula_args: null, subsection: groupKey };
     }
 
     setStructureMsg(null);
@@ -469,6 +482,114 @@ export default function ModuleDataEntry({ config, user, year, month, onStatusCha
       () => structureAPI.restoreField(code, id),
       prevSections,
       'Could not restore field'
+    );
+  }
+
+  // ===== SUBSECTION (group) handlers (B3b-3b, optimistic) =====
+  function patchSectionSubsections(sectionKey, subUpdater) {
+    patchSections((secs) => secs.map((s) => (
+      s.key === sectionKey ? { ...s, subsections: subUpdater(s.subsections || []) } : s
+    )));
+  }
+
+  function handleAddSubsection(section) {
+    const title = newGroupTitle.trim();
+    if (!title) { setStructureMsg({ type: 'error', text: 'Group title cannot be empty.' }); return; }
+    if (isTempId(section.id)) { setStructureMsg({ type: 'error', text: 'That section is still saving — try again in a moment.' }); return; }
+    const prevSections = (config.sections || []).slice();
+    const tempId = `tmp_${Date.now()}`;
+    const subs = (section.subsections || []);
+    const maxOrder = subs.reduce((m, ss) => Math.max(m, ss.sort_order ?? 0), 0);
+
+    setStructureMsg(null);
+    patchSectionSubsections(section.key, (list) => [...list, {
+      id: tempId, key: tempId, title, sort_order: maxOrder + 1, is_active: true, _pending: true,
+    }]);
+    setNewGroupTitle('');
+    setAddGroupOpenFor(null);
+
+    fireBackground(
+      () => subsectionsAPI.createSubsection(code, section.id, { title }),
+      prevSections,
+      'Could not add group',
+      (row) => patchSectionSubsections(section.key, (list) => list.map((ss) => (ss.id === tempId ? { ...row } : ss)))
+    );
+  }
+
+  function handleRenameSubsection(sectionKey, id) {
+    if (isTempId(id)) { setStructureMsg({ type: 'error', text: 'Still saving that group — try again in a moment.' }); return; }
+    const title = renameSubTitle.trim();
+    if (!title) { setStructureMsg({ type: 'error', text: 'Group title cannot be empty.' }); return; }
+    const prevSections = (config.sections || []).slice();
+
+    setStructureMsg(null);
+    patchSectionSubsections(sectionKey, (list) => list.map((ss) => (ss.id === id ? { ...ss, title } : ss)));
+    setRenamingSubId(null);
+    setRenameSubTitle('');
+
+    fireBackground(
+      () => subsectionsAPI.updateSubsection(code, id, { title }),
+      prevSections,
+      'Could not rename group'
+    );
+  }
+
+  function handleReorderSubsection(section, index, dir) {
+    const active = (section.subsections || []).filter((ss) => ss.is_active !== false);
+    const target = index + dir;
+    if (target < 0 || target >= active.length) return;
+    const ids = active.map((ss) => ss.id);
+    if (ids.some(isTempId)) { setStructureMsg({ type: 'error', text: 'A group is still saving — try again in a moment.' }); return; }
+    const [moved] = ids.splice(index, 1);
+    ids.splice(target, 0, moved);
+    const prevSections = (config.sections || []).slice();
+
+    setStructureMsg(null);
+    patchSectionSubsections(section.key, (list) => {
+      const orderByIds = new Map(ids.map((sid, i) => [sid, i + 1]));
+      return list
+        .map((ss) => (orderByIds.has(ss.id) ? { ...ss, sort_order: orderByIds.get(ss.id) } : ss))
+        .slice()
+        .sort((a, b) => ((a.sort_order ?? 0) - (b.sort_order ?? 0)));
+    });
+
+    fireBackground(
+      () => subsectionsAPI.reorderSubsections(code, ids),
+      prevSections,
+      'Could not reorder groups'
+    );
+  }
+
+  function handleDeleteSubsectionConfirmed() {
+    const target = confirmDeleteSub; // { id, title, sectionKey }
+    setConfirmDeleteSub(null);
+    if (!target) return;
+    if (isTempId(target.id)) { setStructureMsg({ type: 'error', text: 'Still saving that group — try again in a moment.' }); return; }
+    const prevSections = (config.sections || []).slice();
+
+    // Optimistic: flip is_active=false — its fields fall into the ungrouped bucket
+    // (they keep their subsection tag; the hidden group just stops showing a header).
+    setStructureMsg(null);
+    patchSectionSubsections(target.sectionKey, (list) => list.map((ss) => (ss.id === target.id ? { ...ss, is_active: false } : ss)));
+
+    fireBackground(
+      () => subsectionsAPI.deleteSubsection(code, target.id),
+      prevSections,
+      'Could not hide group'
+    );
+  }
+
+  function handleRestoreSubsection(sectionKey, id) {
+    if (isTempId(id)) return;
+    const prevSections = (config.sections || []).slice();
+
+    setStructureMsg(null);
+    patchSectionSubsections(sectionKey, (list) => list.map((ss) => (ss.id === id ? { ...ss, is_active: true } : ss)));
+
+    fireBackground(
+      () => subsectionsAPI.restoreSubsection(code, id),
+      prevSections,
+      'Could not restore group'
     );
   }
 
@@ -592,6 +713,127 @@ export default function ModuleDataEntry({ config, user, year, month, onStatusCha
     if (typeof onPeriodChange === 'function') {
       onPeriodChange(Number(nextYear), Number(nextMonth));
     }
+  }
+
+  // B3b-3b — grouped body for kpi/default-layout sections. Groups fields by
+  // field.subsection, ordering groups by the section's ACTIVE subsections
+  // (DB order + titles), then an "Ungrouped" bucket for fields with no
+  // subsection or one that points to a hidden/removed group. Edit mode adds
+  // per-group rename/reorder/delete + "Show hidden groups" + "+ Add Group".
+  function renderGroupedBody(section, fields) {
+    const activeSubs = (section.subsections || [])
+      .filter((ss) => ss.is_active !== false)
+      .slice()
+      .sort((a, b) => ((a.sort_order ?? 0) - (b.sort_order ?? 0)));
+    const activeSubKeys = new Set(activeSubs.map((ss) => ss.key));
+
+    const fieldsByKey = {};
+    for (const f of fields) {
+      const k = (f.subsection && activeSubKeys.has(f.subsection)) ? f.subsection : '__ungrouped__';
+      if (!fieldsByKey[k]) fieldsByKey[k] = [];
+      fieldsByKey[k].push(f);
+    }
+    const ungrouped = fieldsByKey.__ungrouped__ || [];
+    const hiddenSubs = (section.subsections || []).filter((ss) => ss.is_active === false);
+    const showHidden = !!showHiddenGroupsFor[section.key];
+
+    return (
+      <>
+        {activeSubs.map((ss, subIndex) => {
+          const groupFields = fieldsByKey[ss.key] || [];
+          const isRenaming = renamingSubId === ss.id;
+          return (
+            <div key={ss.id} style={styles.subsection}>
+              <div style={styles.subsectionHeaderRow}>
+                {isRenaming ? (
+                  <div style={styles.renameRow}>
+                    <input
+                      type="text" autoFocus value={renameSubTitle}
+                      onChange={(e) => setRenameSubTitle(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') handleRenameSubsection(section.key, ss.id); if (e.key === 'Escape') setRenamingSubId(null); }}
+                      style={styles.renameInput}
+                    />
+                    <button type="button" style={styles.miniSave} onClick={() => handleRenameSubsection(section.key, ss.id)}>Save</button>
+                    <button type="button" style={styles.miniCancel} onClick={() => setRenamingSubId(null)}>Cancel</button>
+                  </div>
+                ) : (
+                  <div style={styles.subsectionLabel}>
+                    {ss.title}
+                    {isTempId(ss.id) && <span style={styles.savingHint}>saving…</span>}
+                  </div>
+                )}
+                {canEdit && !isRenaming && (
+                  <span style={styles.sectionEditControls}>
+                    <button type="button" title="Move up" style={styles.editIconBtn} disabled={isTempId(ss.id) || subIndex === 0} onClick={() => handleReorderSubsection(section, subIndex, -1)}>↑</button>
+                    <button type="button" title="Move down" style={styles.editIconBtn} disabled={isTempId(ss.id) || subIndex === activeSubs.length - 1} onClick={() => handleReorderSubsection(section, subIndex, 1)}>↓</button>
+                    <button type="button" title="Rename" style={styles.editIconBtn} disabled={isTempId(ss.id)} onClick={() => { setRenamingSubId(ss.id); setRenameSubTitle(ss.title); }}>✎</button>
+                    <button type="button" title="Hide group" style={{ ...styles.editIconBtn, ...styles.editIconDanger }} disabled={isTempId(ss.id)} onClick={() => setConfirmDeleteSub({ id: ss.id, title: ss.title, sectionKey: section.key })}>🗑</button>
+                  </span>
+                )}
+              </div>
+              <div style={{ ...styles.fieldGrid, ...(isMobile ? styles.fieldGridMobile : {}) }}>
+                {groupFields.map((f) => (
+                  <FieldCell key={f.key} field={f} values={values} onChange={handleFieldChange} readOnly={isReadOnly} allFields={fields} />
+                ))}
+              </div>
+              {groupFields.length === 0 && <div style={styles.groupEmpty}>No fields in this group yet.</div>}
+            </div>
+          );
+        })}
+
+        {ungrouped.length > 0 && (
+          <div style={styles.subsection}>
+            {activeSubs.length > 0 && <div style={styles.subsectionLabel}>Ungrouped</div>}
+            <div style={{ ...styles.fieldGrid, ...(isMobile ? styles.fieldGridMobile : {}) }}>
+              {ungrouped.map((f) => (
+                <FieldCell key={f.key} field={f} values={values} onChange={handleFieldChange} readOnly={isReadOnly} allFields={fields} />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* B3b-3b — group (subsection) edit controls */}
+        {canEdit && !isTempId(section.id) && (
+          <div style={styles.groupEditZone}>
+            {addGroupOpenFor === section.id ? (
+              <div style={styles.addFieldForm} onClick={(e) => e.stopPropagation()}>
+                <input
+                  type="text" autoFocus placeholder="Group title"
+                  value={newGroupTitle}
+                  onChange={(e) => setNewGroupTitle(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleAddSubsection(section); if (e.key === 'Escape') setAddGroupOpenFor(null); }}
+                  style={styles.addFieldInput}
+                />
+                <button type="button" style={styles.miniSave} onClick={() => handleAddSubsection(section)}>Add</button>
+                <button type="button" style={styles.miniCancel} onClick={() => { setAddGroupOpenFor(null); setNewGroupTitle(''); }}>Cancel</button>
+              </div>
+            ) : (
+              <button type="button" style={styles.addFieldBtn} onClick={() => { setAddGroupOpenFor(section.id); setNewGroupTitle(''); }}>+ Add Group (subsection)</button>
+            )}
+
+            <button
+              type="button"
+              style={styles.showHiddenFieldsBtn}
+              onClick={() => setShowHiddenGroupsFor((m) => ({ ...m, [section.key]: !showHidden }))}
+            >
+              {showHidden ? 'Hide hidden groups' : `Show hidden groups${hiddenSubs.length ? ` (${hiddenSubs.length})` : ''}`}
+            </button>
+            {showHidden && (
+              <div style={styles.hiddenList}>
+                {hiddenSubs.length === 0 ? (
+                  <div style={styles.hiddenEmpty}>No hidden groups.</div>
+                ) : hiddenSubs.map((ss) => (
+                  <div key={ss.id} style={styles.hiddenRow}>
+                    <span style={styles.hiddenName}>{ss.title} <span style={styles.hiddenKey}>{ss.key}</span></span>
+                    <button type="button" style={styles.restoreBtn} onClick={() => handleRestoreSubsection(section.key, ss.id)}>Restore</button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </>
+    );
   }
 
   return (
@@ -750,7 +992,7 @@ export default function ModuleDataEntry({ config, user, year, month, onStatusCha
                   ? renderDimensionGrid(section, fields, values, handleFieldChange, isReadOnly, isMobile)
                   : (section.layout === 'grid' || section.layout === 'labeled_grid')
                     ? renderServicesGrid(fields, values, handleFieldChange, isReadOnly, isMobile)
-                    : renderSubsectionedGrid(fields, values, handleFieldChange, isReadOnly, isMobile)
+                    : renderGroupedBody(section, fields)
                 }
                 {renderSectionFooter(section, fields, values)}
 
@@ -780,6 +1022,8 @@ export default function ModuleDataEntry({ config, user, year, month, onStatusCha
                                 unit: f.unit || '',
                                 formula_type: f.formula_type || '',
                                 formula_args: f.formula_args || {},
+                                subsection: f.subsection || '',
+                                sectionKey: section.key,
                               });
                             }}>✎</button>
                             <button type="button" title="Hide field" style={{ ...styles.editIconBtn, ...styles.editIconDanger }} disabled={isTempId(f.id)} onClick={() => setConfirmDeleteField({ id: f.id, label: f.label, sectionKey: section.key })}>🗑</button>
@@ -810,6 +1054,14 @@ export default function ModuleDataEntry({ config, user, year, month, onStatusCha
                             <option style={OPT} value="ratio">ratio</option>
                             <option style={OPT} value="calculated">Calculated…</option>
                           </select>
+                          {(section.subsections || []).filter((ss) => ss.is_active !== false).length > 0 && (
+                            <select value={newFieldGroup[section.id] || ''} onChange={(e) => setNewFieldGroup((m) => ({ ...m, [section.id]: e.target.value }))} style={styles.addFieldSelect}>
+                              <option style={OPT} value="">None (ungrouped)</option>
+                              {(section.subsections || []).filter((ss) => ss.is_active !== false).map((ss) => (
+                                <option style={OPT} key={ss.id} value={ss.key}>{ss.title}</option>
+                              ))}
+                            </select>
+                          )}
                           {(newFieldType[section.id] || 'number') !== 'calculated' && (
                             <input
                               type="text"
@@ -941,6 +1193,19 @@ export default function ModuleDataEntry({ config, user, year, month, onStatusCha
         onConfirm={handleDeleteFieldConfirmed}
       />
 
+      {/* B3b-3b — confirm hide-group (subsection) modal */}
+      <ConfirmModal
+        open={!!confirmDeleteSub}
+        title="Hide this group?"
+        body={confirmDeleteSub
+          ? `"${confirmDeleteSub.title}" will be hidden. Its fields keep their data and drop into "Ungrouped"; you can restore the group from "Show hidden groups".`
+          : ''}
+        confirmLabel="Hide group"
+        busy={false}
+        onCancel={() => setConfirmDeleteSub(null)}
+        onConfirm={handleDeleteSubsectionConfirmed}
+      />
+
       {/* B3b-2 — edit-field modal (label + type + unit; formula/HO-OP read-only) */}
       <FieldEditModal
         field={editingField}
@@ -948,6 +1213,7 @@ export default function ModuleDataEntry({ config, user, year, month, onStatusCha
         setForm={setEditFieldForm}
         numericFields={numericFieldChoices(config, editingField?.key)}
         sections={pickerSections}
+        groupOptions={editingField ? ((ALL_SECTIONS.find((s) => s.key === editFieldForm.sectionKey)?.subsections) || []).filter((ss) => ss.is_active !== false) : []}
         onCancel={() => setEditingField(null)}
         onSave={handleSaveFieldEdit}
       />
@@ -963,7 +1229,7 @@ export default function ModuleDataEntry({ config, user, year, month, onStatusCha
 // a display-type selector. Simple↔computed switches send the right source +
 // formula fields (computed→simple nulls formula_type/args).
 // =============================================
-function FieldEditModal({ field, form, setForm, numericFields, sections, onCancel, onSave }) {
+function FieldEditModal({ field, form, setForm, numericFields, sections, groupOptions = [], onCancel, onSave }) {
   useEffect(() => {
     if (!field) return undefined;
     function onKey(e) { if (e.key === 'Escape') onCancel && onCancel(); }
@@ -1063,6 +1329,21 @@ function FieldEditModal({ field, form, setForm, numericFields, sections, onCance
             placeholder="e.g. %, SR, days"
             style={styles.modalInput}
           />
+          {groupOptions.length > 0 && (
+            <>
+              <label style={styles.fieldEditLabel}>Group (subsection)</label>
+              <select
+                value={form.subsection || ''}
+                onChange={(e) => setForm((s) => ({ ...s, subsection: e.target.value }))}
+                style={styles.modalInput}
+              >
+                <option style={OPT} value="">None (ungrouped)</option>
+                {groupOptions.map((ss) => (
+                  <option style={OPT} key={ss.id} value={ss.key}>{ss.title}</option>
+                ))}
+              </select>
+            </>
+          )}
         </div>
         <div style={styles.modalFooter}>
           <button type="button" style={styles.btnGhost} onClick={onCancel}>Cancel</button>
@@ -1312,12 +1593,6 @@ function countFilledManual(fields, values) {
   return n;
 }
 
-// Humanize a subsection key as a sensible default (config lacks display labels).
-function humanizeKey(k) {
-  if (!k || k === 'default') return '';
-  return k.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
 function renderStatusBanner(status, rejection) {
   if (status === 'submitted' || status === 'head_reviewed' || status === 'director_reviewed') {
     return (
@@ -1370,26 +1645,6 @@ function renderStatusBanner(status, rejection) {
     );
   }
   return null;
-}
-
-// Subsectioned grid (headcount): group by subsection, render all fields inline.
-function renderSubsectionedGrid(fields, values, onChange, readOnly, isMobile = false) {
-  const bySubsection = {};
-  for (const f of fields) {
-    const sub = f.subsection || 'default';
-    if (!bySubsection[sub]) bySubsection[sub] = [];
-    bySubsection[sub].push(f);
-  }
-  return Object.entries(bySubsection).map(([subKey, subFields]) => (
-    <div key={subKey} style={styles.subsection}>
-      {humanizeKey(subKey) && <div style={styles.subsectionLabel}>{humanizeKey(subKey)}</div>}
-      <div style={{ ...styles.fieldGrid, ...(isMobile ? styles.fieldGridMobile : {}) }}>
-        {subFields.map((f) => (
-          <FieldCell key={f.key} field={f} values={values} onChange={onChange} readOnly={readOnly} allFields={fields} />
-        ))}
-      </div>
-    </div>
-  ));
 }
 
 // HO/OP dimension grid — identical layout to live.
@@ -1993,6 +2248,16 @@ const styles = {
 
   // Subsection
   subsection: { marginBottom: 24 },
+  subsectionHeaderRow: {
+    display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
+    marginBottom: 12,
+  },
+  groupEmpty: { fontSize: 12, color: 'rgba(255,255,255,0.4)', fontStyle: 'italic', padding: '4px 0 8px' },
+  groupEditZone: {
+    marginTop: 4, marginBottom: 8, paddingTop: 12,
+    borderTop: '1px dashed rgba(255,255,255,0.1)',
+    display: 'flex', flexDirection: 'column', gap: 8,
+  },
   subsectionLabel: {
     fontSize: 10.5,
     fontWeight: 700,
