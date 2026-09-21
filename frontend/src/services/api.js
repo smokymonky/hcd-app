@@ -202,6 +202,30 @@ export const structureAPI = {
 };
 
 // =============================================
+// Subsections (Dashboard Builder Step B3b-3a) — admin subsection CRUD
+// =============================================
+// Nested groups within a section (e.g. Composition / Gender / Location).
+// Admin-only on the backend. Keys immutable after create. Consumed by the
+// B3b-3b builder UI.
+export const subsectionsAPI = {
+  createSubsection: (code, sectionId, payload) => request(`/dashboards/${enc(code)}/sections/${sectionId}/subsections`, {
+    method: 'POST', body: JSON.stringify(payload)
+  }),
+  updateSubsection: (code, id, payload) => request(`/dashboards/${enc(code)}/subsections/${id}`, {
+    method: 'PUT', body: JSON.stringify(payload)
+  }),
+  deleteSubsection: (code, id) => request(`/dashboards/${enc(code)}/subsections/${id}`, {
+    method: 'DELETE'
+  }),
+  restoreSubsection: (code, id) => request(`/dashboards/${enc(code)}/subsections/${id}/restore`, {
+    method: 'POST', body: JSON.stringify({})
+  }),
+  reorderSubsections: (code, orderedIds) => request(`/dashboards/${enc(code)}/subsections/reorder`, {
+    method: 'PUT', body: JSON.stringify({ orderedIds })
+  }),
+};
+
+// =============================================
 // Labels (Module Engine Step 2a) — grid_labels management
 // =============================================
 // Editable department/source/status labels for the 'labeled_grid' engine
