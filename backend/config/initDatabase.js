@@ -291,6 +291,27 @@ const initDatabase = async () => {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
+
+    -- =============================================
+    -- DASHBOARD BUILDER (Step B3b-3a): module_subsections
+    -- First-class nested groups within a section (e.g. Composition / Gender /
+    -- Location under Head Count). The stable key column matches the string
+    -- already stored in module_fields.subsection — that string IS the
+    -- subsection key, so grouping lines up without changing the fields table.
+    -- Soft-delete via is_active. Seeded for HR_OPS headcount subsections below.
+    -- =============================================
+    CREATE TABLE IF NOT EXISTS module_subsections (
+        id SERIAL PRIMARY KEY,
+        module_code VARCHAR(50) NOT NULL,
+        section_id INTEGER REFERENCES module_sections(id),
+        key VARCHAR(100) NOT NULL,
+        title VARCHAR(255) NOT NULL,
+        sort_order INTEGER DEFAULT 0,
+        is_active BOOLEAN DEFAULT true,
+        created_by INTEGER REFERENCES users(id),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
   `;
 
    try {
@@ -354,6 +375,7 @@ const initDatabase = async () => {
     // DASHBOARD BUILDER (Step B1): structure lookup indices.
     await pool.query('CREATE UNIQUE INDEX IF NOT EXISTS idx_module_sections_active_unique ON module_sections(module_code, key) WHERE is_active = true');
     await pool.query('CREATE INDEX IF NOT EXISTS idx_module_fields_module_section_active ON module_fields(module_code, section_id) WHERE is_active = true');
+    await pool.query('CREATE INDEX IF NOT EXISTS idx_module_subsections_module_section_active ON module_subsections(module_code, section_id) WHERE is_active = true');
 
     console.log('Database tables created');
 
@@ -565,6 +587,44 @@ const initDatabase = async () => {
       console.log(`[Builder B1] Seeded HR_OPS structure: ${hrOpsSections.length} sections, ${hrOpsFields.length} fields.`);
     } else {
       console.log('[Builder B1] HR_OPS structure already exists — skipping structure seed.');
+    }
+
+    // =============================================
+    // DASHBOARD BUILDER (Step B3b-3a): Seed HR_OPS headcount subsections (idempotent)
+    // =============================================
+    // Separate guard from the structure seed above so this runs on the
+    // already-populated prod DB (where structure was seeded in B1). Keys match
+    // the module_fields.subsection tags already stored on the headcount fields,
+    // so grouping lines up. Only the headcount section has subsections.
+    const existingHrOpsSubsections = await pool.query(
+      "SELECT 1 FROM module_subsections WHERE module_code = 'HR_OPS' LIMIT 1"
+    );
+    if (existingHrOpsSubsections.rowCount === 0) {
+      const headcount = await pool.query(
+        "SELECT id FROM module_sections WHERE module_code = 'HR_OPS' AND key = 'headcount' LIMIT 1"
+      );
+      if (headcount.rowCount > 0) {
+        const headcountId = headcount.rows[0].id;
+        const hrOpsSubsections = [
+          ['composition', 'Composition', 1],
+          ['gender', 'Gender', 2],
+          ['location', 'Location', 3],
+          ['turnover', 'Turnover', 4],
+          ['compliance', 'Compliance & HRDF', 5],
+        ];
+        for (const [key, title, order] of hrOpsSubsections) {
+          await pool.query(
+            `INSERT INTO module_subsections (module_code, section_id, key, title, sort_order)
+             VALUES ('HR_OPS', $1, $2, $3, $4)`,
+            [headcountId, key, title, order]
+          );
+        }
+        console.log(`[Builder B3b-3a] Seeded HR_OPS headcount subsections: ${hrOpsSubsections.length}.`);
+      } else {
+        console.log('[Builder B3b-3a] headcount section not found — skipping subsection seed.');
+      }
+    } else {
+      console.log('[Builder B3b-3a] HR_OPS subsections already exist — skipping subsection seed.');
     }
 
     // =============================================
