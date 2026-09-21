@@ -808,7 +808,7 @@ router.get('/:moduleCode/structure', authenticateToken, checkModuleAccessParam('
     const fieldsRes = await pool.query(
       `SELECT id, section_id, key, label, type, unit,
               dimension, dimension_row, dimension_col,
-              source, formula_type, formula_args, subsection, sort_order, is_active
+              source, formula_type, formula_args, subsection, sort_order, is_active, featured
        FROM module_fields
        WHERE module_code = $1 ${includeHidden ? '' : 'AND is_active = true'}
        ORDER BY sort_order ASC, id ASC`,
@@ -865,6 +865,7 @@ router.get('/:moduleCode/structure', authenticateToken, checkModuleAccessParam('
         subsection: f.subsection,
         sort_order: f.sort_order,
         is_active: f.is_active,
+        featured: f.featured,
       })),
     }));
 
