@@ -990,9 +990,11 @@ export default function ModuleDataEntry({ config, user, year, month, onStatusCha
               <div style={{ ...styles.sectionBody, ...(isMobile ? styles.sectionBodyMobile : {}) }}>
                 {section.layout === 'ho_op'
                   ? renderDimensionGrid(section, fields, values, handleFieldChange, isReadOnly, isMobile)
-                  : (section.layout === 'grid' || section.layout === 'labeled_grid')
-                    ? renderServicesGrid(fields, values, handleFieldChange, isReadOnly, isMobile)
-                    : renderGroupedBody(section, fields)
+                  : section.layout === 'matrix'
+                    ? renderMatrixGrid(section, fields, values, handleFieldChange, isReadOnly, isMobile)
+                    : (section.layout === 'grid' || section.layout === 'labeled_grid')
+                      ? renderServicesGrid(fields, values, handleFieldChange, isReadOnly, isMobile)
+                      : renderGroupedBody(section, fields)
                 }
                 {renderSectionFooter(section, fields, values)}
 
@@ -1456,6 +1458,10 @@ function validateFormula(ft, args) {
     if (!a.numerator || !a.denominator) return 'Choose both A and B.';
     return null;
   }
+  if (ft === 'difference') {
+    if (!a.a || !a.b) return 'Choose both A and B.';
+    return null;
+  }
   return 'Choose a formula.';
 }
 
@@ -1495,6 +1501,7 @@ function FormulaPicker({ formulaType, formulaArgs, onChange, numericFields, sect
         <option style={OPT} value="percent_of">Percentage (part of a total)</option>
         <option style={OPT} value="avg">Average of fields</option>
         <option style={OPT} value="ratio">Ratio (A ÷ B)</option>
+        <option style={OPT} value="difference">Difference (A − B)</option>
       </select>
 
       {formulaType === 'sum' && (
@@ -1534,6 +1541,20 @@ function FormulaPicker({ formulaType, formulaArgs, onChange, numericFields, sect
           </select>
           <span style={styles.ratioDiv}>÷</span>
           <select value={args.denominator || ''} onChange={(e) => setArgs({ ...args, denominator: e.target.value })} style={{ ...styles.modalInput, flex: 1 }}>
+            <option style={OPT} value="">B…</option>
+            {numericFields.map((f) => <option style={OPT} key={f.key} value={f.key}>{f.label}</option>)}
+          </select>
+        </div>
+      )}
+
+      {formulaType === 'difference' && (
+        <div style={styles.ratioRow}>
+          <select value={args.a || ''} onChange={(e) => setArgs({ ...args, a: e.target.value })} style={{ ...styles.modalInput, flex: 1 }}>
+            <option style={OPT} value="">A…</option>
+            {numericFields.map((f) => <option style={OPT} key={f.key} value={f.key}>{f.label}</option>)}
+          </select>
+          <span style={styles.ratioDiv}>−</span>
+          <select value={args.b || ''} onChange={(e) => setArgs({ ...args, b: e.target.value })} style={{ ...styles.modalInput, flex: 1 }}>
             <option style={OPT} value="">B…</option>
             {numericFields.map((f) => <option style={OPT} key={f.key} value={f.key}>{f.label}</option>)}
           </select>
@@ -1648,6 +1669,78 @@ function renderStatusBanner(status, rejection) {
 }
 
 // HO/OP dimension grid — identical layout to live.
+// Humanize a dimension token: 'head_office' → 'Head Office'.
+function humanizeToken(t) {
+  if (!t) return '';
+  return String(t).replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+// Build ordered rows/cols + a (row,col)→field map for a matrix section.
+// Rows/cols are ordered by each token's MIN field sort_order (preserves seed order).
+function buildMatrix(fields) {
+  const rowOrder = {}; const colOrder = {}; const cellMap = {};
+  for (const f of fields) {
+    const r = f.dimensionRow; const c = f.dimensionCol;
+    if (!r || !c) continue;
+    const so = f.sort_order ?? 0;
+    if (rowOrder[r] === undefined || so < rowOrder[r]) rowOrder[r] = so;
+    if (colOrder[c] === undefined || so < colOrder[c]) colOrder[c] = so;
+    cellMap[`${r}|${c}`] = f;
+  }
+  const rows = Object.keys(rowOrder).sort((a, b) => rowOrder[a] - rowOrder[b]);
+  const cols = Object.keys(colOrder).sort((a, b) => colOrder[a] - colOrder[b]);
+  return { rows, cols, cellMap };
+}
+
+// ENTRY matrix: rows × cols table. Manual cells = number inputs (same save);
+// computed cells = read-only engine values (muted/gold). Scrolls on mobile.
+function renderMatrixGrid(section, fields, values, onChange, readOnly, isMobile = false) {
+  const active = fields.filter((f) => f.is_active !== false);
+  const { rows, cols, cellMap } = buildMatrix(active);
+  return (
+    <div style={styles.matrixScroll}>
+      <table style={styles.matrixTable}>
+        <thead>
+          <tr>
+            <th style={styles.matrixCorner} />
+            {cols.map((c) => <th key={c} style={styles.matrixColHead}>{humanizeToken(c)}</th>)}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r}>
+              <td style={styles.matrixRowHead}>{humanizeToken(r)}</td>
+              {cols.map((c) => {
+                const f = cellMap[`${r}|${c}`];
+                if (!f) return <td key={c} style={styles.matrixCell}><span style={styles.matrixEmpty}>—</span></td>;
+                if (f.source === 'computed') {
+                  return (
+                    <td key={c} style={styles.matrixCell}>
+                      <span style={styles.matrixComputed}>{computeFieldValue(f, values, active)}</span>
+                    </td>
+                  );
+                }
+                return (
+                  <td key={c} style={styles.matrixCell}>
+                    <input
+                      type="number" min="0"
+                      style={styles.matrixInput}
+                      value={values[f.key] ?? ''}
+                      onChange={(e) => onChange(f.key, e.target.value)}
+                      readOnly={readOnly} disabled={readOnly}
+                      inputMode="numeric"
+                    />
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function renderDimensionGrid(section, fields, values, onChange, readOnly, isMobile = false) {
   const rows = {};
   for (const f of fields) {
@@ -2334,6 +2427,34 @@ const styles = {
     padding: '0 14px 6px',
     marginBottom: 4,
   },
+  // ---- B6/TA matrix layout ----
+  matrixScroll: { overflowX: 'auto', width: '100%', WebkitOverflowScrolling: 'touch' },
+  matrixTable: { borderCollapse: 'separate', borderSpacing: '8px 8px', minWidth: 'max-content' },
+  matrixCorner: { background: 'transparent' },
+  matrixColHead: {
+    fontSize: 10, fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase',
+    color: 'rgba(255,255,255,0.5)', textAlign: 'center', padding: '2px 10px',
+  },
+  matrixRowHead: {
+    fontSize: 12.5, fontWeight: 600, color: 'rgba(255,255,255,0.85)',
+    padding: '8px 14px', background: 'rgba(255,255,255,0.03)',
+    borderRadius: 8, whiteSpace: 'nowrap',
+  },
+  matrixCell: {
+    background: 'rgba(0,0,0,0.18)', border: '1px solid rgba(255,255,255,0.04)',
+    borderRadius: 8, padding: '4px', textAlign: 'center', minWidth: 96,
+  },
+  matrixInput: {
+    width: '100%', boxSizing: 'border-box', textAlign: 'center',
+    background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)',
+    borderRadius: 6, color: '#fff', padding: '8px 10px', minHeight: 40,
+    fontFamily: 'inherit', fontSize: 14, fontWeight: 600, outline: 'none',
+  },
+  matrixComputed: {
+    display: 'inline-block', padding: '8px 10px', fontSize: 14, fontWeight: 700,
+    color: '#F3C036', fontVariantNumeric: 'tabular-nums',
+  },
+  matrixEmpty: { display: 'inline-block', padding: '8px 10px', color: 'rgba(255,255,255,0.3)' },
   dimensionRow: {
     display: 'grid',
     gridTemplateColumns: '200px 1fr 1fr',
