@@ -101,6 +101,7 @@ export default function ModuleSnapshot({ config, values }) {
 function renderSectionBody(section, values, allFields, isMobile) {
   const fields = (section.fields || []).filter((f) => f.is_active !== false);
   if (section.layout === 'ho_op') return renderHoOp(section, fields, values, isMobile);
+  if (section.layout === 'matrix') return renderMatrix(section, fields, values, allFields, isMobile);
   if (section.layout === 'grid' || section.layout === 'labeled_grid') return renderGrid(section, fields, values, allFields, isMobile);
   return renderGrouped(section, fields, values, allFields, isMobile);
 }
@@ -143,6 +144,58 @@ function renderGrouped(section, fields, values, allFields, isMobile) {
         </div>
       )}
     </>
+  );
+}
+
+// Humanize a dimension token: 'head_office' → 'Head Office'.
+function humanizeToken(t) {
+  if (!t) return '';
+  return String(t).replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+// ---- MATRIX (read-only): rows × cols table; every cell computed via engine ----
+function renderMatrix(section, fields, values, allFields, isMobile) {
+  const rowOrder = {}; const colOrder = {}; const cellMap = {};
+  for (const f of fields) {
+    const r = f.dimension_row || f.dimensionRow;
+    const c = f.dimension_col || f.dimensionCol;
+    if (!r || !c) continue;
+    const so = f.sort_order ?? 0;
+    if (rowOrder[r] === undefined || so < rowOrder[r]) rowOrder[r] = so;
+    if (colOrder[c] === undefined || so < colOrder[c]) colOrder[c] = so;
+    cellMap[`${r}|${c}`] = f;
+  }
+  const rows = Object.keys(rowOrder).sort((a, b) => rowOrder[a] - rowOrder[b]);
+  const cols = Object.keys(colOrder).sort((a, b) => colOrder[a] - colOrder[b]);
+  return (
+    <div style={styles.matrixScroll}>
+      <table style={styles.matrixTable}>
+        <thead>
+          <tr>
+            <th style={styles.matrixCorner} />
+            {cols.map((c) => <th key={c} style={styles.matrixColHead}>{humanizeToken(c)}</th>)}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r}>
+              <td style={styles.matrixRowHead}>{humanizeToken(r)}</td>
+              {cols.map((c) => {
+                const f = cellMap[`${r}|${c}`];
+                if (!f) return <td key={c} style={styles.matrixCell}>—</td>;
+                const isComputed = f.source === 'computed';
+                const v = isComputed ? computeFieldValue(f, values, allFields) : cell(f, values);
+                return (
+                  <td key={c} style={{ ...styles.matrixCell, ...(isComputed ? styles.matrixCellComputed : {}) }}>
+                    {v}
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
@@ -433,6 +486,27 @@ const styles = {
     marginLeft: 6,
   },
 
+  // ---- B6/TA matrix (read-only) ----
+  matrixScroll: { overflowX: 'auto', width: '100%', WebkitOverflowScrolling: 'touch' },
+  matrixTable: { borderCollapse: 'separate', borderSpacing: '8px 8px', minWidth: 'max-content' },
+  matrixCorner: { background: 'transparent' },
+  matrixColHead: {
+    fontSize: 10, fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase',
+    color: 'rgba(255,255,255,0.4)', textAlign: 'right', padding: '2px 14px',
+  },
+  matrixRowHead: {
+    fontSize: 14, fontWeight: 500, color: 'rgba(255,255,255,0.8)',
+    padding: '11px 14px', background: 'rgba(255,255,255,0.03)',
+    borderRadius: 10, whiteSpace: 'nowrap',
+  },
+  matrixCell: {
+    background: 'rgba(255,255,255,0.03)', borderRadius: 10,
+    padding: '11px 16px', textAlign: 'right', fontSize: 14, fontWeight: 700,
+    color: '#fff', fontVariantNumeric: 'tabular-nums', minWidth: 90,
+  },
+  matrixCellComputed: {
+    background: 'rgba(243,192,54,0.06)', color: '#F3C036',
+  },
   hoOpHeader: {
     display: 'grid',
     gridTemplateColumns: '1fr 1fr 1fr',
