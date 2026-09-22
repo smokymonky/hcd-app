@@ -97,7 +97,10 @@ export function formatValue(field, raw) {
   if (!Number.isFinite(num)) return '—';
   const t = (field && (field.type || field.dataType)) || 'number';
   switch (t) {
-    case 'percentage': return `${num.toFixed(1)}%`;
+    // B5-2 parity: match the live snapshot's formatNumber rounding exactly
+    // (toLocaleString maximumFractionDigits:1 rounds 84.05→84.1), not toFixed
+    // (which gave 84.0). Applies to hero + cells consistently.
+    case 'percentage': return `${num.toLocaleString('en-US', { maximumFractionDigits: 1 })}%`;
     case 'currency':   return num.toLocaleString('en-US');
     case 'number':
     default:           return Number.isInteger(num) ? num.toLocaleString('en-US') : num.toLocaleString('en-US', { maximumFractionDigits: 1 });
