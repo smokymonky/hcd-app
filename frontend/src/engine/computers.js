@@ -201,6 +201,14 @@ export function evaluateFormula(field, values, structure) {
     return num / den;
   }
 
+  if (type === 'difference') {
+    // B6/TA: A − B. Null if either operand is missing.
+    const a = toNum(values[args.a]);
+    const b = toNum(values[args.b]);
+    if (a === null || b === null) return null;
+    return a - b;
+  }
+
   return null;
 }
 
