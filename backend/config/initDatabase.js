@@ -651,6 +651,42 @@ const initDatabase = async () => {
     }
 
     // =============================================
+    // DASHBOARD BUILDER (B5-2): Total Headcount hero parity (idempotent)
+    // =============================================
+    // Live snapshot's hero shows Total Headcount = total_employees +
+    // outsource_count (900), not plain Total Employees (865). Add a computed
+    // 'total_headcount' field (sum of the two) to headcount/composition,
+    // featured for the hero, and un-feature total_employees. Guard on whether
+    // total_headcount already exists so this runs once.
+    const existingTotalHeadcount = await pool.query(
+      "SELECT 1 FROM module_fields WHERE module_code = 'HR_OPS' AND key = 'total_headcount' LIMIT 1"
+    );
+    if (existingTotalHeadcount.rowCount === 0) {
+      const hc = await pool.query(
+        "SELECT id FROM module_sections WHERE module_code = 'HR_OPS' AND key = 'headcount' LIMIT 1"
+      );
+      if (hc.rowCount > 0) {
+        await pool.query(
+          `INSERT INTO module_fields
+             (module_code, section_id, key, label, type, unit, dimension, dimension_row, dimension_col,
+              source, formula_type, formula_args, subsection, sort_order, featured)
+           VALUES ('HR_OPS', $1, 'total_headcount', 'Total Headcount', 'number', NULL, NULL, NULL, NULL,
+              'computed', 'sum', $2, 'composition', 5, true)`,
+          [hc.rows[0].id, JSON.stringify({ fields: ['total_employees', 'outsource_count'] })]
+        );
+        // Un-feature total_employees so the hero shows Total Headcount instead.
+        await pool.query(
+          "UPDATE module_fields SET featured = false WHERE module_code = 'HR_OPS' AND key = 'total_employees'"
+        );
+        console.log('[Builder B5-2] Added HR_OPS total_headcount (featured) + un-featured total_employees.');
+      } else {
+        console.log('[Builder B5-2] headcount section not found — skipping total_headcount seed.');
+      }
+    } else {
+      console.log('[Builder B5-2] HR_OPS total_headcount already exists — skipping.');
+    }
+
+    // =============================================
     // PHASE 0: Seed workflow_targets registry
     // dashboard_submission: workflow active (used by HR Dashboards in Phase 0)
     // activity_completion:  workflow inactive (placeholder for future Annual Plan
