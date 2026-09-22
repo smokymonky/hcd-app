@@ -1,578 +1,278 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
-  FIELDS,
-  SECTIONS,
-  computeField,
-  formatNumber,
+  computeFieldValue,
   evaluateTarget,
-} from '../config/hrOpsFields';
-import { dashboardsAPI } from '../services/api';
-import Dropdown from './Dropdown';
+  formatValue,
+  formatNumber,
+} from '../engine/computers';
 import TargetIndicator from './TargetIndicator';
 
 // =============================================
-// HROpsSnapshot
+// ModuleSnapshot — generic read-only published-view renderer
 // =============================================
-// Phase 2A: read-only display of published HR Ops data.
+// DASHBOARD BUILDER — Step B5-1. Renders ANY module's published snapshot
+// from its DB structure (config-shaped: sections[].subsections[], fields[])
+// + a values map, in the approved UNIFORM style. Read-only throughout;
+// no inputs, no edit controls. Preview-only (ModuleSnapshotPreview hosts
+// it); the live HROpsSnapshot is untouched.
 //
-// Rule 13:
-//   - variant prop ('full'|'mini') — Phase 6.5 composite uses 'mini'.
-//   - Field rendering data-driven from FIELDS config + same COMPUTERS
-//     formulas as the Entry form. Single source of truth.
-//   - Year + Month split selectors use shared Dropdown component.
-//   - TargetIndicator renders inline only when field.target exists.
-//     Hidden cleanly otherwise.
+// Reuses engine/computers.js: computeFieldValue (curated formulas),
+// evaluateTarget (full evaluated pass/soft-fail/hard-fail — the snapshot
+// shows the indicator, unlike entry's static helper), formatValue/Number.
+//
+// Layout per approved mockup:
+//   HERO row  — KPI cards for fields with featured=true; computed via
+//               engine; target indicator inline where a field has a target.
+//   SECTION cards (ordered) — each a gradient-accent card. Fields grouped
+//               by subsection (title+order from section.subsections) then an
+//               ungrouped bucket. ho_op sections → two-column HO/OP table;
+//               grid/labeled_grid → uniform value grid + computed footer
+//               total. Computed values tinted, NO 'CALC' tag (read-only).
+//   Empty/missing → '—'.
 // =============================================
 
-const MONTH_NAMES = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December',
-];
+const NUMERIC_TYPES = ['number', 'percentage', 'currency'];
 
-export default function HROpsSnapshot({
-  user,
-  variant = 'full',
-  urlYear = null,        // Phase 2A Extension: URL-driven year (null = use default)
-  urlMonth = null,       // Phase 2A Extension: URL-driven month (null = use default)
-  onPeriodChange,        // (year, month) → void — parent navigates via URL
-}) {
-  // Available published periods: { year: [1..12 month numbers] }
-  const [available, setAvailable] = useState({});
-  const [selectedYear, setSelectedYear] = useState(urlYear);
-  const [selectedMonth, setSelectedMonth] = useState(urlMonth);   // 1..12
+// Format a field's displayed value: computed via engine, else raw by type.
+function displayValue(field, values, allFields) {
+  if (field.source === 'computed') return computeFieldValue(field, values, allFields);
+  return formatValue(field, values[field.key]);
+}
 
-  // Published submission detail
-  const [snapshot, setSnapshot] = useState(null);
-  const [values, setValues] = useState({});
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+// Optional hero sub-line: for a featured computed field that sums an explicit
+// list of fields (formula_type 'sum', formula_args.fields), show the parts
+// e.g. "865 Total Employees + 35 Outsource Count". Generic (works for any
+// module); returns '' when not applicable. Skipped when a target indicator
+// is shown instead.
+function heroSubLine(field, values, allFields) {
+  if (!field || field.source !== 'computed') return '';
+  if (field.formula_type !== 'sum') return '';
+  const parts = (field.formula_args && Array.isArray(field.formula_args.fields)) ? field.formula_args.fields : [];
+  if (parts.length < 2) return '';
+  const byKey = {};
+  for (const g of allFields) byKey[g.key] = g;
+  const pieces = [];
+  for (const k of parts) {
+    const pf = byKey[k];
+    if (!pf) continue;
+    const v = values[k];
+    if (v === undefined || v === null || v === '') continue;
+    pieces.push(`${formatValue(pf, v)} ${pf.label}`);
+  }
+  return pieces.length >= 2 ? pieces.join(' + ') : '';
+}
 
-  // MOBILE — canonical isMobile pattern (layout-only).
+export default function ModuleSnapshot({ config, values }) {
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
   useEffect(() => {
-    const handleResize = () => setIsMobile(window.innerWidth <= 768);
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
+    const onResize = () => setIsMobile(window.innerWidth <= 768);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
   }, []);
 
-  // Phase 2A Extension: if parent passes urlYear/urlMonth (from URL params),
-  // those are the source of truth. Internal selection mirrors them.
-  useEffect(() => {
-    if (urlYear !== null && urlMonth !== null) {
-      setSelectedYear(urlYear);
-      setSelectedMonth(urlMonth);
+  const sections = (config.sections || [])
+    .filter((s) => s.is_active !== false)
+    .slice()
+    .sort((a, b) => ((a.order ?? a.sort_order ?? 0) - (b.order ?? b.sort_order ?? 0)));
+
+  // Flat active field list (for computed 'sum{section}' + self-exclusion).
+  const allFields = [];
+  for (const s of sections) {
+    for (const f of (s.fields || [])) {
+      if (f.is_active !== false) allFields.push({ ...f, section: s.key });
     }
-  }, [urlYear, urlMonth]);
+  }
 
-  // ---------- DISCOVER PUBLISHED PERIODS ----------
-  // List all published submissions to populate Year + Month dropdowns.
-  useEffect(() => {
-    let cancelled = false;
-    dashboardsAPI.listSubmissions('HR_OPS', { status: 'published' })
-      .then((rows) => {
-        if (cancelled) return;
-        const list = Array.isArray(rows) ? rows : [];
-        const byYear = {};
-        for (const r of list) {
-          if (!byYear[r.year]) byYear[r.year] = [];
-          byYear[r.year].push(r.month);
-        }
-        setAvailable(byYear);
-        // If URL provided period, don't override — user wants this specific period.
-        if (urlYear !== null && urlMonth !== null) return;
-        // Otherwise default selection: most recent year + month
-        const years = Object.keys(byYear).map(Number).sort((a, b) => b - a);
-        if (years.length === 0) {
-          setSelectedYear(null);
-          setSelectedMonth(null);
-          setLoading(false);
-          return;
-        }
-        const y = years[0];
-        const months = byYear[y].slice().sort((a, b) => b - a);
-        setSelectedYear(y);
-        setSelectedMonth(months[0]);
-      })
-      .catch((err) => {
-        if (cancelled) return;
-        console.error('[HROpsSnapshot] listSubmissions failed:', err);
-        setError(err.message || 'Could not load published submissions.');
-        setLoading(false);
-      });
-    return () => { cancelled = true; };
-    // Intentionally runs only on mount. urlYear/urlMonth are handled by the
-    // separate sync effect above.
-  }, [urlYear, urlMonth]);
+  // Hero = featured fields, in section/field order.
+  const heroFields = allFields.filter((f) => f.featured);
 
-  // ---------- LOAD SELECTED PUBLISHED MONTH ----------
-  useEffect(() => {
-    if (!selectedYear || !selectedMonth) return undefined;
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
-    dashboardsAPI.getPublished('HR_OPS', selectedYear, selectedMonth)
-      .then((data) => {
-        if (cancelled) return;
-        setSnapshot(data);
-        // The published endpoint shape is { submission, data, ... } or similar.
-        // Defensively map data → values keyed by field_key.
-        const arr = data?.data || data?.values || [];
-        const v = {};
-        if (Array.isArray(arr)) {
-          arr.forEach((row) => {
-            if (row && row.field_key !== undefined) v[row.field_key] = row.value ?? '';
-          });
-        } else if (arr && typeof arr === 'object') {
-          Object.assign(v, arr);
-        }
-        setValues(v);
-      })
-      .catch((err) => {
-        if (cancelled) return;
-        // 404 here means "no published submission for this period" — handle softly
-        console.warn('[HROpsSnapshot] getPublished:', err);
-        if (err && /not found|no published/i.test(err.message || '')) {
-          setSnapshot(null);
-          setValues({});
-        } else {
-          setError(err.message || 'Could not load snapshot.');
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => { cancelled = true; };
-  }, [selectedYear, selectedMonth]);
-
-  // ---------- DROPDOWN OPTIONS ----------
-  const yearOptions = useMemo(() => {
-    const years = Object.keys(available).map(Number).sort((a, b) => b - a);
-    if (years.length === 0) {
-      return [{ value: String(new Date().getFullYear()), label: String(new Date().getFullYear()) }];
-    }
-    return years.map((y) => ({ value: String(y), label: String(y) }));
-  }, [available]);
-
-  const monthOptions = useMemo(() => {
-    const publishedMonths = new Set((available[selectedYear] || []).map(Number));
-    return MONTH_NAMES.map((label, idx) => {
-      const month = idx + 1;
-      const disabled = !publishedMonths.has(month);
-      return {
-        value: String(month),
-        label,
-        disabled,
-        hint: disabled ? 'Not yet published' : undefined,
-      };
-    });
-  }, [available, selectedYear]);
-
-  // ---------- DERIVED ----------
-  const periodLabel = selectedMonth && selectedYear
-    ? `${MONTH_NAMES[selectedMonth - 1]} ${selectedYear}`
-    : '—';
-
-  // Top hero KPIs (4 headline numbers)
-  const hero = useMemo(() => {
-    const totalHc = num(values.total_employees) + num(values.outsource_count);
-    const totalServ = (FIELDS
-      .filter((f) => f.section === 'services' && f.source !== 'computed')
-      .map((f) => num(values[f.key]))
-      .reduce((a, b) => a + b, 0)) || 0;
-    return {
-      headcount: totalHc || null,
-      employees: values.total_employees,
-      outsource: values.outsource_count,
-      saudization: values.saudization_pct,
-      turnover: values.turnover_overall_pct,
-      turnover_ho: values.turnover_ho_pct,
-      turnover_op: values.turnover_op_pct,
-      services_total: totalServ || null,
-    };
-  }, [values]);
-
-  // ---------- RENDER ----------
   return (
     <div style={{ ...styles.canvas, ...(isMobile ? styles.canvasMobile : {}) }}>
-      {/* Year/Month selector + published stamp */}
-      <div style={{ ...styles.selector, ...(isMobile ? styles.selectorMobile : {}) }}>
-        <span style={styles.selectorLabel}>VIEWING</span>
-        {isMobile ? (
-          <>
-            <div style={styles.dropdownFill}>
-              <Dropdown
-                label="Year"
-                value={selectedYear ? String(selectedYear) : ''}
-                options={yearOptions}
-                onChange={(v) => {
-                  const nextY = Number(v);
-                  if (typeof onPeriodChange === 'function' && selectedMonth) {
-                    onPeriodChange(nextY, selectedMonth);
-                  } else {
-                    setSelectedYear(nextY);
-                  }
-                }}
-                width="100%"
-              />
-            </div>
-            <div style={styles.dropdownFill}>
-              <Dropdown
-                label="Month"
-                value={selectedMonth ? String(selectedMonth) : ''}
-                options={monthOptions}
-                onChange={(v) => {
-                  const nextM = Number(v);
-                  if (typeof onPeriodChange === 'function' && selectedYear) {
-                    onPeriodChange(selectedYear, nextM);
-                  } else {
-                    setSelectedMonth(nextM);
-                  }
-                }}
-                width="100%"
-              />
-            </div>
-          </>
-        ) : (
-          <>
-            <Dropdown
-              label="Year"
-              value={selectedYear ? String(selectedYear) : ''}
-              options={yearOptions}
-              onChange={(v) => {
-                const nextY = Number(v);
-                // Phase 2A Extension: prefer URL-driven navigation
-                if (typeof onPeriodChange === 'function' && selectedMonth) {
-                  onPeriodChange(nextY, selectedMonth);
-                } else {
-                  setSelectedYear(nextY);
-                }
-              }}
-              width={120}
-            />
-            <Dropdown
-              label="Month"
-              value={selectedMonth ? String(selectedMonth) : ''}
-              options={monthOptions}
-              onChange={(v) => {
-                const nextM = Number(v);
-                // Phase 2A Extension: prefer URL-driven navigation
-                if (typeof onPeriodChange === 'function' && selectedYear) {
-                  onPeriodChange(selectedYear, nextM);
-                } else {
-                  setSelectedMonth(nextM);
-                }
-              }}
-              width={150}
-            />
-          </>
-        )}
-        {snapshot?.submission && (
-          <span style={{ ...styles.publishedStamp, ...(isMobile ? styles.publishedStampMobile : {}) }}>
-            <span style={styles.publishedDot} />
-            Published {snapshot.submission.updated_at
-              ? new Date(snapshot.submission.updated_at).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })
-              : ''}
-          </span>
-        )}
-      </div>
-
-      {/* Error state */}
-      {error && (
-        <div style={styles.errorBanner}>
-          {error}
+      {/* HERO row */}
+      {heroFields.length > 0 && (
+        <div style={{ ...styles.heroGrid, ...(isMobile ? { gridTemplateColumns: 'repeat(2, 1fr)' } : {}) }}>
+          {heroFields.map((f) => {
+            const evaln = f.target ? evaluateTarget(f, values[f.key]) : null;
+            const val = displayValue(f, values, allFields);
+            const sub = heroSubLine(f, values, allFields);
+            return (
+              <div key={f.key} style={styles.heroKpi}>
+                <div style={styles.heroAccent} />
+                <div style={styles.heroLabel}>{f.label}</div>
+                <div style={{ ...styles.heroValue, ...(f.target ? { color: '#F3C036' } : {}) }}>
+                  {val}{f.unit && val !== '—' ? <span style={styles.heroUnit}> {f.unit}</span> : null}
+                </div>
+                {evaln && <TargetIndicator evaluation={evaln} />}
+                {!evaln && sub && <div style={styles.heroSub}>{sub}</div>}
+              </div>
+            );
+          })}
         </div>
       )}
 
-      {/* Empty state — no submissions or no data for period */}
-      {!loading && !error && (!snapshot || Object.keys(values).length === 0) && (
-        <div style={styles.emptyState}>
-          <div style={styles.emptyTitle}>No published submission for {periodLabel}</div>
-          <div style={styles.emptySub}>
-            {Object.keys(available).length === 0
-              ? 'No HR Operations submissions have been published yet. Once an admin publishes a submission, it will appear here.'
-              : 'Try selecting a different month or year from the dropdowns above.'}
-          </div>
+      {/* SECTION cards */}
+      {sections.map((section) => (
+        <div key={section.key} style={{ ...styles.snapSection, ...(isMobile ? styles.snapSectionMobile : {}) }}>
+          <div style={styles.snapAccent} />
+          <div style={{ ...styles.snapTitle, ...(isMobile ? { flexWrap: 'wrap' } : {}) }}>{section.title}</div>
+          {renderSectionBody(section, values, allFields, isMobile)}
         </div>
-      )}
-
-      {/* Loading */}
-      {loading && (
-        <div style={styles.loading}>
-          <div style={styles.spinner} />
-          <style>{`@keyframes hrSnapSpin { to { transform: rotate(360deg); } }`}</style>
-        </div>
-      )}
-
-      {/* Hero KPIs */}
-      {!loading && !error && snapshot && Object.keys(values).length > 0 && (
-        <>
-          <div style={{ ...styles.heroGrid, ...(isMobile ? { gridTemplateColumns: 'repeat(2, 1fr)' } : {}) }}>
-            <HeroKpi
-              label="Total Headcount"
-              value={hero.headcount != null ? formatNumber(hero.headcount) : '—'}
-              sub={(
-                <>
-                  <strong>{formatNumber(hero.employees) || '—'}</strong> employees +{' '}
-                  <strong>{formatNumber(hero.outsource) || '—'}</strong> outsource
-                </>
-              )}
-            />
-            <HeroKpi
-              label="Saudization"
-              value={hero.saudization != null ? `${formatNumber(hero.saudization)}%` : '—'}
-              valueGold
-              extra={
-                <TargetIndicator
-                  evaluation={evaluateTarget(
-                    FIELDS.find((f) => f.key === 'saudization_pct'),
-                    hero.saudization,
-                  )}
-                  style={{ marginTop: 4 }}
-                />
-              }
-            />
-            <HeroKpi
-              label="Turnover (Overall)"
-              value={hero.turnover != null ? `${formatNumber(hero.turnover)}%` : '—'}
-              sub={
-                <>
-                  HO {hero.turnover_ho ? `${formatNumber(hero.turnover_ho)}%` : '—'} ·{' '}
-                  OP {hero.turnover_op ? `${formatNumber(hero.turnover_op)}%` : '—'}
-                </>
-              }
-            />
-            <HeroKpi
-              label="Total Service Requests"
-              value={hero.services_total != null ? formatNumber(hero.services_total) : '—'}
-              sub="17 service categories"
-            />
-          </div>
-
-          {/* Section: Composition */}
-          {renderCompositionSection(values, isMobile)}
-
-          {/* Section: Compliance & HRDF */}
-          {renderComplianceSection(values, isMobile)}
-
-          {/* Section: On-Boarding / Off-Boarding (HO/OP side-by-side) */}
-          {renderOnOffSection(values, isMobile)}
-
-          {/* Section: Services (3-col grid) */}
-          {renderServicesSection(values, isMobile)}
-        </>
-      )}
+      ))}
     </div>
   );
 }
 
-// =============================================
-// HeroKpi — single big card
-// =============================================
-function HeroKpi({ label, value, sub, extra, valueGold }) {
+// ---- Section body dispatch by layout ----
+function renderSectionBody(section, values, allFields, isMobile) {
+  const fields = (section.fields || []).filter((f) => f.is_active !== false);
+  if (section.layout === 'ho_op') return renderHoOp(section, fields, values, isMobile);
+  if (section.layout === 'grid' || section.layout === 'labeled_grid') return renderGrid(section, fields, values, allFields, isMobile);
+  return renderGrouped(section, fields, values, allFields, isMobile);
+}
+
+// ---- Grouped (kpi/default): subsections (title+order) then ungrouped ----
+function renderGrouped(section, fields, values, allFields, isMobile) {
+  const activeSubs = (section.subsections || [])
+    .filter((ss) => ss.is_active !== false)
+    .slice()
+    .sort((a, b) => ((a.sort_order ?? 0) - (b.sort_order ?? 0)));
+  const activeKeys = new Set(activeSubs.map((ss) => ss.key));
+
+  const byKey = {};
+  for (const f of fields) {
+    const k = (f.subsection && activeKeys.has(f.subsection)) ? f.subsection : '__ungrouped__';
+    (byKey[k] = byKey[k] || []).push(f);
+  }
+  const ungrouped = byKey.__ungrouped__ || [];
+
   return (
-    <div style={styles.heroKpi}>
-      <div style={styles.heroAccent} />
-      <div style={styles.heroLabel}>{label}</div>
-      <div style={{ ...styles.heroValue, ...(valueGold ? { color: '#F3C036' } : {}) }}>{value}</div>
-      {sub && <div style={styles.heroSub}>{sub}</div>}
-      {extra}
-    </div>
+    <>
+      {activeSubs.map((ss) => {
+        const gf = byKey[ss.key] || [];
+        if (gf.length === 0) return null;
+        return (
+          <div key={ss.id || ss.key} style={styles.snapSubsection}>
+            <div style={styles.snapSubLabel}>{ss.title}</div>
+            <div style={{ ...styles.valueGrid, gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)' }}>
+              {gf.map((f) => <ValueCell key={f.key} field={f} values={values} allFields={allFields} />)}
+            </div>
+          </div>
+        );
+      })}
+      {ungrouped.length > 0 && (
+        <div style={styles.snapSubsection}>
+          {activeSubs.length > 0 && <div style={styles.snapSubLabel}>Other</div>}
+          <div style={{ ...styles.valueGrid, gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)' }}>
+            {ungrouped.map((f) => <ValueCell key={f.key} field={f} values={values} allFields={allFields} />)}
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 
-// =============================================
-// Section renderers
-// =============================================
-function renderCompositionSection(values, isMobile = false) {
+// ---- HO/OP two-column table (group by dimension_row) ----
+function renderHoOp(section, fields, values, isMobile) {
+  const rows = {};
+  for (const f of fields) {
+    if (f.source === 'computed') continue;
+    const r = f.dimension_row || f.dimensionRow || f.key;
+    if (!rows[r]) rows[r] = { ho: null, op: null, label: f.label };
+    const col = f.dimension_col || f.dimensionCol;
+    if (col === 'ho') rows[r].ho = f;
+    if (col === 'op') rows[r].op = f;
+  }
   return (
-    <div style={{ ...styles.snapSection, ...(isMobile ? styles.snapSectionMobile : {}) }}>
-      <div style={styles.snapAccent} />
-      <div style={{ ...styles.snapTitle, ...(isMobile ? { flexWrap: 'wrap' } : {}) }}>Composition</div>
-
-      <div style={{ ...styles.miniRow, gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)' }}>
-        <MiniKpi label="Employees" value={formatNumber(values.total_employees)} pct={pctStr(values.total_employees, values.outsource_count)} />
-        <MiniKpi label="Outsource" value={formatNumber(values.outsource_count)} pct={pctStr(values.outsource_count, values.total_employees)} />
-        <MiniKpi label="Female" value={formatNumber(values.female_count)} pct={pctStr(values.female_count, values.male_count)} />
-        <MiniKpi label="Male" value={formatNumber(values.male_count)} pct={pctStr(values.male_count, values.female_count)} />
-      </div>
-
+    <>
       <div style={styles.hoOpHeader}>
         <div />
         <div style={styles.hoOpColHead}>HO</div>
         <div style={styles.hoOpColHead}>OP</div>
       </div>
-      <div style={styles.hoOpRow}>
-        <div style={styles.hoOpLabel}>Location count</div>
-        <div style={styles.hoOpNum}>
-          {formatNumber(values.ho_count)} <span style={styles.hoOpPct}>{pctStr(values.ho_count, values.op_count)}</span>
+      {Object.entries(rows).map(([rk, row]) => (
+        <div key={rk} style={styles.hoOpRow}>
+          <div style={styles.hoOpLabel}>{row.label}</div>
+          <div style={styles.hoOpNum}>{row.ho ? cell(row.ho, values) : '—'}</div>
+          <div style={styles.hoOpNum}>{row.op ? cell(row.op, values) : '—'}</div>
         </div>
-        <div style={styles.hoOpNum}>
-          {formatNumber(values.op_count)} <span style={styles.hoOpPct}>{pctStr(values.op_count, values.ho_count)}</span>
-        </div>
-      </div>
-      <div style={styles.hoOpRow}>
-        <div style={styles.hoOpLabel}>Turnover</div>
-        <div style={styles.hoOpNum}>{values.turnover_ho_pct ? `${formatNumber(values.turnover_ho_pct)}%` : '—'}</div>
-        <div style={styles.hoOpNum}>{values.turnover_op_pct ? `${formatNumber(values.turnover_op_pct)}%` : '—'}</div>
-      </div>
-    </div>
+      ))}
+    </>
   );
 }
+function cell(field, values) {
+  const v = values[field.key];
+  return (v === undefined || v === null || v === '') ? '—' : formatValue(field, v);
+}
 
-function renderComplianceSection(values, isMobile = false) {
-  const saudField = FIELDS.find((f) => f.key === 'saudization_pct');
-  const evaluation = evaluateTarget(saudField, values.saudization_pct);
+// ---- Grid (services/labeled_grid): value grid + computed footer total ----
+function renderGrid(section, fields, values, allFields, isMobile) {
+  const manual = fields.filter((f) => f.source !== 'computed');
+  const footer = fields.find((f) => f.source === 'computed' && !f.subsection);
   return (
-    <div style={{ ...styles.snapSection, ...(isMobile ? styles.snapSectionMobile : {}) }}>
-      <div style={styles.snapAccent} />
-      <div style={{ ...styles.snapTitle, ...(isMobile ? { flexWrap: 'wrap' } : {}) }}>
-        Compliance &amp; HRDF
-        <span style={styles.snapTitleAccent}>Saudi labor + Gov programs</span>
+    <>
+      <div style={{ ...styles.valueGrid, gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)' }}>
+        {manual.map((f) => <ValueCell key={f.key} field={f} values={values} allFields={allFields} />)}
       </div>
-      <div style={{ ...styles.miniRow, gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)' }}>
-        {/* Saudization — with inline TargetIndicator (Item 6) */}
-        <div style={styles.miniKpi}>
-          <div style={styles.miniLabel}>Saudization</div>
-          <div style={{ ...styles.miniValue, ...styles.miniValueLarge, color: '#F3C036' }}>
-            {values.saudization_pct ? `${formatNumber(values.saudization_pct)}%` : '—'}
-          </div>
-          <TargetIndicator evaluation={evaluation} />
+      {footer && (
+        <div style={styles.snapFooter}>
+          <div style={styles.snapFooterLabel}>{footer.label}</div>
+          <div style={styles.snapFooterValue}>{computeFieldValue(footer, values, allFields)}</div>
         </div>
-        {/* HRDF Employees */}
-        <MiniKpi label="HRDF Employees" value={formatNumber(values.hrdf_employee_count)} large />
-        {/* HRDF Amount */}
-        <div style={styles.miniKpi}>
-          <div style={styles.miniLabel}>HRDF Amount</div>
-          <div style={{ ...styles.miniValue, ...styles.miniValueLarge, color: '#F3C036' }}>
-            {formatNumber(values.hrdf_amount_sr)} <span style={{ ...styles.miniValuePct, color: 'rgba(255,255,255,0.5)' }}>SR</span>
-          </div>
-        </div>
-      </div>
-    </div>
+      )}
+    </>
   );
 }
 
-function renderOnOffSection(values, isMobile = false) {
-  const onboardRows = [
-    { key: 'new_employee_profiles', label: 'New profiles' },
-    { key: 'id_cards_printed', label: 'ID cards printed' },
-    { key: 'insurance_enrolled', label: 'Insurance enrolled' },
-    { key: 'gosi_qiwa_enrolled', label: 'Gosi / Qiwa enrolled' },
-  ];
-  const offboardRows = [
-    { key: 'clearance', label: 'Clearance' },
-    { key: 'medical_removal', label: 'Medical removal' },
-    { key: 'gosi_qiwa_removal', label: 'Gosi / Qiwa removal' },
-    { key: 'sponsorship_transfer', label: 'Sponsorship transfer' },
-  ];
-  // POLISH: header totals removed — summing distinct process steps for the
-  // same people (profile + ID card + insurance + Gosi for one hire = "4")
-  // was misleading. Services keeps its total (total_handled_requests is a
-  // real count of handled requests).
-
+// ---- One label→value cell (computed tinted, no CALC tag; target inline) ----
+function ValueCell({ field, values, allFields }) {
+  const isComputed = field.source === 'computed';
+  const val = displayValue(field, values, allFields);
+  const evaln = field.target ? evaluateTarget(field, values[field.key]) : null;
+  const goldValue = isComputed || !!field.target;
   return (
-    <div style={{ ...styles.snapSection, ...(isMobile ? styles.snapSectionMobile : {}) }}>
-      <div style={styles.snapAccent} />
-      <div style={{ ...styles.snapTitle, ...(isMobile ? { flexWrap: 'wrap' } : {}) }}>On-Boarding / Off-Boarding</div>
-      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 18 }}>
-        <div>
-          <div style={styles.subSnapTitle}>On-Boarding</div>
-          <div style={styles.hoOpHeader}>
-            <div />
-            <div style={styles.hoOpColHead}>HO</div>
-            <div style={styles.hoOpColHead}>OP</div>
-          </div>
-          {onboardRows.map((r) => (
-            <div key={r.key} style={styles.hoOpRow}>
-              <div style={styles.hoOpLabel}>{r.label}</div>
-              <div style={styles.hoOpNum}>{formatNumber(values[`${r.key}_ho`])}</div>
-              <div style={styles.hoOpNum}>{formatNumber(values[`${r.key}_op`])}</div>
-            </div>
-          ))}
-        </div>
-        <div>
-          <div style={styles.subSnapTitle}>Off-Boarding</div>
-          <div style={styles.hoOpHeader}>
-            <div />
-            <div style={styles.hoOpColHead}>HO</div>
-            <div style={styles.hoOpColHead}>OP</div>
-          </div>
-          {offboardRows.map((r) => (
-            <div key={r.key} style={styles.hoOpRow}>
-              <div style={styles.hoOpLabel}>{r.label}</div>
-              <div style={styles.hoOpNum}>{formatNumber(values[`${r.key}_ho`])}</div>
-              <div style={styles.hoOpNum}>{formatNumber(values[`${r.key}_op`])}</div>
-            </div>
-          ))}
+    <div style={{ ...styles.valueCell, ...(isComputed ? styles.valueCellComputed : {}) }}>
+      <div style={styles.cellRow}>
+        <div style={styles.valueLabel}>{field.label}</div>
+        <div style={{ ...styles.valueNum, ...(goldValue ? { color: '#F3C036' } : {}) }}>
+          {val}{field.unit && val !== '—' ? <span style={styles.valueUnit}> {field.unit}</span> : null}
         </div>
       </div>
+      {evaln && <TargetIndicator evaluation={evaln} />}
     </div>
   );
 }
 
-function renderServicesSection(values, isMobile = false) {
-  const fields = FIELDS.filter((f) => f.section === 'services' && f.source !== 'computed')
-    .sort((a, b) => a.displayOrder - b.displayOrder);
-  const totalField = FIELDS.find((f) => f.key === 'total_handled_requests');
-  const totalDisplay = totalField ? computeField(totalField, values) : '—';
-  return (
-    <div style={{ ...styles.snapSection, ...(isMobile ? styles.snapSectionMobile : {}) }}>
-      <div style={styles.snapAccent} />
-      <div style={{ ...styles.snapTitle, ...(isMobile ? { flexWrap: 'wrap' } : {}) }}>
-        Services
-        <span style={styles.snapTitleAccent}>{totalDisplay} total</span>
-      </div>
-      <div style={{ ...styles.servicesGrid, ...(isMobile ? styles.servicesGridMobile : {}) }}>
-        {fields.map((f) => (
-          <div key={f.key} style={styles.snapService}>
-            <span style={styles.snapServiceLabel}>{f.label}</span>
-            <span style={styles.snapServiceValue}>{formatNumber(values[f.key])}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
 
-// =============================================
-// Small components + helpers
-// =============================================
-// POLISH: optional `large` prop bumps the value size for wide cards
-// (Compliance & HRDF 3-col section). Default stays 18px so the
-// Headcount 4-up MiniKpis (Employees/Outsource/Female/Male) render
-// exactly as before.
-function MiniKpi({ label, value, pct, large = false }) {
-  return (
-    <div style={styles.miniKpi}>
-      <div style={styles.miniLabel}>{label}</div>
-      <div style={{ ...styles.miniValue, ...(large ? styles.miniValueLarge : {}) }}>
-        {value}
-        {pct && <span style={styles.miniValuePct}>{pct}</span>}
-      </div>
-    </div>
-  );
-}
-
-function num(x) {
-  const n = parseFloat(x);
-  return Number.isFinite(n) ? n : 0;
-}
-
-function pctStr(a, b) {
-  const na = num(a);
-  const nb = num(b);
-  const total = na + nb;
-  if (total === 0) return null;
-  return `${((na / total) * 100).toFixed(1)}%`;
-}
-
-// =============================================
-// STYLES
-// =============================================
 const styles = {
+  heroUnit: { fontSize: 16, fontWeight: 700, color: 'rgba(255,255,255,0.5)' },
+  snapSubsection: { marginBottom: 4 },
+  snapSubLabel: {
+    fontSize: 11, fontWeight: 700, letterSpacing: '1.2px', textTransform: 'uppercase',
+    color: 'rgba(255,255,255,0.45)', margin: '18px 0 10px',
+  },
+  valueGrid: { display: 'grid', gap: 12, marginBottom: 4 },
+  valueCell: {
+    display: 'flex', flexDirection: 'column', gap: 0,
+    background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)',
+    borderRadius: 10, padding: '12px 14px',
+  },
+  valueCellComputed: {
+    background: 'rgba(243,192,54,0.06)', borderColor: 'rgba(243,192,54,0.18)',
+  },
+  cellRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 },
+  valueLabel: { fontSize: 13, color: 'rgba(255,255,255,0.75)' },
+  valueNum: { fontSize: 16, fontWeight: 700, color: '#fff', fontVariantNumeric: 'tabular-nums', textAlign: 'right' },
+  valueUnit: { fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.45)' },
+  snapFooter: {
+    marginTop: 14, paddingTop: 14, borderTop: '1px solid rgba(255,255,255,0.1)',
+    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+  },
+  snapFooterLabel: { fontSize: 13, fontWeight: 600, color: 'rgba(255,255,255,0.7)' },
+  snapFooterValue: { fontSize: 22, fontWeight: 700, color: '#F3C036', fontVariantNumeric: 'tabular-nums' },
+
   canvas: {
     position: 'relative', zIndex: 5,
-    maxWidth: 1100, margin: '24px auto 0',
+    maxWidth: 1200, margin: '24px auto 0',
     padding: '0 48px',
     animation: 'hrFadeInUp 0.5s 0.05s ease both',
   },
@@ -663,44 +363,44 @@ const styles = {
   heroGrid: {
     display: 'grid',
     gridTemplateColumns: 'repeat(4, 1fr)',
-    gap: 14, marginBottom: 22,
+    gap: 16, marginBottom: 30,
   },
   heroKpi: {
     position: 'relative',
-    background: 'rgba(255,255,255,0.03)',
+    background: 'rgba(255,255,255,0.04)',
     backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
     border: '1px solid rgba(255,255,255,0.1)',
-    borderRadius: 14,
-    padding: '18px 18px 16px',
+    borderRadius: 16,
+    padding: '20px 22px',
     overflow: 'hidden',
   },
   heroAccent: {
     position: 'absolute', top: 0, left: 0, right: 0,
-    height: 2,
+    height: 3,
     background: 'linear-gradient(90deg, #F3C036, #ec4899, #a855f7)',
   },
   heroLabel: {
-    fontSize: 10, fontWeight: 700,
-    letterSpacing: '1.5px', textTransform: 'uppercase',
-    color: 'rgba(255,255,255,0.55)', marginBottom: 8,
+    fontSize: 11, fontWeight: 700,
+    letterSpacing: '1px', textTransform: 'uppercase',
+    color: 'rgba(255,255,255,0.55)',
   },
   heroValue: {
-    fontSize: 32, fontWeight: 700,
+    fontSize: 38, fontWeight: 800,
     letterSpacing: '-1px', color: '#fff',
     fontVariantNumeric: 'tabular-nums',
-    lineHeight: 1.05, marginBottom: 4,
+    lineHeight: 1.05, marginTop: 8,
   },
   heroSub: {
-    fontSize: 11, color: 'rgba(255,255,255,0.5)', fontWeight: 500,
+    fontSize: 12, color: 'rgba(255,255,255,0.5)', fontWeight: 500, marginTop: 6,
   },
 
   snapSection: {
     background: 'rgba(255,255,255,0.03)',
     backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
     border: '1px solid rgba(255,255,255,0.1)',
-    borderRadius: 16,
-    padding: '22px 24px',
-    marginBottom: 18,
+    borderRadius: 18,
+    padding: '22px 26px',
+    marginBottom: 20,
     position: 'relative', overflow: 'hidden',
   },
   snapSectionMobile: {
@@ -710,10 +410,11 @@ const styles = {
     position: 'absolute', top: 0, left: 0, right: 0,
     height: 3,
     background: 'linear-gradient(90deg, #F3C036, #ec4899, #a855f7)',
+    opacity: 0.7,
   },
   snapTitle: {
-    fontSize: 14, fontWeight: 700, letterSpacing: '-0.1px',
-    marginBottom: 16,
+    fontSize: 18, fontWeight: 700, letterSpacing: '-0.2px',
+    marginBottom: 4,
     display: 'flex', alignItems: 'center', gap: 10,
   },
   snapTitleAccent: {
@@ -761,23 +462,22 @@ const styles = {
     display: 'grid',
     gridTemplateColumns: '1fr 1fr 1fr',
     gap: 12,
-    padding: '4px 14px',
+    padding: '0 14px 2px',
   },
   hoOpRow: {
     display: 'grid',
     gridTemplateColumns: '1fr 1fr 1fr',
     gap: 12,
-    padding: '10px 14px',
-    background: 'rgba(0,0,0,0.15)',
-    border: '1px solid rgba(255,255,255,0.04)',
-    borderRadius: 10, marginBottom: 6, alignItems: 'center',
+    padding: '11px 14px',
+    background: 'rgba(255,255,255,0.03)',
+    borderRadius: 10, marginBottom: 8, alignItems: 'center',
   },
   hoOpLabel: {
-    fontSize: 12.5, fontWeight: 500, color: 'rgba(255,255,255,0.85)',
+    fontSize: 14, fontWeight: 500, color: 'rgba(255,255,255,0.8)',
   },
   hoOpNum: {
     fontSize: 14, fontWeight: 700, color: '#fff',
-    textAlign: 'center', fontVariantNumeric: 'tabular-nums',
+    textAlign: 'right', fontVariantNumeric: 'tabular-nums',
   },
   hoOpPct: {
     color: 'rgba(243,192,54,0.7)', fontSize: 11, fontWeight: 600,
@@ -785,8 +485,8 @@ const styles = {
   },
   hoOpColHead: {
     fontSize: 10, fontWeight: 700,
-    letterSpacing: '1.5px', textTransform: 'uppercase',
-    color: 'rgba(243,192,54,0.6)', textAlign: 'center',
+    letterSpacing: '1px', textTransform: 'uppercase',
+    color: 'rgba(255,255,255,0.4)', textAlign: 'right',
   },
 
   servicesGrid: {
