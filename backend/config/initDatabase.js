@@ -687,6 +687,156 @@ const initDatabase = async () => {
     }
 
     // =============================================
+    // DASHBOARD BUILDER (B6 / TA-1): Seed Talent Acquisition structure (idempotent)
+    // =============================================
+    // Per TA_STRUCTURE_SPEC (Rule-8-derived from the HC Dashboard PDF; PC gets
+    // structure only). 8 sections incl. a MATRIX section (rows×cols cells via
+    // dimension_row/col) and labeled_grid/ho_op sections. Computed cells use
+    // percent_of / sum / difference. YTD is Option A (manual total_hired_ytd +
+    // hired_in_month) — cross-month auto-YTD is a future phase. Guard on any
+    // TA section existing so this runs once.
+    const existingTaStructure = await pool.query(
+      "SELECT 1 FROM module_sections WHERE module_code = 'TA' LIMIT 1"
+    );
+    if (existingTaStructure.rowCount === 0) {
+      // Sections: [key, title, layout, sort_order]
+      const taSections = [
+        ['vacancies_hired',   'Vacancies & Hired',           'kpi',           1],
+        ['vfr',               'Vacant / Filled / Remaining', 'matrix',        2],
+        ['hired_by_dept',     'Hired by Department',         'labeled_grid',  3],
+        ['overview',          'Overview (HO vs OP)',         'ho_op',         4],
+        ['gender',            'Gender of Hired',             'kpi',           5],
+        ['hiring_source',     'Hiring Source',               'labeled_grid',  6],
+        ['internal_mobility', 'Internal Mobility',           'kpi',           7],
+        ['training',          'Training & Outcomes',         'kpi',           8],
+      ];
+      const taSecId = {};
+      for (const [key, title, layout, order] of taSections) {
+        const r = await pool.query(
+          `INSERT INTO module_sections (module_code, key, title, layout, sort_order)
+           VALUES ('TA', $1, $2, $3, $4) RETURNING id`,
+          [key, title, layout, order]
+        );
+        taSecId[key] = r.rows[0].id;
+      }
+
+      // Subsections (only Vacancies & Hired has them).
+      const taSubs = [
+        ['vacancies_hired', 'vacancies', 'Vacancies', 1],
+        ['vacancies_hired', 'hired',     'Hired',     2],
+      ];
+      for (const [sectionKey, key, title, order] of taSubs) {
+        await pool.query(
+          `INSERT INTO module_subsections (module_code, section_id, key, title, sort_order)
+           VALUES ('TA', $1, $2, $3, $4)`,
+          [taSecId[sectionKey], key, title, order]
+        );
+      }
+
+      // Field helper. Tuple:
+      //  [key,label,type,unit,section,subsection,dimension,dRow,dCol,source,fType,fArgs,order,featured]
+      const T = (key, label, type, unit, section, subsection, dimension, dRow, dCol, source, fType, fArgs, order, featured = false) =>
+        ({ key, label, type, unit, section, subsection, dimension, dRow, dCol, source, fType, fArgs, order, featured });
+
+      const taFields = [
+        // === 1. Vacancies & Hired ===
+        // Vacancies subsection
+        T('total_vacant','Total Vacant','number',null,'vacancies_hired','vacancies',null,null,null,'manual',null,null,10),
+        T('new_position_vacant','New Position Vacant','number',null,'vacancies_hired','vacancies',null,null,null,'manual',null,null,11),
+        T('replacement_vacant','Replacement Vacant','number',null,'vacancies_hired','vacancies',null,null,null,'manual',null,null,12),
+        // Hired subsection
+        T('total_hired_ytd','Total Hired (YTD)','number',null,'vacancies_hired','hired',null,null,null,'manual',null,null,20,true),
+        T('new_position_hired','New Position Hired','number',null,'vacancies_hired','hired',null,null,null,'manual',null,null,21),
+        T('replacement_hired','Replacement Hired','number',null,'vacancies_hired','hired',null,null,null,'manual',null,null,22),
+        T('hired_in_month','Hired (in month)','number',null,'vacancies_hired','hired',null,null,null,'manual',null,null,23),
+        T('avg_time_to_fill','Avg. Time to Fill','number','days','vacancies_hired','hired',null,null,null,'manual',null,null,24,true),
+        // Computed: Hired % = total_hired_ytd / total_vacant
+        T('hired_pct','Hired %','percentage','%','vacancies_hired','hired',null,null,null,'computed','percent_of',{ numerator:'total_hired_ytd', over:['total_vacant'] },5,true),
+
+        // === 2. Vacant / Filled / Remaining (MATRIX) ===
+        // Manual cells
+        T('mtx_head_office_vacant','Head Office · Vacant','number',null,'vfr',null,'matrix','head_office','vacant','manual',null,null,10),
+        T('mtx_head_office_filled','Head Office · Filled','number',null,'vfr',null,'matrix','head_office','filled','manual',null,null,11),
+        T('mtx_operation_vacant','Operation · Vacant','number',null,'vfr',null,'matrix','operation','vacant','manual',null,null,20),
+        T('mtx_operation_filled','Operation · Filled','number',null,'vfr',null,'matrix','operation','filled','manual',null,null,21),
+        // Computed: remaining per row = vacant − filled
+        T('mtx_head_office_remaining','Head Office · Remaining','number',null,'vfr',null,'matrix','head_office','remaining','computed','difference',{ a:'mtx_head_office_vacant', b:'mtx_head_office_filled' },12),
+        T('mtx_operation_remaining','Operation · Remaining','number',null,'vfr',null,'matrix','operation','remaining','computed','difference',{ a:'mtx_operation_vacant', b:'mtx_operation_filled' },22),
+        // Computed: total row per col = HO + OP
+        T('mtx_total_vacant','Total · Vacant','number',null,'vfr',null,'matrix','total','vacant','computed','sum',{ fields:['mtx_head_office_vacant','mtx_operation_vacant'] },30),
+        T('mtx_total_filled','Total · Filled','number',null,'vfr',null,'matrix','total','filled','computed','sum',{ fields:['mtx_head_office_filled','mtx_operation_filled'] },31),
+        T('mtx_total_remaining','Total · Remaining','number',null,'vfr',null,'matrix','total','remaining','computed','difference',{ a:'mtx_total_vacant', b:'mtx_total_filled' },32),
+
+        // === 3. Hired by Department (labeled_grid, 15 manual) ===
+        T('dept_retail_auto','Retail Auto','number',null,'hired_by_dept',null,null,null,null,'manual',null,null,10),
+        T('dept_msme','MSME','number',null,'hired_by_dept',null,null,null,null,'manual',null,null,20),
+        T('dept_customer_accounts','Customer Accounts','number',null,'hired_by_dept',null,null,null,null,'manual',null,null,30),
+        T('dept_hr','HR','number',null,'hired_by_dept',null,null,null,null,'manual',null,null,40),
+        T('dept_it','IT','number',null,'hired_by_dept',null,null,null,null,'manual',null,null,50),
+        T('dept_st','S&T','number',null,'hired_by_dept',null,null,null,null,'manual',null,null,60),
+        T('dept_audit','Audit','number',null,'hired_by_dept',null,null,null,null,'manual',null,null,70),
+        T('dept_risk_cs','Risk & CS','number',null,'hired_by_dept',null,null,null,null,'manual',null,null,80),
+        T('dept_compliance','Compliance','number',null,'hired_by_dept',null,null,null,null,'manual',null,null,90),
+        T('dept_dmo','DMO','number',null,'hired_by_dept',null,null,null,null,'manual',null,null,100),
+        T('dept_legal','Legal','number',null,'hired_by_dept',null,null,null,null,'manual',null,null,110),
+        T('dept_finance','Finance','number',null,'hired_by_dept',null,null,null,null,'manual',null,null,120),
+        T('dept_cx','CX','number',null,'hired_by_dept',null,null,null,null,'manual',null,null,130),
+        T('dept_marketing','Marketing','number',null,'hired_by_dept',null,null,null,null,'manual',null,null,140),
+        T('dept_admin_services','Admin Services','number',null,'hired_by_dept',null,null,null,null,'manual',null,null,150),
+
+        // === 4. Overview (HO vs OP) — ho_op ===
+        T('ov_hired_ho','Hired','number',null,'overview',null,'ho_op','hired','ho','manual',null,null,10),
+        T('ov_hired_op','Hired','number',null,'overview',null,'ho_op','hired','op','manual',null,null,11),
+        T('ov_time_to_fill_ho','Time to Fill','number','days','overview',null,'ho_op','time_to_fill','ho','manual',null,null,20),
+        T('ov_time_to_fill_op','Time to Fill','number','days','overview',null,'ho_op','time_to_fill','op','manual',null,null,21),
+        T('ov_interviews_ho','Interviews','number',null,'overview',null,'ho_op','interviews','ho','manual',null,null,30),
+        T('ov_interviews_op','Interviews','number',null,'overview',null,'ho_op','interviews','op','manual',null,null,31),
+        T('ov_induction_ho','Induction Program','number',null,'overview',null,'ho_op','induction_program','ho','manual',null,null,40),
+        T('ov_induction_op','Induction Program','number',null,'overview',null,'ho_op','induction_program','op','manual',null,null,41),
+
+        // === 5. Gender of Hired (kpi) ===
+        T('female_pct','Female %','percentage','%','gender',null,null,null,null,'manual',null,null,10),
+        T('male_pct','Male %','percentage','%','gender',null,null,null,null,'manual',null,null,20),
+
+        // === 6. Hiring Source (labeled_grid, 4 manual) ===
+        T('src_linkedin_bayt','LinkedIn & Bayt','number',null,'hiring_source',null,null,null,null,'manual',null,null,10),
+        T('src_referral','Referral','number',null,'hiring_source',null,null,null,null,'manual',null,null,20),
+        T('src_internal_posts','Internal Posts','number',null,'hiring_source',null,null,null,null,'manual',null,null,30),
+        T('src_hrdf','HRDF','number',null,'hiring_source',null,null,null,null,'manual',null,null,40),
+
+        // === 7. Internal Mobility (kpi + small ho_op) ===
+        T('internal_job_post','Internal Job Post','number',null,'internal_mobility',null,null,null,null,'manual',null,null,10),
+        T('internal_ho','Internal · HO','number',null,'internal_mobility',null,'ho_op','internal','ho','manual',null,null,20),
+        T('internal_op','Internal · OP','number',null,'internal_mobility',null,'ho_op','internal','op','manual',null,null,21),
+        T('internal_total','Internal Total','number',null,'internal_mobility',null,null,null,null,'computed','sum',{ fields:['internal_ho','internal_op'] },30),
+
+        // === 8. Training & Outcomes (kpi) ===
+        T('trainees_hired','Trainees Hired','number',null,'training',null,null,null,null,'manual',null,null,10),
+        T('coop','Co-op','number',null,'training',null,null,null,null,'manual',null,null,20),
+        T('tamheer','Tamheer','number',null,'training',null,null,null,null,'manual',null,null,30),
+        T('summer','Summer','number',null,'training',null,null,null,null,'manual',null,null,40),
+        T('total_trainees','Total Trainees','number',null,'training',null,null,null,null,'computed','sum',{ fields:['coop','tamheer','summer'] },50),
+      ];
+
+      for (const f of taFields) {
+        await pool.query(
+          `INSERT INTO module_fields
+             (module_code, section_id, key, label, type, unit, dimension, dimension_row, dimension_col,
+              source, formula_type, formula_args, subsection, sort_order, featured)
+           VALUES ('TA', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+          [
+            taSecId[f.section], f.key, f.label, f.type, f.unit,
+            f.dimension, f.dRow, f.dCol, f.source, f.fType,
+            f.fArgs ? JSON.stringify(f.fArgs) : null, f.subsection, f.order, f.featured,
+          ]
+        );
+      }
+      console.log(`[Builder TA-1] Seeded TA structure: ${taSections.length} sections, ${taSubs.length} subsections, ${taFields.length} fields.`);
+    } else {
+      console.log('[Builder TA-1] TA structure already exists — skipping seed.');
+    }
+
+    // =============================================
     // PHASE 0: Seed workflow_targets registry
     // dashboard_submission: workflow active (used by HR Dashboards in Phase 0)
     // activity_completion:  workflow inactive (placeholder for future Annual Plan
