@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import ModuleDataEntry from '../dashboards/ModuleDataEntry';
 import ModuleSnapshot from '../dashboards/ModuleSnapshot';
 import TASnapshot from '../dashboards/TASnapshot';
+import StatusBadge from '../dashboards/StatusBadge';
 import Dropdown from '../dashboards/Dropdown';
 import { dashboardsAPI, targetsAPI } from '../services/api';
 import { buildYearOptions, buildMonthOptions } from '../engine/computers';
@@ -70,6 +71,7 @@ export default function ModulePage({ user, onLogout }) {
   const [structureRefetching, setStructureRefetching] = useState(false);
   const [structureError, setStructureError] = useState(null);
   const [editMode, setEditMode] = useState(false);
+  const [currentStatus, setCurrentStatus] = useState('empty'); // for the entry StatusBadge
 
   // ---- snapshot published values + state ----
   const [snapValues, setSnapValues] = useState({});
@@ -233,9 +235,27 @@ export default function ModulePage({ user, onLogout }) {
         <span style={S.crumbCurrent}>{moduleName}</span>
       </div>
 
-      {/* Title + tabs + edit toggle */}
+      {/* Title row: title (left) + month/status badges + edit toggle (right) */}
       <div style={{ ...S.titleRow, ...(isMobile ? S.titleRowMobile : {}) }}>
         <div style={S.title}>{moduleName}</div>
+        <div style={{ ...S.titleRight, ...(isMobile ? S.titleRightMobile : {}) }}>
+          <span style={S.periodBadge}>{monthName} {year}</span>
+          {activeView === 'entry' && <StatusBadge status={currentStatus} />}
+          {isAdmin && activeView === 'entry' && (
+            <button
+              type="button"
+              style={{ ...S.editToggle, ...(editMode ? S.editToggleOn : {}) }}
+              onClick={() => setEditMode((v) => !v)}
+            >
+              {editMode ? '✓ Editing' : '✎ Edit dashboard'}
+              {structureRefetching && <span style={S.refetch}> ↻</span>}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Tabs (below the title, like HR Ops) */}
+      <div style={{ ...S.tabsWrap, ...(isMobile ? S.tabsWrapMobile : {}) }}>
         <div style={{ ...S.tabs, ...(isMobile ? S.tabsMobile : {}) }}>
           {canEnter && (
             <button
@@ -254,16 +274,6 @@ export default function ModulePage({ user, onLogout }) {
             Snapshot
           </button>
         </div>
-        {isAdmin && activeView === 'entry' && (
-          <button
-            type="button"
-            style={{ ...S.editToggle, ...(editMode ? S.editToggleOn : {}) }}
-            onClick={() => setEditMode((v) => !v)}
-          >
-            {editMode ? '✓ Editing dashboard' : '✎ Edit dashboard'}
-            {structureRefetching && <span style={S.refetch}> ↻</span>}
-          </button>
-        )}
       </div>
 
       {/* Snapshot period selector (entry has its own inside ModuleDataEntry) */}
@@ -284,6 +294,7 @@ export default function ModulePage({ user, onLogout }) {
             year={year}
             month={month}
             onPeriodChange={handlePeriodChange}
+            onStatusChange={setCurrentStatus}
             canEditStructure={isAdmin}
             editMode={editMode && isAdmin}
             onStructureChanged={onStructureChanged}
@@ -330,27 +341,38 @@ const S = {
   crumbSep: { color: 'rgba(255,255,255,0.3)' },
   crumbCurrent: { color: '#fff', fontWeight: 600 },
   titleRow: {
-    display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap',
-    padding: '14px 48px 0',
+    display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between',
+    gap: 16, flexWrap: 'wrap', padding: '14px 48px 0', marginBottom: 16,
   },
-  titleRowMobile: { padding: '12px 16px 0', flexDirection: 'column', alignItems: 'stretch' },
-  title: { fontSize: 26, fontWeight: 800, letterSpacing: '-0.5px' },
+  titleRowMobile: { padding: '12px 16px 0', flexDirection: 'column', alignItems: 'stretch', marginBottom: 12 },
+  title: { fontSize: 28, fontWeight: 700, letterSpacing: '-0.6px' },
+  titleRight: { display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' },
+  titleRightMobile: { },
+  periodBadge: {
+    display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px',
+    background: 'rgba(243,192,54,0.10)', border: '1px solid rgba(243,192,54,0.3)',
+    borderRadius: 18, fontSize: 11, color: '#F3C036', fontWeight: 700,
+    letterSpacing: '0.5px', textTransform: 'uppercase',
+  },
+  tabsWrap: { padding: '0 48px' },
+  tabsWrapMobile: { padding: '0 16px' },
   tabs: {
     display: 'inline-flex', background: 'rgba(255,255,255,0.03)',
     border: '1px solid rgba(255,255,255,0.08)', borderRadius: 10, padding: 4, gap: 2,
+    backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
   },
   tabsMobile: { display: 'grid', gridTemplateColumns: '1fr 1fr', width: '100%' },
   tab: {
-    padding: '8px 18px', borderRadius: 7, fontSize: 13, fontWeight: 600,
+    padding: '8px 16px', borderRadius: 7, fontSize: 12, fontWeight: 600,
     color: 'rgba(255,255,255,0.6)', cursor: 'pointer', background: 'transparent',
     border: 'none', fontFamily: 'inherit',
   },
   tabMobile: { minHeight: 40, textAlign: 'center' },
-  tabActive: { background: ACCENT, color: '#fff' },
+  tabActive: { background: 'linear-gradient(135deg, rgba(243,192,54,0.18), rgba(236,72,153,0.12))', color: '#fff', boxShadow: '0 2px 8px rgba(0,0,0,0.2)' },
   editToggle: {
-    marginLeft: 'auto', padding: '8px 16px', borderRadius: 8,
+    padding: '8px 16px', borderRadius: 8,
     background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.15)',
-    color: 'rgba(255,255,255,0.85)', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, fontWeight: 600,
+    color: 'rgba(255,255,255,0.85)', cursor: 'pointer', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 600,
   },
   editToggleOn: { background: ACCENT, borderColor: 'rgba(243,192,54,0.5)', color: '#F3C036' },
   refetch: { fontSize: 11, color: 'rgba(255,255,255,0.5)' },
