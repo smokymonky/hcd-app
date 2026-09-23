@@ -861,7 +861,6 @@ export default function ModuleDataEntry({ config, user, year, month, onStatusCha
             <Dropdown label="Month" value={String(month)} options={monthOptions} onChange={(v) => handlePeriodChange(year, v)} width={150} />
           </>
         )}
-        <span style={styles.previewBadge}>PREVIEW · engine v2</span>
       </div>
 
       {renderStatusBanner(status, latestRejection)}
@@ -2071,14 +2070,6 @@ const styles = {
     background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)', color: '#fff',
     fontFamily: 'inherit', fontSize: 12.5, fontWeight: 600,
     boxShadow: '0 6px 24px rgba(239,68,68,0.3)',
-  },
-  previewBadge: {
-    marginLeft: 'auto',
-    fontSize: 10, fontWeight: 700, letterSpacing: '1px',
-    color: '#F3C036',
-    background: 'rgba(243,192,54,0.12)',
-    border: '1px solid rgba(243,192,54,0.3)',
-    borderRadius: 6, padding: '4px 8px',
   },
   canvas: {
     position: 'relative',
