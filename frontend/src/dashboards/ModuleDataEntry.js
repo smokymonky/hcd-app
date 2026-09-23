@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   computeFieldValue,
+  resolveComputedValues,
   formatValue,
   buildYearOptions,
   buildMonthOptions,
@@ -157,6 +158,11 @@ export default function ModuleDataEntry({ config, user, year, month, onStatusCha
   }, [config.code, year, month, onStatusChange]);
 
   const hasUnsavedChanges = useMemo(() => valuesDiffer(values, lastSaved), [values, lastSaved]);
+
+  // TA-2 fix: resolve computed-of-computed once per render. Computed DISPLAY
+  // reads this map (entered + resolved computed raw numbers); manual INPUTS
+  // still bind to `values` so editing/saving is unchanged.
+  const resolvedValues = useMemo(() => resolveComputedValues(FIELDS, values, FIELDS), [FIELDS, values]);
 
   // beforeunload guard (same as live)
   useEffect(() => {
@@ -773,7 +779,7 @@ export default function ModuleDataEntry({ config, user, year, month, onStatusCha
               </div>
               <div style={{ ...styles.fieldGrid, ...(isMobile ? styles.fieldGridMobile : {}) }}>
                 {groupFields.map((f) => (
-                  <FieldCell key={f.key} field={f} values={values} onChange={handleFieldChange} readOnly={isReadOnly} allFields={fields} />
+                  <FieldCell key={f.key} field={f} values={values} computedValues={resolvedValues} onChange={handleFieldChange} readOnly={isReadOnly} allFields={fields} />
                 ))}
               </div>
               {groupFields.length === 0 && <div style={styles.groupEmpty}>No fields in this group yet.</div>}
@@ -786,7 +792,7 @@ export default function ModuleDataEntry({ config, user, year, month, onStatusCha
             {activeSubs.length > 0 && <div style={styles.subsectionLabel}>Ungrouped</div>}
             <div style={{ ...styles.fieldGrid, ...(isMobile ? styles.fieldGridMobile : {}) }}>
               {ungrouped.map((f) => (
-                <FieldCell key={f.key} field={f} values={values} onChange={handleFieldChange} readOnly={isReadOnly} allFields={fields} />
+                <FieldCell key={f.key} field={f} values={values} computedValues={resolvedValues} onChange={handleFieldChange} readOnly={isReadOnly} allFields={fields} />
               ))}
             </div>
           </div>
@@ -991,12 +997,12 @@ export default function ModuleDataEntry({ config, user, year, month, onStatusCha
                 {section.layout === 'ho_op'
                   ? renderDimensionGrid(section, fields, values, handleFieldChange, isReadOnly, isMobile)
                   : section.layout === 'matrix'
-                    ? renderMatrixGrid(section, fields, values, handleFieldChange, isReadOnly, isMobile)
+                    ? renderMatrixGrid(section, fields, values, resolvedValues, handleFieldChange, isReadOnly, isMobile)
                     : (section.layout === 'grid' || section.layout === 'labeled_grid')
                       ? renderServicesGrid(fields, values, handleFieldChange, isReadOnly, isMobile)
                       : renderGroupedBody(section, fields)
                 }
-                {renderSectionFooter(section, fields, values)}
+                {section.layout !== 'matrix' && renderSectionFooter(section, fields, resolvedValues)}
 
                 {/* B3b-2 — field-edit controls (admin edit mode only) */}
                 {canEdit && !isTempId(section.id) && (
@@ -1694,7 +1700,7 @@ function buildMatrix(fields) {
 
 // ENTRY matrix: rows × cols table. Manual cells = number inputs (same save);
 // computed cells = read-only engine values (muted/gold). Scrolls on mobile.
-function renderMatrixGrid(section, fields, values, onChange, readOnly, isMobile = false) {
+function renderMatrixGrid(section, fields, values, resolvedValues, onChange, readOnly, isMobile = false) {
   const active = fields.filter((f) => f.is_active !== false);
   const { rows, cols, cellMap } = buildMatrix(active);
   return (
@@ -1716,7 +1722,7 @@ function renderMatrixGrid(section, fields, values, onChange, readOnly, isMobile 
                 if (f.source === 'computed') {
                   return (
                     <td key={c} style={styles.matrixCell}>
-                      <span style={styles.matrixComputed}>{computeFieldValue(f, values, active)}</span>
+                      <span style={styles.matrixComputed}>{computeFieldValue(f, resolvedValues, active)}</span>
                     </td>
                   );
                 }
@@ -1843,9 +1849,9 @@ function renderSectionFooter(section, fields, values) {
 }
 
 // FieldCell — single field (manual or computed), identical to live.
-function FieldCell({ field, values, onChange, readOnly, allFields }) {
+function FieldCell({ field, values, computedValues, onChange, readOnly, allFields }) {
   const isComputed = field.source === 'computed';
-  const display = isComputed ? computeFieldValue(field, values, allFields) : null;
+  const display = isComputed ? computeFieldValue(field, computedValues || values, allFields) : null;
   const isEmptyComputed = isComputed && display === '—';
 
   const targetHelper = field.target
