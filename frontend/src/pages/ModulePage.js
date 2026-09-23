@@ -4,9 +4,13 @@ import ModuleDataEntry from '../dashboards/ModuleDataEntry';
 import ModuleSnapshot from '../dashboards/ModuleSnapshot';
 import TASnapshot from '../dashboards/TASnapshot';
 import StatusBadge from '../dashboards/StatusBadge';
+import UserIdentityCard from '../hub/UserIdentityCard';
 import Dropdown from '../dashboards/Dropdown';
 import { dashboardsAPI, targetsAPI } from '../services/api';
 import { buildYearOptions, buildMonthOptions } from '../engine/computers';
+
+const SYSTEM_START_YEAR = 2026;
+const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 
 // =============================================
 // ModulePage — generic LIVE module page (Data Entry | Snapshot)
@@ -77,6 +81,9 @@ export default function ModulePage({ user, onLogout }) {
   const [snapValues, setSnapValues] = useState({});
   const [snapLoading, setSnapLoading] = useState(false);
   const [notPublished, setNotPublished] = useState(false);
+  const [snapSubmission, setSnapSubmission] = useState(null);  // FIX2: published submission (for '● Published <date>')
+  const [available, setAvailable] = useState({});              // FIX3: year → [published months]
+  const [rejectedPrior, setRejectedPrior] = useState(null);    // FIX4: { year, month, id } | null
 
   // Resolve access (my-access; admin bypass).
   useEffect(() => {
@@ -164,8 +171,10 @@ export default function ModulePage({ user, onLogout }) {
         const v = {};
         (published.data || []).forEach((row) => { v[row.field_key] = row.value ?? ''; });
         setSnapValues(v);
+        setSnapSubmission(published.submission || null);  // FIX2
       })
       .catch((e) => {
+        setSnapSubmission(null);
         if (e && /not published|no published|not found|404/i.test(e.message || '')) { setNotPublished(true); setSnapValues({}); }
         else { console.error('[ModulePage] published fetch failed:', e); setNotPublished(true); setSnapValues({}); }
       })
@@ -176,6 +185,55 @@ export default function ModulePage({ user, onLogout }) {
   useEffect(() => {
     if (accessResolved && activeView === 'snapshot') loadPublished();
   }, [accessResolved, activeView, loadPublished]);
+
+  // FIX3 — discover published periods (year → [months]) for the snapshot month
+  // dropdown, and default the snapshot to the LATEST published month (mirrors
+  // HROpsSnapshot). Only when the URL didn't pin a period.
+  const snapDefaultedRef = useRef(false);
+  useEffect(() => {
+    if (!accessResolved) return undefined;
+    let cancelled = false;
+    dashboardsAPI.listSubmissions(moduleCode, { status: 'published' })
+      .then((rows) => {
+        if (cancelled) return;
+        const byYear = {};
+        (Array.isArray(rows) ? rows : []).forEach((r) => {
+          if (!byYear[r.year]) byYear[r.year] = [];
+          byYear[r.year].push(r.month);
+        });
+        setAvailable(byYear);
+        // Default to latest published month — only once, and only if the URL
+        // didn't specify a period (yearParam/monthParam absent).
+        if (snapDefaultedRef.current || yearParam || monthParam) return;
+        const years = Object.keys(byYear).map(Number).sort((a, b) => b - a);
+        if (years.length === 0) return;
+        const y = years[0];
+        const months = byYear[y].slice().sort((a, b) => b - a);
+        snapDefaultedRef.current = true;
+        setYear(y);
+        setMonth(months[0]);
+      })
+      .catch((err) => { if (!cancelled) console.error('[ModulePage] listSubmissions(published) failed:', err); });
+    return () => { cancelled = true; };
+  }, [accessResolved, moduleCode, yearParam, monthParam]);
+
+  // FIX4 — check for an unresolved REJECTED prior month (this year + last, to
+  // catch the Jan edge case), for the page-level resume banner. Mirrors HR Ops.
+  useEffect(() => {
+    let cancelled = false;
+    const yearsToCheck = [year, year - 1].filter((y) => y >= SYSTEM_START_YEAR);
+    Promise.all(yearsToCheck.map((y) => dashboardsAPI.listSubmissions(moduleCode, { year: y, status: 'rejected' })))
+      .then((results) => {
+        if (cancelled) return;
+        const all = [].concat(...results.map((r) => Array.isArray(r) ? r : []));
+        const priors = all.filter((r) => (r.year < year) || (r.year === year && r.month < month));
+        if (priors.length === 0) { setRejectedPrior(null); return; }
+        priors.sort((a, b) => (b.year - a.year) || (b.month - a.month));
+        setRejectedPrior(priors[0]);
+      })
+      .catch((err) => { if (!cancelled) console.error('[ModulePage] rejected-prior check failed:', err); });
+    return () => { cancelled = true; };
+  }, [moduleCode, year, month]);
 
   // ---- handlers ----
   function goView(v) {
@@ -215,6 +273,24 @@ export default function ModulePage({ user, onLogout }) {
   const monthName = (monthOptions.find((m) => m.value === String(month)) || {}).label || month;
   const SnapComp = SNAPSHOT_BY_CODE[moduleCode] || ModuleSnapshot;
 
+  // FIX3 — snapshot month options with unpublished months disabled (mirror HR Ops).
+  const snapMonthOptions = MONTH_NAMES.map((label, idx) => {
+    const m = idx + 1;
+    const publishedMonths = new Set((available[year] || []).map(Number));
+    const disabled = !publishedMonths.has(m);
+    return { value: String(m), label, disabled, hint: disabled ? 'Not yet published' : undefined };
+  });
+
+  // FIX4 — page-level resume banner (Principle 6B.9): show on Entry only, when
+  // there's a rejected prior month AND the user isn't already on it (the
+  // in-entry Rejected banner covers that case).
+  const onRejectedMonthAlready = rejectedPrior && rejectedPrior.year === year && rejectedPrior.month === month;
+  const showRejectedBanner = activeView === 'entry' && !!rejectedPrior && !onRejectedMonthAlready;
+  function openRejectedPrior() {
+    if (!rejectedPrior) return;
+    navigate(`/hub/dashboards/${moduleCode}/entry/${rejectedPrior.year}/${rejectedPrior.month}`);
+  }
+
   return (
     <div style={S.shell}>
       {/* Header */}
@@ -223,7 +299,10 @@ export default function ModulePage({ user, onLogout }) {
           <div style={S.brandName}>Abdul Latif Jameel</div>
           <div style={S.brandUnit}>FINANCE</div>
         </div>
-        <button type="button" style={S.logoutBtn} onClick={handleLogout}>Logout</button>
+        <div style={S.headerRight}>
+          <UserIdentityCard user={user} />
+          <button type="button" style={S.logoutBtn} onClick={handleLogout}>Logout</button>
+        </div>
       </div>
 
       {/* Breadcrumb — matches HROpsPage (← Hub arrow, hover, /hub/hr_dashboards) */}
@@ -293,12 +372,38 @@ export default function ModulePage({ user, onLogout }) {
         </div>
       </div>
 
+      {/* FIX4 — page-level resume-rejected-month banner (entry, smart-hidden) */}
+      {showRejectedBanner && (
+        <div style={{ ...S.bannerResume, ...(isMobile ? S.bannerResumeMobile : {}) }}>
+          <span style={S.bannerIcon}>↻</span>
+          <div style={{ flex: 1 }}>
+            <strong style={S.bannerStrong}>
+              Heads up — your {MONTH_NAMES[rejectedPrior.month - 1]} {rejectedPrior.year} submission was rejected and is still awaiting your edits.
+            </strong>
+            <div style={S.bannerMeta}>Workflow ID #{rejectedPrior.id}</div>
+          </div>
+          <div style={S.bannerActions}>
+            <button type="button" style={S.btnMiniPrimary} onClick={openRejectedPrior}>
+              Open {MONTH_NAMES[rejectedPrior.month - 1]} →
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Snapshot period selector (entry has its own inside ModuleDataEntry) */}
       {activeView === 'snapshot' && (
         <div style={{ ...S.selector, ...(isMobile ? S.selectorMobile : {}) }}>
           <span style={S.selectorLabel}>VIEWING</span>
           <Dropdown label="Year" value={String(year)} options={yearOptions} onChange={(v) => handlePeriodChange(v, month)} width={120} />
-          <Dropdown label="Month" value={String(month)} options={monthOptions} onChange={(v) => handlePeriodChange(year, v)} width={150} />
+          <Dropdown label="Month" value={String(month)} options={snapMonthOptions} onChange={(v) => handlePeriodChange(year, v)} width={150} />
+          {snapSubmission && !notPublished && (
+            <span style={{ ...S.publishedStamp, ...(isMobile ? S.publishedStampMobile : {}) }}>
+              <span style={S.publishedDot} />
+              Published {snapSubmission.updated_at
+                ? new Date(snapSubmission.updated_at).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })
+                : ''}
+            </span>
+          )}
         </div>
       )}
 
@@ -344,6 +449,7 @@ const S = {
     padding: '22px 48px 0', gap: 14,
   },
   headerMobile: { padding: '18px 16px 0', flexWrap: 'wrap' },
+  headerRight: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' },
   brand: { display: 'flex', flexDirection: 'column' },
   brandName: { fontSize: 18, fontWeight: 600, color: '#fff', lineHeight: 1.1 },
   brandUnit: { fontSize: 12, fontWeight: 500, color: 'rgba(255,255,255,0.5)' },
@@ -405,6 +511,25 @@ const S = {
   },
   selectorMobile: { padding: '16px 16px 0' },
   selectorLabel: { fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.5)', letterSpacing: '1.5px', textTransform: 'uppercase' },
+  // FIX2 — snapshot published stamp (mirror HROpsSnapshot)
+  publishedStamp: { display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'rgba(255,255,255,0.5)', marginLeft: 'auto' },
+  publishedStampMobile: { marginLeft: 0 },
+  publishedDot: { width: 6, height: 6, borderRadius: '50%', background: '#22c55e' },
+  // FIX4 — resume-rejected-month banner (mirror HROpsPage bannerResume)
+  bannerResume: {
+    display: 'flex', alignItems: 'center', gap: 12,
+    margin: '14px 48px 0', padding: '14px 18px',
+    background: 'rgba(243,192,54,0.10)', border: '1px solid rgba(243,192,54,0.3)', borderRadius: 12,
+  },
+  bannerResumeMobile: { margin: '14px 16px 0', flexWrap: 'wrap' },
+  bannerIcon: { flexShrink: 0, width: 22, height: 22, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, color: '#F3C036' },
+  bannerStrong: { color: '#fff', fontWeight: 600 },
+  bannerMeta: { color: 'rgba(255,255,255,0.55)', fontSize: 11, marginTop: 4 },
+  bannerActions: { marginLeft: 'auto', flexShrink: 0, display: 'flex', gap: 8 },
+  btnMiniPrimary: {
+    padding: '6px 12px', fontSize: 11, fontWeight: 600, borderRadius: 6, cursor: 'pointer',
+    fontFamily: 'inherit', background: 'rgba(243,192,54,0.2)', color: '#F3C036', border: '1px solid rgba(243,192,54,0.4)',
+  },
   body: { padding: '8px 48px 0' },
   bodyMobile: { padding: '8px 16px 0' },
   notice: {
