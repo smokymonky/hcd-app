@@ -506,10 +506,19 @@ const S = {
   editToggleOn: { background: ACCENT, borderColor: 'rgba(243,192,54,0.5)', color: '#F3C036' },
   refetch: { fontSize: 11, color: 'rgba(255,255,255,0.5)' },
   selector: {
-    position: 'relative', zIndex: 30, display: 'flex', alignItems: 'center', gap: 14,
-    flexWrap: 'wrap', padding: '18px 48px 0',
+    // Boxed CARD matching HROpsSnapshot.selector; inset from page edges via a
+    // 48px horizontal margin (HR Ops achieves the inset via its canvas padding).
+    margin: '18px 48px 0',
+    background: 'rgba(255,255,255,0.03)',
+    border: '1px solid rgba(255,255,255,0.1)',
+    backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
+    borderRadius: 16,
+    padding: '16px 20px',
+    // zIndex lifts the Dropdown panel above blurred siblings (Principle 6B.11).
+    position: 'relative', zIndex: 30,
+    display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap',
   },
-  selectorMobile: { padding: '16px 16px 0' },
+  selectorMobile: { margin: '16px 16px 0', flexDirection: 'column', alignItems: 'stretch', gap: 10, padding: '14px 14px' },
   selectorLabel: { fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.5)', letterSpacing: '1.5px', textTransform: 'uppercase' },
   // FIX2 — snapshot published stamp (mirror HROpsSnapshot)
   publishedStamp: { display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'rgba(255,255,255,0.5)', marginLeft: 'auto' },
