@@ -104,12 +104,9 @@ export default function TASnapshot({ config, values }) {
 
   return (
     <div style={S.wrap}>
-      <div style={S.head}>
-        <h1 style={S.h1}>Talent Acquisition</h1>
-        {monthName && <span style={S.badge}>{`${String(monthName).toUpperCase()} ${config.__year || ''}`.trim()}</span>}
-      </div>
-
-      {/* HERO (3 cards) */}
+      {/* HERO (3 cards) — page header (title + month/status badges) is
+          provided by the live ModulePage; no internal title here to avoid
+          duplication. `monthName` is still used by the hero subline below. */}
       <div style={{ ...S.hero, ...(isMobile ? S.heroMobile : {}) }}>
         <div style={S.kpi}>
           <div style={S.kpiAccent} />
@@ -298,9 +295,6 @@ export default function TASnapshot({ config, values }) {
 const ACCENT = 'linear-gradient(90deg, #F3C036, #ec4899, #a855f7)';
 const S = {
   wrap: { maxWidth: 1240, margin: '0 auto', padding: '4px 0 40px', fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif", color: '#fff' },
-  head: { display: 'flex', alignItems: 'baseline', gap: 14, flexWrap: 'wrap', marginBottom: 24 },
-  h1: { fontSize: 30, fontWeight: 800, letterSpacing: '-0.5px' },
-  badge: { background: 'rgba(243,192,54,0.15)', color: '#F3C036', fontSize: 12, fontWeight: 700, padding: '5px 12px', borderRadius: 20, letterSpacing: '0.5px' },
 
   card: { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 16, padding: '22px 24px', position: 'relative', overflow: 'hidden' },
   cardAccent: { content: '', position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: ACCENT, opacity: 0.7 },
