@@ -226,13 +226,30 @@ export default function ModulePage({ user, onLogout }) {
         <button type="button" style={S.logoutBtn} onClick={handleLogout}>Logout</button>
       </div>
 
-      {/* Breadcrumb */}
+      {/* Breadcrumb — matches HROpsPage (← Hub arrow, hover, /hub/hr_dashboards) */}
       <div style={{ ...S.breadcrumb, ...(isMobile ? S.breadcrumbMobile : {}) }}>
-        <span style={S.crumbLink} onClick={() => navigate('/hub')}>Hub</span>
-        <span style={S.crumbSep}>/</span>
-        <span style={S.crumbLink} onClick={() => navigate('/hub/dashboards')}>HR Dashboards</span>
-        <span style={S.crumbSep}>/</span>
-        <span style={S.crumbCurrent}>{moduleName}</span>
+        <a
+          onClick={() => navigate('/hub')}
+          style={S.breadcrumbLink}
+          onMouseEnter={(e) => Object.assign(e.currentTarget.style, S.breadcrumbLinkHover)}
+          onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'rgba(255,255,255,0.7)'; }}
+        >
+          <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+          </svg>
+          Hub
+        </a>
+        <span style={S.breadcrumbSep}>/</span>
+        <a
+          onClick={() => navigate('/hub/hr_dashboards')}
+          style={S.breadcrumbLink}
+          onMouseEnter={(e) => Object.assign(e.currentTarget.style, S.breadcrumbLinkHover)}
+          onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'rgba(255,255,255,0.7)'; }}
+        >
+          HR Dashboards
+        </a>
+        <span style={S.breadcrumbSep}>/</span>
+        <span style={S.breadcrumbCurrent}>{moduleName}</span>
       </div>
 
       {/* Title row: title (left) + month/status badges + edit toggle (right) */}
@@ -337,9 +354,15 @@ const S = {
   },
   breadcrumb: { display: 'flex', alignItems: 'center', gap: 8, padding: '18px 48px 0', fontSize: 12, color: 'rgba(255,255,255,0.5)', flexWrap: 'wrap' },
   breadcrumbMobile: { padding: '14px 16px 0' },
-  crumbLink: { color: 'rgba(255,255,255,0.7)', cursor: 'pointer' },
-  crumbSep: { color: 'rgba(255,255,255,0.3)' },
-  crumbCurrent: { color: '#fff', fontWeight: 600 },
+  breadcrumbLink: {
+    color: 'rgba(255,255,255,0.7)', textDecoration: 'none',
+    display: 'inline-flex', alignItems: 'center', gap: 6,
+    padding: '6px 10px', borderRadius: 6,
+    transition: 'all 0.15s ease', cursor: 'pointer',
+  },
+  breadcrumbLinkHover: { background: 'rgba(255,255,255,0.05)', color: '#F3C036' },
+  breadcrumbSep: { color: 'rgba(255,255,255,0.3)' },
+  breadcrumbCurrent: { color: '#fff', fontWeight: 600 },
   titleRow: {
     display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between',
     gap: 16, flexWrap: 'wrap', padding: '14px 48px 0', marginBottom: 16,
