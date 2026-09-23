@@ -242,6 +242,39 @@ export function computeFieldValue(field, values, structure) {
   return formatValue(field, raw);
 }
 
+// resolveComputedValues — TA-2 fix (computed-of-computed).
+// evaluateFormula only reads operands from the values map, so a computed
+// field that references ANOTHER computed field (e.g. a matrix Total-Remaining
+// = difference of two computed column totals) resolves to null. This does a
+// fixed-point pass: seed with entered values, then repeatedly evaluate any
+// still-unresolved computed field, folding each finite result back into the
+// map so later passes can use it. Stops when a full pass adds nothing (chains
+// resolve; the pass cap guards accidental cycles).
+//   fields    = flat list of ALL fields (all sections) for cross-field refs
+//   values    = entered values map (manual inputs)
+//   structure = passed to evaluateFormula (for sum{section})
+// Returns a map of entered + resolved computed RAW numbers.
+export function resolveComputedValues(fields, values, structure) {
+  const map = { ...(values || {}) };
+  const computed = (fields || []).filter((f) => f && f.source === 'computed');
+  const MAX_PASSES = 10;
+  for (let pass = 0; pass < MAX_PASSES; pass++) {
+    let added = 0;
+    for (const f of computed) {
+      const cur = map[f.key];
+      // Skip if already resolved to a finite number this run.
+      if (cur !== undefined && cur !== null && cur !== '' && Number.isFinite(Number(cur))) continue;
+      const raw = evaluateFormula(f, map, structure);
+      if (raw !== null && raw !== undefined && Number.isFinite(raw)) {
+        map[f.key] = raw;
+        added += 1;
+      }
+    }
+    if (added === 0) break;
+  }
+  return map;
+}
+
 // Small numeric parser (module-local; mirrors toNumber above for the
 // formula evaluator's use).
 function toNum(v) {
