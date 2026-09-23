@@ -7,6 +7,7 @@ import HubPage from './pages/HubPage';
 import HROpsPage from './pages/HROpsPage';
 import ModuleEntryPreview from './pages/ModuleEntryPreview';
 import ModuleSnapshotPreview from './pages/ModuleSnapshotPreview';
+import ModulePage from './pages/ModulePage';
 
 function App() {
   const [user, setUser] = useState(null);
@@ -82,6 +83,13 @@ function App() {
             Same /hub/preview/* namespace (avoids the HR_OPS/:view capture). The
             live HROpsSnapshot + /hub/dashboards/HR_OPS/snapshot are untouched. */}
         <Route path="/hub/preview/:moduleCode/snapshot-v2" element={user ? <ModuleSnapshotPreview user={user} onLogout={handleLogout} /> : <Navigate to="/login" />} />
+        {/* B6/TA-3 — generic LIVE module page (Data Entry | Snapshot) for engine
+            modules (TA / L&D / HR_SYS). Declared AFTER the explicit HR_OPS
+            routes so React Router v6's static-over-param ranking keeps HR_OPS
+            on HROpsPage; ':moduleCode' only catches the other modules. */}
+        <Route path="/hub/dashboards/:moduleCode" element={user ? <ModulePage user={user} onLogout={handleLogout} /> : <Navigate to="/login" />} />
+        <Route path="/hub/dashboards/:moduleCode/:view" element={user ? <ModulePage user={user} onLogout={handleLogout} /> : <Navigate to="/login" />} />
+        <Route path="/hub/dashboards/:moduleCode/:view/:year/:month" element={user ? <ModulePage user={user} onLogout={handleLogout} /> : <Navigate to="/login" />} />
         <Route path="*" element={<Navigate to={user ? "/dashboard" : "/login"} />} />
       </Routes>
     </BrowserRouter>
