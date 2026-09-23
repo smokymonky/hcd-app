@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import {
   computeFieldValue,
+  resolveComputedValues,
   evaluateTarget,
   formatValue,
   formatNumber,
@@ -63,14 +64,18 @@ export default function ModuleSnapshot({ config, values }) {
   // Hero = featured fields, in section/field order.
   const heroFields = allFields.filter((f) => f.featured);
 
+  // TA-2 fix: resolve computed-of-computed once; read-only view, so use this
+  // (entered + resolved computed) for every displayed value.
+  const resolvedValues = resolveComputedValues(allFields, values, allFields);
+
   return (
     <div style={{ ...styles.canvas, ...(isMobile ? styles.canvasMobile : {}) }}>
       {/* HERO row */}
       {heroFields.length > 0 && (
         <div style={{ ...styles.heroGrid, ...(isMobile ? { gridTemplateColumns: 'repeat(2, 1fr)' } : {}) }}>
           {heroFields.map((f) => {
-            const evaln = f.target ? evaluateTarget(f, values[f.key]) : null;
-            const val = displayValue(f, values, allFields);
+            const evaln = f.target ? evaluateTarget(f, resolvedValues[f.key]) : null;
+            const val = displayValue(f, resolvedValues, allFields);
             return (
               <div key={f.key} style={styles.heroKpi}>
                 <div style={styles.heroAccent} />
@@ -90,7 +95,7 @@ export default function ModuleSnapshot({ config, values }) {
         <div key={section.key} style={{ ...styles.snapSection, ...(isMobile ? styles.snapSectionMobile : {}) }}>
           <div style={styles.snapAccent} />
           <div style={{ ...styles.snapTitle, ...(isMobile ? { flexWrap: 'wrap' } : {}) }}>{section.title}</div>
-          {renderSectionBody(section, values, allFields, isMobile)}
+          {renderSectionBody(section, resolvedValues, allFields, isMobile)}
         </div>
       ))}
     </div>
