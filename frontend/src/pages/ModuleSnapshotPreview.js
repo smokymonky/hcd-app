@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import ModuleSnapshot from '../dashboards/ModuleSnapshot';
+import TASnapshot from '../dashboards/TASnapshot';
 import { dashboardsAPI, targetsAPI } from '../services/api';
 import Dropdown from '../dashboards/Dropdown';
 import { buildYearOptions, buildMonthOptions } from '../engine/computers';
@@ -163,7 +164,15 @@ export default function ModuleSnapshotPreview({ user }) {
           No published data for {monthName} {year}. Choose another period, or publish this month from the Approvals tab.
         </div>
       ) : (
-        <ModuleSnapshot config={config} values={values} />
+        (() => {
+          // Per-module bespoke snapshot map (Design v5): TA has a hand-designed
+          // component; every other module uses the generic engine snapshot.
+          // The period is threaded onto config so bespoke headers can show it.
+          const cfg = { ...config, __month: month, __monthName: monthName, __year: year };
+          const SNAPSHOT_BY_CODE = { TA: TASnapshot };
+          const Comp = SNAPSHOT_BY_CODE[moduleCode] || ModuleSnapshot;
+          return <Comp config={cfg} values={values} />;
+        })()
       )}
     </div>
   );
