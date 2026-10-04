@@ -737,7 +737,10 @@ export default function ModuleDataEntry({ config, user, year, month, onStatusCha
   // (DB order + titles), then an "Ungrouped" bucket for fields with no
   // subsection or one that points to a hidden/removed group. Edit mode adds
   // per-group rename/reorder/delete + "Show hidden groups" + "+ Add Group".
-  function renderGroupedBody(section, fields) {
+  // cardMode (layout 'group'): each subsection is a PROGRAM CARD with a
+  // prominent name + its fields; otherwise (kpi/default) subsections render as
+  // light sub-headings. Same subsection + field CRUD either way (reused).
+  function renderGroupedBody(section, fields, cardMode = false) {
     const activeSubs = (section.subsections || [])
       .filter((ss) => ss.is_active !== false)
       .slice()
@@ -754,13 +757,20 @@ export default function ModuleDataEntry({ config, user, year, month, onStatusCha
     const hiddenSubs = (section.subsections || []).filter((ss) => ss.is_active === false);
     const showHidden = !!showHiddenGroupsFor[section.key];
 
+    // Per-card "+ Add Field": opens the shared add-field form pre-targeting
+    // this program (reuses the existing field CRUD + Group picker).
+    function addFieldToProgram(ss) {
+      setNewFieldGroup((m) => ({ ...m, [section.id]: ss.key }));
+      setAddFieldOpenFor(section.id);
+    }
+
     return (
       <>
         {activeSubs.map((ss, subIndex) => {
           const groupFields = fieldsByKey[ss.key] || [];
           const isRenaming = renamingSubId === ss.id;
           return (
-            <div key={ss.id} style={styles.subsection}>
+            <div key={ss.id} style={cardMode ? styles.programCard : styles.subsection}>
               <div style={styles.subsectionHeaderRow}>
                 {isRenaming ? (
                   <div style={styles.renameRow}>
@@ -774,7 +784,7 @@ export default function ModuleDataEntry({ config, user, year, month, onStatusCha
                     <button type="button" style={styles.miniCancel} onClick={() => setRenamingSubId(null)}>Cancel</button>
                   </div>
                 ) : (
-                  <div style={styles.subsectionLabel}>
+                  <div style={cardMode ? styles.programName : styles.subsectionLabel}>
                     {ss.title}
                     {isTempId(ss.id) && <span style={styles.savingHint}>saving…</span>}
                   </div>
@@ -784,7 +794,7 @@ export default function ModuleDataEntry({ config, user, year, month, onStatusCha
                     <button type="button" title="Move up" style={styles.editIconBtn} disabled={isTempId(ss.id) || subIndex === 0} onClick={() => handleReorderSubsection(section, subIndex, -1)}>↑</button>
                     <button type="button" title="Move down" style={styles.editIconBtn} disabled={isTempId(ss.id) || subIndex === activeSubs.length - 1} onClick={() => handleReorderSubsection(section, subIndex, 1)}>↓</button>
                     <button type="button" title="Rename" style={styles.editIconBtn} disabled={isTempId(ss.id)} onClick={() => { setRenamingSubId(ss.id); setRenameSubTitle(ss.title); }}>✎</button>
-                    <button type="button" title="Hide group" style={{ ...styles.editIconBtn, ...styles.editIconDanger }} disabled={isTempId(ss.id)} onClick={() => setConfirmDeleteSub({ id: ss.id, title: ss.title, sectionKey: section.key })}>🗑</button>
+                    <button type="button" title={cardMode ? 'Hide program' : 'Hide group'} style={{ ...styles.editIconBtn, ...styles.editIconDanger }} disabled={isTempId(ss.id)} onClick={() => setConfirmDeleteSub({ id: ss.id, title: ss.title, sectionKey: section.key })}>🗑</button>
                   </span>
                 )}
               </div>
@@ -793,14 +803,19 @@ export default function ModuleDataEntry({ config, user, year, month, onStatusCha
                   <FieldCell key={f.key} field={f} values={values} computedValues={resolvedValues} onChange={handleFieldChange} readOnly={isReadOnly} allFields={fields} />
                 ))}
               </div>
-              {groupFields.length === 0 && <div style={styles.groupEmpty}>No fields in this group yet.</div>}
+              {groupFields.length === 0 && <div style={styles.groupEmpty}>No fields in this {cardMode ? 'program' : 'group'} yet.</div>}
+              {cardMode && canEdit && !isTempId(ss.id) && !isTempId(section.id) && (
+                <button type="button" style={styles.addProgramFieldBtn} onClick={() => addFieldToProgram(ss)}>
+                  + Add Field to {ss.title}
+                </button>
+              )}
             </div>
           );
         })}
 
         {ungrouped.length > 0 && (
-          <div style={styles.subsection}>
-            {activeSubs.length > 0 && <div style={styles.subsectionLabel}>Ungrouped</div>}
+          <div style={cardMode ? styles.programCard : styles.subsection}>
+            {activeSubs.length > 0 && <div style={cardMode ? styles.programName : styles.subsectionLabel}>Ungrouped</div>}
             <div style={{ ...styles.fieldGrid, ...(isMobile ? styles.fieldGridMobile : {}) }}>
               {ungrouped.map((f) => (
                 <FieldCell key={f.key} field={f} values={values} computedValues={resolvedValues} onChange={handleFieldChange} readOnly={isReadOnly} allFields={fields} />
@@ -815,7 +830,7 @@ export default function ModuleDataEntry({ config, user, year, month, onStatusCha
             {addGroupOpenFor === section.id ? (
               <div style={styles.addFieldForm} onClick={(e) => e.stopPropagation()}>
                 <input
-                  type="text" autoFocus placeholder="Group title"
+                  type="text" autoFocus placeholder={cardMode ? 'Program name' : 'Group title'}
                   value={newGroupTitle}
                   onChange={(e) => setNewGroupTitle(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter') handleAddSubsection(section); if (e.key === 'Escape') setAddGroupOpenFor(null); }}
@@ -825,7 +840,7 @@ export default function ModuleDataEntry({ config, user, year, month, onStatusCha
                 <button type="button" style={styles.miniCancel} onClick={() => { setAddGroupOpenFor(null); setNewGroupTitle(''); }}>Cancel</button>
               </div>
             ) : (
-              <button type="button" style={styles.addFieldBtn} onClick={() => { setAddGroupOpenFor(section.id); setNewGroupTitle(''); }}>+ Add Group (subsection)</button>
+              <button type="button" style={styles.addFieldBtn} onClick={() => { setAddGroupOpenFor(section.id); setNewGroupTitle(''); }}>{cardMode ? '+ Add Program' : '+ Add Group (subsection)'}</button>
             )}
 
             <button
@@ -833,12 +848,14 @@ export default function ModuleDataEntry({ config, user, year, month, onStatusCha
               style={styles.showHiddenFieldsBtn}
               onClick={() => setShowHiddenGroupsFor((m) => ({ ...m, [section.key]: !showHidden }))}
             >
-              {showHidden ? 'Hide hidden groups' : `Show hidden groups${hiddenSubs.length ? ` (${hiddenSubs.length})` : ''}`}
+              {showHidden
+                ? (cardMode ? 'Hide hidden programs' : 'Hide hidden groups')
+                : `${cardMode ? 'Show hidden programs' : 'Show hidden groups'}${hiddenSubs.length ? ` (${hiddenSubs.length})` : ''}`}
             </button>
             {showHidden && (
               <div style={styles.hiddenList}>
                 {hiddenSubs.length === 0 ? (
-                  <div style={styles.hiddenEmpty}>No hidden groups.</div>
+                  <div style={styles.hiddenEmpty}>No hidden {cardMode ? 'programs' : 'groups'}.</div>
                 ) : hiddenSubs.map((ss) => (
                   <div key={ss.id} style={styles.hiddenRow}>
                     <span style={styles.hiddenName}>{ss.title} <span style={styles.hiddenKey}>{ss.key}</span></span>
@@ -1010,7 +1027,7 @@ export default function ModuleDataEntry({ config, user, year, month, onStatusCha
                     ? renderMatrixGrid(section, fields, values, resolvedValues, handleFieldChange, isReadOnly, isMobile)
                     : (section.layout === 'grid' || section.layout === 'labeled_grid')
                       ? renderServicesGrid(fields, values, handleFieldChange, isReadOnly, isMobile)
-                      : renderGroupedBody(section, fields)
+                      : renderGroupedBody(section, fields, section.layout === 'group')
                 }
                 {section.layout !== 'matrix' && renderSectionFooter(section, fields, resolvedValues)}
 
@@ -2391,6 +2408,21 @@ const styles = {
 
   // Subsection
   subsection: { marginBottom: 24 },
+  // L&D 1b — 'group' layout: each subsection is a PROGRAM CARD.
+  programCard: {
+    marginBottom: 16, padding: '18px 20px',
+    background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.1)',
+    borderRadius: 14,
+  },
+  programName: {
+    fontSize: 16, fontWeight: 700, letterSpacing: '-0.2px', color: '#fff',
+    display: 'inline-flex', alignItems: 'center', gap: 8,
+  },
+  addProgramFieldBtn: {
+    marginTop: 12, padding: '7px 14px', borderRadius: 8, cursor: 'pointer',
+    background: 'rgba(243,192,54,0.1)', border: '1px solid rgba(243,192,54,0.3)',
+    color: '#F3C036', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 600,
+  },
   subsectionHeaderRow: {
     display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
     marginBottom: 12,
