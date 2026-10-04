@@ -92,10 +92,13 @@ export function formatNumber(n) {
 // This helper reads `field.type` first and falls back to `field.dataType`
 // so it works with either shape (parity-safe).
 export function formatValue(field, raw) {
+  const t = (field && (field.type || field.dataType)) || 'number';
+  // L&D 1a: ratio stores 'a/b' → 'X / Y (Z%)'. Handle before the numeric
+  // parse/short-circuit below (parseFloat('10/13') would wrongly yield 10).
+  if (t === 'ratio') return formatRatio(raw);
   if (raw === null || raw === undefined || raw === '') return '—';
   const num = parseFloat(raw);
   if (!Number.isFinite(num)) return '—';
-  const t = (field && (field.type || field.dataType)) || 'number';
   switch (t) {
     // B5-2 parity: match the live snapshot's formatNumber rounding exactly
     // (toLocaleString maximumFractionDigits:1 rounds 84.05→84.1), not toFixed
@@ -105,6 +108,25 @@ export function formatValue(field, raw) {
     case 'number':
     default:           return Number.isInteger(num) ? num.toLocaleString('en-US') : num.toLocaleString('en-US', { maximumFractionDigits: 1 });
   }
+}
+
+// L&D 1a — ratio display. Given the stored 'a/b' string, returns
+// 'X / Y (Z%)' where Z = round(a/b*100). If b is 0/missing → 'X / Y' (no %,
+// no divide-by-zero). Whole value empty → '—'. Partial parts show '—'.
+export function formatRatio(raw) {
+  if (raw === null || raw === undefined || String(raw).trim() === '') return '—';
+  const parts = String(raw).split('/');
+  const aStr = (parts[0] ?? '').trim();
+  const bStr = (parts[1] ?? '').trim();
+  const a = aStr === '' ? null : parseFloat(aStr);
+  const b = bStr === '' ? null : parseFloat(bStr);
+  const aTxt = (a === null || !Number.isFinite(a)) ? '—' : formatNumber(a);
+  const bTxt = (b === null || !Number.isFinite(b)) ? '—' : formatNumber(b);
+  if (a !== null && Number.isFinite(a) && b !== null && Number.isFinite(b) && b !== 0) {
+    const pct = Math.round((a / b) * 100);
+    return `${aTxt} / ${bTxt} (${pct}%)`;
+  }
+  return `${aTxt} / ${bTxt}`;
 }
 
 // =============================================
