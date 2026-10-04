@@ -273,7 +273,7 @@ function Stat({ n, l, gold }) {
 
 const ACCENT = 'linear-gradient(90deg, #F3C036, #ec4899, #a855f7)';
 const S = {
-  wrap: { maxWidth: 1240, margin: '0 auto', padding: '4px 0 40px', fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif", color: '#fff' },
+  wrap: { maxWidth: 1100, margin: '0 auto', padding: '4px 0 40px', fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif", color: '#fff' },
 
   hero: { display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 14, marginBottom: 20 },
   heroMobile: { gridTemplateColumns: 'repeat(2, 1fr)' },
