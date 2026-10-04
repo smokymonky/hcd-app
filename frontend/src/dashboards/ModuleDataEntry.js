@@ -606,6 +606,17 @@ export default function ModuleDataEntry({ config, user, year, month, onStatusCha
       if (f.source === 'computed') continue;
       const raw = values[f.key];
       if (raw === undefined || raw === null || raw === '') continue;
+      if (f.type === 'ratio') {
+        // 'a/b' — flag if either part is a finite negative.
+        const parts = String(raw).split('/');
+        for (const p of [parts[0], parts[1]]) {
+          const pv = (p ?? '').trim();
+          if (pv === '') continue;
+          const pn = Number(pv);
+          if (Number.isFinite(pn) && pn < 0) { offenders.push(`${f.label}: value cannot be negative`); break; }
+        }
+        continue;
+      }
       const n = Number(raw);
       if (Number.isFinite(n) && n < 0) {
         const dim = f.dimensionCol ? ` (${String(f.dimensionCol).toUpperCase()})` : '';
@@ -1058,7 +1069,7 @@ export default function ModuleDataEntry({ config, user, year, month, onStatusCha
                             <option style={OPT} value="currency">currency</option>
                             <option style={OPT} value="text">text</option>
                             <option style={OPT} value="longtext">longtext</option>
-                            <option style={OPT} value="ratio">ratio</option>
+                            <option style={OPT} value="ratio">Ratio (X / Y)</option>
                             <option style={OPT} value="calculated">Calculated…</option>
                           </select>
                           {(section.subsections || []).filter((ss) => ss.is_active !== false).length > 0 && (
@@ -1292,7 +1303,7 @@ function FieldEditModal({ field, form, setForm, numericFields, sections, groupOp
             <option style={OPT} value="currency">currency</option>
             <option style={OPT} value="text">text</option>
             <option style={OPT} value="longtext">longtext</option>
-            <option style={OPT} value="ratio">ratio</option>
+            <option style={OPT} value="ratio">Ratio (X / Y)</option>
             <option style={OPT} value="calculated">Calculated…</option>
           </select>
 
@@ -1820,9 +1831,13 @@ function renderServicesGrid(fields, values, onChange, readOnly, isMobile = false
             {f.label}
             {f.helper && <span style={styles.fieldHelper}>{f.helper}</span>}
           </label>
-          <input type="number" min="0" style={styles.serviceInput}
-            value={values[f.key] ?? ''} onChange={(e) => onChange(f.key, e.target.value)}
-            readOnly={readOnly} disabled={readOnly} inputMode="numeric" />
+          {f.type === 'ratio' ? (
+            <RatioInputs field={f} values={values} onChange={onChange} readOnly={readOnly} />
+          ) : (
+            <input type="number" min="0" style={styles.serviceInput}
+              value={values[f.key] ?? ''} onChange={(e) => onChange(f.key, e.target.value)}
+              readOnly={readOnly} disabled={readOnly} inputMode="numeric" />
+          )}
         </div>
       ))}
     </div>
@@ -1848,6 +1863,42 @@ function renderSectionFooter(section, fields, values) {
 }
 
 // FieldCell — single field (manual or computed), identical to live.
+// L&D 1a — ratio value helpers. Stored as 'a/b'.
+function ratioParts(v) {
+  const s = (v === null || v === undefined) ? '' : String(v);
+  const i = s.indexOf('/');
+  if (i === -1) return [s, ''];
+  return [s.slice(0, i), s.slice(i + 1)];
+}
+function combineRatio(a, b) {
+  const A = (a ?? '').toString();
+  const B = (b ?? '').toString();
+  if (A.trim() === '' && B.trim() === '') return '';   // both empty → clear
+  return `${A}/${B}`;
+}
+
+// Two small number inputs (numerator / denominator) → combines to 'a/b'.
+function RatioInputs({ field, values, onChange, readOnly }) {
+  const [a, b] = ratioParts(values[field.key]);
+  return (
+    <div style={styles.ratioInputs}>
+      <input
+        type="number" min="0" inputMode="decimal"
+        style={styles.ratioInput}
+        value={a} readOnly={readOnly} disabled={readOnly}
+        onChange={(e) => onChange(field.key, combineRatio(e.target.value, b))}
+      />
+      <span style={styles.ratioSlash}>/</span>
+      <input
+        type="number" min="0" inputMode="decimal"
+        style={styles.ratioInput}
+        value={b} readOnly={readOnly} disabled={readOnly}
+        onChange={(e) => onChange(field.key, combineRatio(a, e.target.value))}
+      />
+    </div>
+  );
+}
+
 function FieldCell({ field, values, computedValues, onChange, readOnly, allFields }) {
   const isComputed = field.source === 'computed';
   const display = isComputed ? computeFieldValue(field, computedValues || values, allFields) : null;
@@ -1868,13 +1919,15 @@ function FieldCell({ field, values, computedValues, onChange, readOnly, allField
         {isComputed ? (
           <input type="text" readOnly value={display}
             style={{ ...styles.input, ...styles.inputComputed, ...(isEmptyComputed ? styles.inputComputedEmpty : {}) }} />
+        ) : field.type === 'ratio' ? (
+          <RatioInputs field={field} values={values} onChange={onChange} readOnly={readOnly} />
         ) : (
           <input type="number" min="0"
             step={field.step || (field.type === 'percentage' ? '0.1' : '1')}
             value={values[field.key] ?? ''} onChange={(e) => onChange(field.key, e.target.value)}
             readOnly={readOnly} disabled={readOnly} inputMode="decimal" style={styles.input} />
         )}
-        {field.unit && (<span style={styles.unit}>{field.unit}</span>)}
+        {field.unit && field.type !== 'ratio' && (<span style={styles.unit}>{field.unit}</span>)}
       </div>
     </div>
   );
@@ -2396,6 +2449,15 @@ const styles = {
     transition: 'all 0.15s ease',
     boxSizing: 'border-box',
   },
+  // L&D 1a — ratio: two number inputs with a slash between.
+  ratioInputs: { display: 'flex', alignItems: 'center', gap: 8, width: '100%' },
+  ratioInput: {
+    flex: 1, minWidth: 0, boxSizing: 'border-box',
+    background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)',
+    borderRadius: 10, color: '#fff', padding: '12px 14px',
+    fontFamily: 'inherit', fontSize: 14, fontWeight: 500, textAlign: 'center', outline: 'none',
+  },
+  ratioSlash: { color: 'rgba(255,255,255,0.5)', fontSize: 16, fontWeight: 600, flexShrink: 0 },
   inputComputed: {
     background: 'rgba(243,192,54,0.06)',
     borderColor: 'rgba(243,192,54,0.2)',
