@@ -604,6 +604,8 @@ export default function ModuleDataEntry({ config, user, year, month, onStatusCha
     const offenders = [];
     for (const f of FIELDS) {
       if (f.source === 'computed') continue;
+      // Non-numeric types are never range-checked (don't parse 'IT, Marketing').
+      if (f.type === 'text' || f.type === 'longtext') continue;
       const raw = values[f.key];
       if (raw === undefined || raw === null || raw === '') continue;
       if (f.type === 'ratio') {
@@ -1850,6 +1852,14 @@ function renderServicesGrid(fields, values, onChange, readOnly, isMobile = false
           </label>
           {f.type === 'ratio' ? (
             <RatioInputs field={f} values={values} onChange={onChange} readOnly={readOnly} />
+          ) : f.type === 'longtext' ? (
+            <textarea rows={3} style={{ ...styles.serviceInput, resize: 'vertical', minHeight: 72, fontFamily: 'inherit' }}
+              value={values[f.key] ?? ''} onChange={(e) => onChange(f.key, e.target.value)}
+              readOnly={readOnly} disabled={readOnly} />
+          ) : f.type === 'text' ? (
+            <input type="text" style={styles.serviceInput}
+              value={values[f.key] ?? ''} onChange={(e) => onChange(f.key, e.target.value)}
+              readOnly={readOnly} disabled={readOnly} />
           ) : (
             <input type="number" min="0" style={styles.serviceInput}
               value={values[f.key] ?? ''} onChange={(e) => onChange(f.key, e.target.value)}
@@ -1938,13 +1948,22 @@ function FieldCell({ field, values, computedValues, onChange, readOnly, allField
             style={{ ...styles.input, ...styles.inputComputed, ...(isEmptyComputed ? styles.inputComputedEmpty : {}) }} />
         ) : field.type === 'ratio' ? (
           <RatioInputs field={field} values={values} onChange={onChange} readOnly={readOnly} />
+        ) : field.type === 'longtext' ? (
+          <textarea rows={3}
+            value={values[field.key] ?? ''} onChange={(e) => onChange(field.key, e.target.value)}
+            readOnly={readOnly} disabled={readOnly}
+            style={{ ...styles.input, resize: 'vertical', minHeight: 72, fontFamily: 'inherit' }} />
+        ) : field.type === 'text' ? (
+          <input type="text"
+            value={values[field.key] ?? ''} onChange={(e) => onChange(field.key, e.target.value)}
+            readOnly={readOnly} disabled={readOnly} style={styles.input} />
         ) : (
           <input type="number" min="0"
             step={field.step || (field.type === 'percentage' ? '0.1' : '1')}
             value={values[field.key] ?? ''} onChange={(e) => onChange(field.key, e.target.value)}
             readOnly={readOnly} disabled={readOnly} inputMode="decimal" style={styles.input} />
         )}
-        {field.unit && field.type !== 'ratio' && (<span style={styles.unit}>{field.unit}</span>)}
+        {field.unit && field.type !== 'ratio' && field.type !== 'text' && field.type !== 'longtext' && (<span style={styles.unit}>{field.unit}</span>)}
       </div>
     </div>
   );
