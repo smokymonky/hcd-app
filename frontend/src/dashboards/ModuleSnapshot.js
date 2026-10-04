@@ -108,11 +108,13 @@ function renderSectionBody(section, values, allFields, isMobile) {
   if (section.layout === 'ho_op') return renderHoOp(section, fields, values, isMobile);
   if (section.layout === 'matrix') return renderMatrix(section, fields, values, allFields, isMobile);
   if (section.layout === 'grid' || section.layout === 'labeled_grid') return renderGrid(section, fields, values, allFields, isMobile);
-  return renderGrouped(section, fields, values, allFields, isMobile);
+  return renderGrouped(section, fields, values, allFields, isMobile, section.layout === 'group');
 }
 
-// ---- Grouped (kpi/default): subsections (title+order) then ungrouped ----
-function renderGrouped(section, fields, values, allFields, isMobile) {
+// ---- Grouped (kpi/default) + GROUP (cardMode): subsections then ungrouped ----
+// cardMode (layout 'group', L&D 1b) renders each subsection as a read-only
+// PROGRAM CARD (name header + its fields); otherwise light sub-headings.
+function renderGrouped(section, fields, values, allFields, isMobile, cardMode = false) {
   const activeSubs = (section.subsections || [])
     .filter((ss) => ss.is_active !== false)
     .slice()
@@ -130,19 +132,20 @@ function renderGrouped(section, fields, values, allFields, isMobile) {
     <>
       {activeSubs.map((ss) => {
         const gf = byKey[ss.key] || [];
-        if (gf.length === 0) return null;
+        if (gf.length === 0 && !cardMode) return null;
         return (
-          <div key={ss.id || ss.key} style={styles.snapSubsection}>
-            <div style={styles.snapSubLabel}>{ss.title}</div>
+          <div key={ss.id || ss.key} style={cardMode ? styles.programCard : styles.snapSubsection}>
+            <div style={cardMode ? styles.programName : styles.snapSubLabel}>{ss.title}</div>
             <div style={{ ...styles.valueGrid, gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)' }}>
               {gf.map((f) => <ValueCell key={f.key} field={f} values={values} allFields={allFields} />)}
             </div>
+            {gf.length === 0 && <div style={styles.programEmpty}>No fields.</div>}
           </div>
         );
       })}
       {ungrouped.length > 0 && (
-        <div style={styles.snapSubsection}>
-          {activeSubs.length > 0 && <div style={styles.snapSubLabel}>Other</div>}
+        <div style={cardMode ? styles.programCard : styles.snapSubsection}>
+          {activeSubs.length > 0 && <div style={cardMode ? styles.programName : styles.snapSubLabel}>Other</div>}
           <div style={{ ...styles.valueGrid, gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)' }}>
             {ungrouped.map((f) => <ValueCell key={f.key} field={f} values={values} allFields={allFields} />)}
           </div>
@@ -279,6 +282,13 @@ function ValueCell({ field, values, allFields }) {
 const styles = {
   heroUnit: { fontSize: 16, fontWeight: 700, color: 'rgba(255,255,255,0.5)' },
   snapSubsection: { marginBottom: 4 },
+  // L&D 1b — 'group' layout read-only program cards
+  programCard: {
+    marginBottom: 14, padding: '16px 18px',
+    background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 14,
+  },
+  programName: { fontSize: 15, fontWeight: 700, letterSpacing: '-0.2px', color: '#fff', marginBottom: 12 },
+  programEmpty: { fontSize: 12, color: 'rgba(255,255,255,0.4)', fontStyle: 'italic' },
   snapSubLabel: {
     fontSize: 11, fontWeight: 700, letterSpacing: '1.2px', textTransform: 'uppercase',
     color: 'rgba(255,255,255,0.45)', margin: '18px 0 10px',
