@@ -294,7 +294,7 @@ export default function TASnapshot({ config, values }) {
 // =============================================
 const ACCENT = 'linear-gradient(90deg, #F3C036, #ec4899, #a855f7)';
 const S = {
-  wrap: { maxWidth: 1240, margin: '0 auto', padding: '4px 0 40px', fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif", color: '#fff' },
+  wrap: { maxWidth: 1100, margin: '0 auto', padding: '4px 0 40px', fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif", color: '#fff' },
 
   card: { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 16, padding: '22px 24px', position: 'relative', overflow: 'hidden' },
   cardAccent: { content: '', position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: ACCENT, opacity: 0.7 },
