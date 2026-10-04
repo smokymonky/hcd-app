@@ -837,6 +837,185 @@ const initDatabase = async () => {
     }
 
     // =============================================
+    // DASHBOARD BUILDER (L&D-2): Seed Development & Career structure (idempotent)
+    // =============================================
+    // Per LD_STRUCTURE_SPEC. 5 sections incl. a GROUP section (accomplished_
+    // projects) whose subsections are repeatable PROGRAMS with ratio sub-items,
+    // and a labeled_grid of 18 departments. Computed: opportunities (cross-
+    // section sum of the dept grid), delivered_pct / utilization_pct (percent_of),
+    // coop_trainees (sum of two). Per-dept % is render-derived (NOT seeded).
+    // Guard on any L&D section existing so this runs once.
+    const existingLdStructure = await pool.query(
+      "SELECT 1 FROM module_sections WHERE module_code = 'L&D' LIMIT 1"
+    );
+    if (existingLdStructure.rowCount === 0) {
+      // Sections: [key, title, layout, sort_order]
+      const ldSections = [
+        ['ld_overview',            'L&D Activities Overview',          'kpi',          1],
+        ['sama_compliance',        'SAMA Compliance',                  'kpi',          2],
+        ['talent_management',      'Talent Management',                'kpi',          3],
+        ['learning_opportunities', 'Learning Opportunities by Dept',   'labeled_grid', 4],
+        ['accomplished_projects',  'Accomplished L&D Projects',        'group',        5],
+      ];
+      const ldSecId = {};
+      for (const [key, title, layout, order] of ldSections) {
+        const r = await pool.query(
+          `INSERT INTO module_sections (module_code, key, title, layout, sort_order)
+           VALUES ('L&D', $1, $2, $3, $4) RETURNING id`,
+          [key, title, layout, order]
+        );
+        ldSecId[key] = r.rows[0].id;
+      }
+
+      // Subsections: [sectionKey, key, title, order]
+      const ldSubs = [
+        // ld_overview sub-headings
+        ['ld_overview', 'tmd',               'TMD',                   1],
+        ['ld_overview', 'satisfaction',      'Satisfaction',          2],
+        ['ld_overview', 'trained',           'Trained Associates (YTD)', 3],
+        ['ld_overview', 'learning_calendar', 'Learning Calendar',     4],
+        ['ld_overview', 'internship',        'Student Internship',    5],
+        // accomplished_projects PROGRAMS (group layout)
+        ['accomplished_projects', 'hadreen',  'Hadreen Retail & MSME Program', 1],
+        ['accomplished_projects', 'eshghaa',  "Eshgha'a Development Program",  2],
+      ];
+      const ldSubId = {};
+      for (const [sectionKey, key, title, order] of ldSubs) {
+        const r = await pool.query(
+          `INSERT INTO module_subsections (module_code, section_id, key, title, sort_order)
+           VALUES ('L&D', $1, $2, $3, $4) RETURNING id`,
+          [ldSecId[sectionKey], key, title, order]
+        );
+        ldSubId[`${sectionKey}:${key}`] = r.rows[0].id;
+      }
+
+      // Field helper (same shape as TA's T):
+      //  [key,label,type,unit,section,subsection,dimension,dRow,dCol,source,fType,fArgs,order,featured]
+      const L = (key, label, type, unit, section, subsection, dimension, dRow, dCol, source, fType, fArgs, order, featured = false) =>
+        ({ key, label, type, unit, section, subsection, dimension, dRow, dCol, source, fType, fArgs, order, featured });
+
+      const ldFields = [
+        // === 1. L&D Activities Overview ===
+        // TMD
+        L('opportunities', 'Opportunities', 'number', null, 'ld_overview', 'tmd', null, null, null, 'computed', 'sum', { section: 'learning_opportunities' }, 10),
+        L('tmd', 'TMD', 'number', null, 'ld_overview', 'tmd', null, null, null, 'manual', null, null, 11, true),
+        // Satisfaction
+        L('satisfaction_rate', 'Satisfaction Rate', 'percentage', '%', 'ld_overview', 'satisfaction', null, null, null, 'manual', null, null, 20, true),
+        // Trained Associates (YTD) — all manual for now
+        L('trained_associates', 'Trained Associates', 'number', null, 'ld_overview', 'trained', null, null, null, 'manual', null, null, 30, true),
+        L('trained_pct', 'Trained %', 'percentage', '%', 'ld_overview', 'trained', null, null, null, 'manual', null, null, 31),
+        L('female_pct', 'Female %', 'percentage', '%', 'ld_overview', 'trained', null, null, null, 'manual', null, null, 32),
+        L('male_pct', 'Male %', 'percentage', '%', 'ld_overview', 'trained', null, null, null, 'manual', null, null, 33),
+        L('ho_pct', 'HO %', 'percentage', '%', 'ld_overview', 'trained', null, null, null, 'manual', null, null, 34),
+        L('op_pct', 'OP %', 'percentage', '%', 'ld_overview', 'trained', null, null, null, 'manual', null, null, 35),
+        // Learning Calendar
+        L('planned', 'Planned', 'number', null, 'ld_overview', 'learning_calendar', null, null, null, 'manual', null, null, 40),
+        L('delivered', 'Delivered', 'number', null, 'ld_overview', 'learning_calendar', null, null, null, 'manual', null, null, 41),
+        L('delivered_pct', 'Delivered %', 'percentage', '%', 'ld_overview', 'learning_calendar', null, null, null, 'computed', 'percent_of', { numerator: 'delivered', over: ['planned'] }, 42),
+        L('seats_offered', 'Seats Offered', 'number', null, 'ld_overview', 'learning_calendar', null, null, null, 'manual', null, null, 43),
+        L('seats_used', 'Seats Used', 'number', null, 'ld_overview', 'learning_calendar', null, null, null, 'manual', null, null, 44),
+        L('utilization_pct', 'Utilization %', 'percentage', '%', 'ld_overview', 'learning_calendar', null, null, null, 'computed', 'percent_of', { numerator: 'seats_used', over: ['seats_offered'] }, 45, true),
+        // Student Internship
+        L('top_2_departments', 'Top 2 Departments', 'text', null, 'ld_overview', 'internship', null, null, null, 'manual', null, null, 50),
+        L('training_plans', 'Training Plans', 'number', null, 'ld_overview', 'internship', null, null, null, 'manual', null, null, 51),
+        L('coop_trainees', 'Co-op Trainees', 'number', null, 'ld_overview', 'internship', null, null, null, 'computed', 'sum', { fields: ['coop_male', 'coop_female'] }, 52),
+        L('coop_male', 'Co-op Male', 'number', null, 'ld_overview', 'internship', null, null, null, 'manual', null, null, 53),
+        L('coop_female', 'Co-op Female', 'number', null, 'ld_overview', 'internship', null, null, null, 'manual', null, null, 54),
+        L('tamheer_female', 'Tamheer Female', 'number', null, 'ld_overview', 'internship', null, null, null, 'manual', null, null, 55),
+        L('tamheer_male', 'Tamheer Male', 'number', null, 'ld_overview', 'internship', null, null, null, 'manual', null, null, 56),
+
+        // === 2. SAMA Compliance ===
+        L('mandatory_courses_pct', 'Mandatory Courses %', 'percentage', '%', 'sama_compliance', null, null, null, null, 'manual', null, null, 10),
+        L('credit_advisor_cert_pct', 'Credit Advisor Certification %', 'percentage', '%', 'sama_compliance', null, null, null, null, 'manual', null, null, 20, true),
+
+        // === 3. Talent Management ===
+        L('pip', 'PIP', 'number', null, 'talent_management', null, null, null, null, 'manual', null, null, 10),
+        L('talent_pool_successors', 'Talent Pool — Successors', 'number', null, 'talent_management', null, null, null, null, 'manual', null, null, 20),
+        L('talent_pool_hipo', 'Talent Pool — HiPo', 'number', null, 'talent_management', null, null, null, null, 'manual', null, null, 30),
+        L('talent_pool_adp', 'Talent Pool — ADP', 'number', null, 'talent_management', null, null, null, null, 'manual', null, null, 40),
+
+        // === 4. Learning Opportunities by Dept (labeled_grid, 18 manual) ===
+        L('dept_msme', 'MSME', 'number', null, 'learning_opportunities', null, null, null, null, 'manual', null, null, 10),
+        L('dept_audit', 'Audit', 'number', null, 'learning_opportunities', null, null, null, null, 'manual', null, null, 20),
+        L('dept_customer_experience', 'Customer Experience', 'number', null, 'learning_opportunities', null, null, null, null, 'manual', null, null, 30),
+        L('dept_finance', 'Finance', 'number', null, 'learning_opportunities', null, null, null, null, 'manual', null, null, 40),
+        L('dept_admin', 'Admin', 'number', null, 'learning_opportunities', null, null, null, null, 'manual', null, null, 50),
+        L('dept_digital', 'Digital', 'number', null, 'learning_opportunities', null, null, null, null, 'manual', null, null, 60),
+        L('dept_retail_auto', 'Retail Auto', 'number', null, 'learning_opportunities', null, null, null, null, 'manual', null, null, 70),
+        L('dept_hr', 'HR', 'number', null, 'learning_opportunities', null, null, null, null, 'manual', null, null, 80),
+        L('dept_it', 'IT', 'number', null, 'learning_opportunities', null, null, null, null, 'manual', null, null, 90),
+        L('dept_cyber', 'Cyber', 'number', null, 'learning_opportunities', null, null, null, null, 'manual', null, null, 100),
+        L('dept_compliance', 'Compliance', 'number', null, 'learning_opportunities', null, null, null, null, 'manual', null, null, 110),
+        L('dept_qa', 'QA', 'number', null, 'learning_opportunities', null, null, null, null, 'manual', null, null, 120),
+        L('dept_collection', 'Collection', 'number', null, 'learning_opportunities', null, null, null, null, 'manual', null, null, 130),
+        L('dept_ceo_office', 'CEO Office', 'number', null, 'learning_opportunities', null, null, null, null, 'manual', null, null, 140),
+        L('dept_risk', 'Risk', 'number', null, 'learning_opportunities', null, null, null, null, 'manual', null, null, 150),
+        L('dept_marketing', 'Marketing', 'number', null, 'learning_opportunities', null, null, null, null, 'manual', null, null, 160),
+        L('dept_st', 'S&T', 'number', null, 'learning_opportunities', null, null, null, null, 'manual', null, null, 170),
+        L('dept_legal', 'Legal', 'number', null, 'learning_opportunities', null, null, null, null, 'manual', null, null, 180),
+
+        // === 5. Accomplished L&D Projects (group) — program subsections ===
+        // Hadreen Retail & MSME Program
+        L('hadreen_total_headcount', 'Total Headcount', 'number', null, 'accomplished_projects', 'hadreen', null, null, null, 'manual', null, null, 10),
+        L('hadreen_total_trained', 'Total Trained', 'number', null, 'accomplished_projects', 'hadreen', null, null, null, 'manual', null, null, 11),
+        L('hadreen_executives', 'Executives', 'ratio', null, 'accomplished_projects', 'hadreen', null, null, null, 'manual', null, null, 12),
+        L('hadreen_credit_managers', 'Credit Managers', 'ratio', null, 'accomplished_projects', 'hadreen', null, null, null, 'manual', null, null, 13),
+        L('hadreen_retail_msme_officers', 'Retail & MSME Officers', 'ratio', null, 'accomplished_projects', 'hadreen', null, null, null, 'manual', null, null, 14),
+        // Eshgha'a Development Program
+        L('eshghaa_total_headcount', 'Total Headcount', 'number', null, 'accomplished_projects', 'eshghaa', null, null, null, 'manual', null, null, 10),
+        L('eshghaa_total_trained', 'Total Trained', 'number', null, 'accomplished_projects', 'eshghaa', null, null, null, 'manual', null, null, 11),
+      ];
+
+      for (const f of ldFields) {
+        await pool.query(
+          `INSERT INTO module_fields
+             (module_code, section_id, key, label, type, unit, dimension, dimension_row, dimension_col,
+              source, formula_type, formula_args, subsection, sort_order, featured)
+           VALUES ('L&D', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+          [
+            ldSecId[f.section], f.key, f.label, f.type, f.unit,
+            f.dimension, f.dRow, f.dCol, f.source, f.fType,
+            f.fArgs ? JSON.stringify(f.fArgs) : null, f.subsection, f.order, f.featured,
+          ]
+        );
+      }
+
+      // Seed the month-1 VALUES as a published draft? No — structure only
+      // (Rule 8). Values are entered by owners via the entry form.
+      console.log(`[Builder L&D-2] Seeded L&D structure: ${ldSections.length} sections, ${ldSubs.length} subsections, ${ldFields.length} fields.`);
+    } else {
+      console.log('[Builder L&D-2] L&D structure already exists — skipping seed.');
+    }
+
+    // =============================================
+    // DASHBOARD BUILDER (L&D-2): Seed L&D field_targets (idempotent)
+    // =============================================
+    // Same field_targets table/shape as HR Ops's saudization. Guard per row so
+    // a deliberate admin soft-delete is never re-seeded.
+    const ldTargets = [
+      ['tmd', 820, 'above', 'L&D annual TMD target'],
+      ['satisfaction_rate', 85, 'above', 'Satisfaction target'],
+      ['trained_associates', 790, 'above', 'Trained associates target'],
+      ['trained_pct', 70, 'above', 'Trained % target'],
+      ['mandatory_courses_pct', 100, 'above', 'SAMA mandatory courses'],
+      ['credit_advisor_cert_pct', 90, 'above', 'SAMA credit advisor'],
+    ];
+    for (const [fieldKey, value, direction, label] of ldTargets) {
+      const exists = await pool.query(
+        'SELECT 1 FROM field_targets WHERE module = $1 AND field_key = $2 LIMIT 1',
+        ['L&D', fieldKey]
+      );
+      if (exists.rowCount === 0) {
+        await pool.query(
+          `INSERT INTO field_targets (module, field_key, target_value, direction, tolerance, label, is_active)
+           VALUES ($1, $2, $3, $4, NULL, $5, true)`,
+          ['L&D', fieldKey, value, direction, label]
+        );
+      }
+    }
+    console.log('[Builder L&D-2] L&D field_targets seed checked (6 targets).');
+
+    // =============================================
     // PHASE 0: Seed workflow_targets registry
     // dashboard_submission: workflow active (used by HR Dashboards in Phase 0)
     // activity_completion:  workflow inactive (placeholder for future Annual Plan
