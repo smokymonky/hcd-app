@@ -393,6 +393,7 @@ export default function ModulePage({ user, onLogout }) {
 
       {/* Snapshot period selector (entry has its own inside ModuleDataEntry) */}
       {activeView === 'snapshot' && (
+        <div style={{ ...S.selectorOuter, ...(isMobile ? S.selectorOuterMobile : {}) }}>
         <div style={{ ...S.selector, ...(isMobile ? S.selectorMobile : {}) }}>
           <span style={S.selectorLabel}>VIEWING</span>
           <Dropdown label="Year" value={String(year)} options={yearOptions} onChange={(v) => handlePeriodChange(v, month)} width={120} />
@@ -405,6 +406,7 @@ export default function ModulePage({ user, onLogout }) {
                 : ''}
             </span>
           )}
+        </div>
         </div>
       )}
 
@@ -506,10 +508,13 @@ const S = {
   },
   editToggleOn: { background: ACCENT, borderColor: 'rgba(243,192,54,0.5)', color: '#F3C036' },
   refetch: { fontSize: 11, color: 'rgba(255,255,255,0.5)' },
+  // Width-unify: outer provides the 48px gutter (like `body`); the card caps at
+  // 1100 centered so it lines up with the entry/snapshot content + HR Ops.
+  selectorOuter: { padding: '18px 48px 0' },
+  selectorOuterMobile: { padding: '16px 16px 0' },
   selector: {
-    // Boxed CARD matching HROpsSnapshot.selector; inset from page edges via a
-    // 48px horizontal margin (HR Ops achieves the inset via its canvas padding).
-    margin: '18px 48px 0',
+    // Boxed CARD matching HROpsSnapshot.selector, capped at HR Ops's 1100 width.
+    maxWidth: 1100, margin: '0 auto',
     background: 'rgba(255,255,255,0.03)',
     border: '1px solid rgba(255,255,255,0.1)',
     backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
@@ -519,7 +524,7 @@ const S = {
     position: 'relative', zIndex: 30,
     display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap',
   },
-  selectorMobile: { margin: '16px 16px 0', flexDirection: 'column', alignItems: 'stretch', gap: 10, padding: '14px 14px' },
+  selectorMobile: { flexDirection: 'column', alignItems: 'stretch', gap: 10, padding: '14px 14px' },
   selectorLabel: { fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.5)', letterSpacing: '1.5px', textTransform: 'uppercase' },
   // FIX2 — snapshot published stamp (mirror HROpsSnapshot)
   publishedStamp: { display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'rgba(255,255,255,0.5)', marginLeft: 'auto' },
