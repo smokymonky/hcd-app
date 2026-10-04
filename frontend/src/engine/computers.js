@@ -96,6 +96,12 @@ export function formatValue(field, raw) {
   // L&D 1a: ratio stores 'a/b' → 'X / Y (Z%)'. Handle before the numeric
   // parse/short-circuit below (parseFloat('10/13') would wrongly yield 10).
   if (t === 'ratio') return formatRatio(raw);
+  // text/longtext: pass the raw string through (empty → '—'). Must precede the
+  // numeric parse below, which would otherwise turn 'IT, Marketing' into '—'.
+  if (t === 'text' || t === 'longtext') {
+    const s = (raw === null || raw === undefined) ? '' : String(raw);
+    return s.trim() === '' ? '—' : s;
+  }
   if (raw === null || raw === undefined || raw === '') return '—';
   const num = parseFloat(raw);
   if (!Number.isFinite(num)) return '—';
