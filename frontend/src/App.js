@@ -58,16 +58,21 @@ function App() {
             cutover to /hub. Hub exists but is unlinked from login flow until then. */}
         <Route path="/hub" element={user ? <HubPage user={user} onLogout={handleLogout} /> : <Navigate to="/login" />} />
         <Route path="/hub/:categoryId" element={user ? <HubPage user={user} onLogout={handleLogout} /> : <Navigate to="/login" />} />
-        {/* HR OPERATIONS MODULE — Phase 2A + Extension. Path-based routing (Rule 13 #1, #7):
-              /hub/dashboards/HR_OPS                       → defaults to Data Entry, current month
-              /hub/dashboards/HR_OPS/:view                 → :view ∈ {entry, snapshot}, current month
-              /hub/dashboards/HR_OPS/entry/:year/:month    → entry for specific month (historical or future)
-              /hub/dashboards/HR_OPS/snapshot/:year/:month → snapshot for specific published month
-            Year is floored to SYSTEM_START_YEAR (2026) in config/hrOpsFields.js. */}
+        {/* HR OPERATIONS MODULE — CUTOVER (Rule 9/10). HR_OPS now routes through
+            the generic ModulePage (engine entry = builder-editable) like TA/L&D/
+            HR_SYS; its Snapshot tab still renders the bespoke HROpsSnapshot
+            (ModulePage special-cases HR_OPS). The 4 explicit HROpsPage routes
+            below are COMMENTED OUT as a one-step ROLLBACK — un-comment them to
+            instantly restore the original bespoke HROpsPage (it + HROpsSnapshot/
+            HROpsDataEntry/hrOpsFields remain in the repo, untouched).
+              /hub/dashboards/HR_OPS[/:view[/...]] → ModulePage (generic) now.
+            Year floored to SYSTEM_START_YEAR (2026) in config/hrOpsFields.js. */}
+        {/* ROLLBACK: un-comment these 4 lines to restore the bespoke HROpsPage.
         <Route path="/hub/dashboards/HR_OPS" element={user ? <HROpsPage user={user} onLogout={handleLogout} /> : <Navigate to="/login" />} />
         <Route path="/hub/dashboards/HR_OPS/:view" element={user ? <HROpsPage user={user} onLogout={handleLogout} /> : <Navigate to="/login" />} />
         <Route path="/hub/dashboards/HR_OPS/entry/:year/:month" element={user ? <HROpsPage user={user} onLogout={handleLogout} /> : <Navigate to="/login" />} />
         <Route path="/hub/dashboards/HR_OPS/snapshot/:year/:month" element={user ? <HROpsPage user={user} onLogout={handleLogout} /> : <Navigate to="/login" />} />
+        */}
         {/* MODULE ENGINE Step 2b-2 — additive generic-renderer PREVIEW route.
             Renders ModuleDataEntry (config-driven) side by side with the live
             entry above. Reuses the same submission + save so data is shared.
