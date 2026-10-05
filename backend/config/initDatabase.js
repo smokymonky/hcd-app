@@ -1016,6 +1016,149 @@ const initDatabase = async () => {
     console.log('[Builder L&D-2] L&D field_targets seed checked (6 targets).');
 
     // =============================================
+    // DASHBOARD BUILDER (HR_SYS-2): Seed HR Systems structure (idempotent)
+    // =============================================
+    // Per HRSYS_STRUCTURE_SPEC + recommended additions (uptime_pct,
+    // sla_attainment_pct, automation_rate_pct). 4 sections incl. a 'highlights'
+    // section holding one LIST field (items entered by the owner, not seeded),
+    // a by_module labeled_grid (10), and computed sums (new_features,
+    // system_incidents). Per-module % is render-derived (NOT seeded).
+    // Guard on any HR_SYS section existing so this runs once.
+    const existingHrSysStructure = await pool.query(
+      "SELECT 1 FROM module_sections WHERE module_code = 'HR_SYS' LIMIT 1"
+    );
+    if (existingHrSysStructure.rowCount === 0) {
+      const hsSections = [
+        ['system_overview',   'System Overview Management', 'kpi',          1],
+        ['by_module',         'New Features by Module',     'labeled_grid', 2],
+        ['highlights',        'Highlight Overview',         'kpi',          3],
+        ['system_incidents',  'System Incidents Management', 'kpi',         4],
+      ];
+      const hsSecId = {};
+      for (const [key, title, layout, order] of hsSections) {
+        const r = await pool.query(
+          `INSERT INTO module_sections (module_code, key, title, layout, sort_order)
+           VALUES ('HR_SYS', $1, $2, $3, $4) RETURNING id`,
+          [key, title, layout, order]
+        );
+        hsSecId[key] = r.rows[0].id;
+      }
+
+      const hsSubs = [
+        // system_overview
+        ['system_overview', 'new_features',    'New Features',    1],
+        ['system_overview', 'split',           'Split',           2],
+        ['system_overview', 'system_health',   'System Health',   3],
+        ['system_overview', 'services_status', 'Services Status', 4],
+        // system_incidents
+        ['system_incidents', 'incidents', 'Incidents', 1],
+        ['system_incidents', 'status',    'Status',    2],
+        ['system_incidents', 'by_type',   'By Type',   3],
+      ];
+      for (const [sectionKey, key, title, order] of hsSubs) {
+        await pool.query(
+          `INSERT INTO module_subsections (module_code, section_id, key, title, sort_order)
+           VALUES ('HR_SYS', $1, $2, $3, $4)`,
+          [hsSecId[sectionKey], key, title, order]
+        );
+      }
+
+      // [key,label,type,unit,section,subsection,dimension,dRow,dCol,source,fType,fArgs,order,featured]
+      const H = (key, label, type, unit, section, subsection, dimension, dRow, dCol, source, fType, fArgs, order, featured = false) =>
+        ({ key, label, type, unit, section, subsection, dimension, dRow, dCol, source, fType, fArgs, order, featured });
+
+      const hsFields = [
+        // === 1. System Overview ===
+        // new_features subsection
+        H('new_features', 'New Features', 'number', null, 'system_overview', 'new_features', null, null, null, 'computed', 'sum', { fields: ['back_office', 'employee_exp'] }, 10, true),
+        H('avg_to_production', 'Avg. to Production', 'number', 'days', 'system_overview', 'new_features', null, null, null, 'manual', null, null, 11),
+        // split
+        H('back_office', 'Back Office', 'number', null, 'system_overview', 'split', null, null, null, 'manual', null, null, 20),
+        H('employee_exp', 'Employee Experience', 'number', null, 'system_overview', 'split', null, null, null, 'manual', null, null, 21),
+        // system_health (recommended additions)
+        H('uptime_pct', 'System Uptime', 'percentage', '%', 'system_overview', 'system_health', null, null, null, 'manual', null, null, 30, true),
+        H('automation_rate_pct', 'Automation Rate', 'percentage', '%', 'system_overview', 'system_health', null, null, null, 'manual', null, null, 31),
+        // services_status
+        H('completed', 'Completed', 'number', null, 'system_overview', 'services_status', null, null, null, 'manual', null, null, 40),
+        H('in_progress', 'In Progress', 'number', null, 'system_overview', 'services_status', null, null, null, 'manual', null, null, 41),
+        H('uat', 'UAT', 'number', null, 'system_overview', 'services_status', null, null, null, 'manual', null, null, 42),
+        H('automated', 'Automated', 'number', null, 'system_overview', 'services_status', null, null, null, 'manual', null, null, 43),
+        H('digitalized', 'Digitalized', 'number', null, 'system_overview', 'services_status', null, null, null, 'manual', null, null, 44),
+        H('enhanced', 'Enhanced', 'number', null, 'system_overview', 'services_status', null, null, null, 'manual', null, null, 45),
+
+        // === 2. New Features by Module (labeled_grid, 10) ===
+        H('mod_op', 'OP', 'number', null, 'by_module', null, null, null, null, 'manual', null, null, 10),
+        H('mod_ld', 'L&D', 'number', null, 'by_module', null, null, null, null, 'manual', null, null, 20),
+        H('mod_od', 'OD', 'number', null, 'by_module', null, null, null, null, 'manual', null, null, 30),
+        H('mod_self_service', 'Self Service', 'number', null, 'by_module', null, null, null, null, 'manual', null, null, 40),
+        H('mod_payroll', 'Payroll', 'number', null, 'by_module', null, null, null, null, 'manual', null, null, 50),
+        H('mod_recruitment', 'Recruitment', 'number', null, 'by_module', null, null, null, null, 'manual', null, null, 60),
+        H('mod_otl', 'OTL', 'number', null, 'by_module', null, null, null, null, 'manual', null, null, 70),
+        H('mod_hrhd', 'HRHD', 'number', null, 'by_module', null, null, null, null, 'manual', null, null, 80),
+        H('mod_common', 'Common', 'number', null, 'by_module', null, null, null, null, 'manual', null, null, 90),
+        H('mod_other', 'Other Dpt.', 'number', null, 'by_module', null, null, null, null, 'manual', null, null, 100),
+
+        // === 3. Highlight Overview (one list field; items are entered data) ===
+        H('highlights', 'Highlights', 'list', null, 'highlights', null, null, null, null, 'manual', null, null, 10),
+
+        // === 4. System Incidents ===
+        // incidents subsection
+        H('system_incidents', 'System Incidents', 'number', null, 'system_incidents', 'incidents', null, null, null, 'computed', 'sum', { fields: ['bugs_errors', 'access_issues', 'integration_issues'] }, 10, true),
+        H('avg_resolution', 'Avg. Resolution', 'number', 'days', 'system_incidents', 'incidents', null, null, null, 'manual', null, null, 11, true),
+        H('sla_attainment_pct', 'SLA Attainment', 'percentage', '%', 'system_incidents', 'incidents', null, null, null, 'manual', null, null, 12, true),
+        // status
+        H('resolved', 'Resolved', 'number', null, 'system_incidents', 'status', null, null, null, 'manual', null, null, 20),
+        H('open', 'Open', 'number', null, 'system_incidents', 'status', null, null, null, 'manual', null, null, 21),
+        // by_type
+        H('bugs_errors', 'Bugs / Errors', 'number', null, 'system_incidents', 'by_type', null, null, null, 'manual', null, null, 30),
+        H('access_issues', 'Access Issues', 'number', null, 'system_incidents', 'by_type', null, null, null, 'manual', null, null, 31),
+        H('integration_issues', 'Integration Issues', 'number', null, 'system_incidents', 'by_type', null, null, null, 'manual', null, null, 32),
+      ];
+
+      for (const f of hsFields) {
+        await pool.query(
+          `INSERT INTO module_fields
+             (module_code, section_id, key, label, type, unit, dimension, dimension_row, dimension_col,
+              source, formula_type, formula_args, subsection, sort_order, featured)
+           VALUES ('HR_SYS', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+          [
+            hsSecId[f.section], f.key, f.label, f.type, f.unit,
+            f.dimension, f.dRow, f.dCol, f.source, f.fType,
+            f.fArgs ? JSON.stringify(f.fArgs) : null, f.subsection, f.order, f.featured,
+          ]
+        );
+      }
+      console.log(`[Builder HR_SYS-2] Seeded HR_SYS structure: ${hsSections.length} sections, ${hsSubs.length} subsections, ${hsFields.length} fields.`);
+    } else {
+      console.log('[Builder HR_SYS-2] HR_SYS structure already exists — skipping seed.');
+    }
+
+    // =============================================
+    // DASHBOARD BUILDER (HR_SYS-2): Seed HR_SYS field_targets (idempotent)
+    // =============================================
+    // uptime & SLA higher-is-better ('above'); avg_resolution lower-is-better
+    // ('below'). automation_rate target TBD — not seeded. Per-row guard.
+    const hsTargets = [
+      ['uptime_pct', 99.5, 'above', 'System uptime target'],
+      ['sla_attainment_pct', 90, 'above', 'Ticket SLA attainment'],
+      ['avg_resolution', 5, 'below', 'Avg resolution (days, lower is better)'],
+    ];
+    for (const [fieldKey, value, direction, label] of hsTargets) {
+      const exists = await pool.query(
+        'SELECT 1 FROM field_targets WHERE module = $1 AND field_key = $2 LIMIT 1',
+        ['HR_SYS', fieldKey]
+      );
+      if (exists.rowCount === 0) {
+        await pool.query(
+          `INSERT INTO field_targets (module, field_key, target_value, direction, tolerance, label, is_active)
+           VALUES ($1, $2, $3, $4, NULL, $5, true)`,
+          ['HR_SYS', fieldKey, value, direction, label]
+        );
+      }
+    }
+    console.log('[Builder HR_SYS-2] HR_SYS field_targets seed checked (3 targets).');
+
+    // =============================================
     // PHASE 0: Seed workflow_targets registry
     // dashboard_submission: workflow active (used by HR Dashboards in Phase 0)
     // activity_completion:  workflow inactive (placeholder for future Annual Plan
