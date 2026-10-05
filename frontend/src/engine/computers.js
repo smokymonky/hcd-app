@@ -102,6 +102,13 @@ export function formatValue(field, raw) {
     const s = (raw === null || raw === undefined) ? '' : String(raw);
     return s.trim() === '' ? '—' : s;
   }
+  // HR_SYS-1: list stores a JSON array of {title,description}. Inline display is
+  // a count summary; the structured render lives in the snapshot/entry. Empty → '—'.
+  if (t === 'list') {
+    const items = parseList(raw);
+    if (items.length === 0) return '—';
+    return `${items.length} item${items.length === 1 ? '' : 's'}`;
+  }
   if (raw === null || raw === undefined || raw === '') return '—';
   const num = parseFloat(raw);
   if (!Number.isFinite(num)) return '—';
@@ -133,6 +140,24 @@ export function formatRatio(raw) {
     return `${aTxt} / ${bTxt} (${pct}%)`;
   }
   return `${aTxt} / ${bTxt}`;
+}
+
+// HR_SYS-1 — list field. Value is a JSON array of {title, description}. Parses
+// defensively: bad/empty JSON → []. Each item normalized to {title, description}
+// strings. Shared by entry, generic snapshot, and the bespoke HR_SYS snapshot.
+export function parseList(raw) {
+  if (raw === null || raw === undefined || raw === '') return [];
+  let arr;
+  try {
+    arr = typeof raw === 'string' ? JSON.parse(raw) : raw;
+  } catch (e) {
+    return [];
+  }
+  if (!Array.isArray(arr)) return [];
+  return arr.map((it) => ({
+    title: (it && it.title != null) ? String(it.title) : '',
+    description: (it && it.description != null) ? String(it.description) : '',
+  }));
 }
 
 // =============================================
