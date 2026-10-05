@@ -5,6 +5,7 @@ import {
   evaluateTarget,
   formatValue,
   formatNumber,
+  parseList,
 } from '../engine/computers';
 import TargetIndicator from './TargetIndicator';
 
@@ -262,6 +263,29 @@ function renderGrid(section, fields, values, allFields, isMobile) {
 // ---- One label→value cell (computed tinted, no CALC tag; target inline) ----
 function ValueCell({ field, values, allFields }) {
   const isComputed = field.source === 'computed';
+
+  // HR_SYS-1: list → read-only stack of title (bold) + description (muted).
+  if (field.type === 'list') {
+    const items = parseList(values[field.key]);
+    return (
+      <div style={{ ...styles.valueCell, gridColumn: '1 / -1' }}>
+        <div style={styles.valueLabel}>{field.label}</div>
+        {items.length === 0 ? (
+          <div style={{ ...styles.valueNum, fontSize: 15 }}>—</div>
+        ) : (
+          <div style={styles.listStack}>
+            {items.map((it, i) => (
+              <div key={i} style={styles.listItem}>
+                <div style={styles.listItemTitle}>{it.title || '—'}</div>
+                {it.description && <div style={styles.listItemDesc}>{it.description}</div>}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
   const val = displayValue(field, values, allFields);
   const evaln = field.target ? evaluateTarget(field, values[field.key]) : null;
   const goldValue = isComputed || !!field.target;
@@ -294,6 +318,10 @@ const styles = {
     color: 'rgba(255,255,255,0.45)', margin: '18px 0 10px',
   },
   valueGrid: { display: 'grid', gap: 12, marginBottom: 4 },
+  listStack: { display: 'flex', flexDirection: 'column', gap: 10, marginTop: 8 },
+  listItem: { paddingLeft: 10, borderLeft: '2px solid rgba(243,192,54,0.4)' },
+  listItemTitle: { fontSize: 14, fontWeight: 700, color: '#fff' },
+  listItemDesc: { fontSize: 12.5, color: 'rgba(255,255,255,0.6)', marginTop: 2, lineHeight: 1.5 },
   valueCell: {
     display: 'flex', flexDirection: 'column', gap: 0,
     background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)',
