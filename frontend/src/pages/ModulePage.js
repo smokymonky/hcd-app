@@ -4,6 +4,7 @@ import ModuleDataEntry from '../dashboards/ModuleDataEntry';
 import ModuleSnapshot from '../dashboards/ModuleSnapshot';
 import TASnapshot from '../dashboards/TASnapshot';
 import HRSysSnapshot from '../dashboards/HRSysSnapshot';
+import HROpsSnapshot from '../dashboards/HROpsSnapshot';
 import LDSnapshot from '../dashboards/LDSnapshot';
 import StatusBadge from '../dashboards/StatusBadge';
 import UserIdentityCard from '../hub/UserIdentityCard';
@@ -185,8 +186,8 @@ export default function ModulePage({ user, onLogout }) {
 
   // Load published whenever snapshot tab is active + period changes.
   useEffect(() => {
-    if (accessResolved && activeView === 'snapshot') loadPublished();
-  }, [accessResolved, activeView, loadPublished]);
+    if (accessResolved && activeView === 'snapshot' && moduleCode !== 'HR_OPS') loadPublished();
+  }, [accessResolved, activeView, loadPublished, moduleCode]);
 
   // FIX3 — discover published periods (year → [months]) for the snapshot month
   // dropdown, and default the snapshot to the LATEST published month (mirrors
@@ -393,7 +394,7 @@ export default function ModulePage({ user, onLogout }) {
       )}
 
       {/* Snapshot period selector (entry has its own inside ModuleDataEntry) */}
-      {activeView === 'snapshot' && (
+      {activeView === 'snapshot' && moduleCode !== 'HR_OPS' && (
         <div style={{ ...S.selectorOuter, ...(isMobile ? S.selectorOuterMobile : {}) }}>
         <div style={{ ...S.selector, ...(isMobile ? S.selectorMobile : {}) }}>
           <span style={S.selectorLabel}>VIEWING</span>
@@ -426,6 +427,12 @@ export default function ModulePage({ user, onLogout }) {
             onStructureChanged={onStructureChanged}
             onStructurePatch={applyStructurePatch}
           />
+        ) : moduleCode === 'HR_OPS' ? (
+          // CUTOVER: HR Ops keeps its bespoke, SELF-CONTAINED snapshot. It
+          // self-fetches published data + has its own year/month selector, so
+          // ModulePage renders it standalone (no {config,values}, and its own
+          // VIEWING selector is hidden above). Header stays unified.
+          <HROpsSnapshot user={user} variant="full" urlYear={year} urlMonth={month} onPeriodChange={handlePeriodChange} />
         ) : snapLoading ? (
           <div style={S.spinner} />
         ) : notPublished ? (
