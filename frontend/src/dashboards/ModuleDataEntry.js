@@ -4,6 +4,7 @@ import {
   computeFieldValue,
   resolveComputedValues,
   formatValue,
+  parseList,
   buildYearOptions,
   buildMonthOptions,
 } from '../engine/computers';
@@ -605,7 +606,7 @@ export default function ModuleDataEntry({ config, user, year, month, onStatusCha
     for (const f of FIELDS) {
       if (f.source === 'computed') continue;
       // Non-numeric types are never range-checked (don't parse 'IT, Marketing').
-      if (f.type === 'text' || f.type === 'longtext') continue;
+      if (f.type === 'text' || f.type === 'longtext' || f.type === 'list') continue;
       const raw = values[f.key];
       if (raw === undefined || raw === null || raw === '') continue;
       if (f.type === 'ratio') {
@@ -1089,6 +1090,7 @@ export default function ModuleDataEntry({ config, user, year, month, onStatusCha
                             <option style={OPT} value="text">text</option>
                             <option style={OPT} value="longtext">longtext</option>
                             <option style={OPT} value="ratio">Ratio (X / Y)</option>
+            <option style={OPT} value="list">List (title + description)</option>
                             <option style={OPT} value="calculated">Calculated…</option>
                           </select>
                           {(section.subsections || []).filter((ss) => ss.is_active !== false).length > 0 && (
@@ -1323,6 +1325,7 @@ function FieldEditModal({ field, form, setForm, numericFields, sections, groupOp
             <option style={OPT} value="text">text</option>
             <option style={OPT} value="longtext">longtext</option>
             <option style={OPT} value="ratio">Ratio (X / Y)</option>
+            <option style={OPT} value="list">List (title + description)</option>
             <option style={OPT} value="calculated">Calculated…</option>
           </select>
 
@@ -1852,6 +1855,8 @@ function renderServicesGrid(fields, values, onChange, readOnly, isMobile = false
           </label>
           {f.type === 'ratio' ? (
             <RatioInputs field={f} values={values} onChange={onChange} readOnly={readOnly} />
+          ) : f.type === 'list' ? (
+            <ListInputs field={f} values={values} onChange={onChange} readOnly={readOnly} />
           ) : f.type === 'longtext' ? (
             <textarea rows={3} style={{ ...styles.serviceInput, resize: 'vertical', minHeight: 72, fontFamily: 'inherit' }}
               value={values[f.key] ?? ''} onChange={(e) => onChange(f.key, e.target.value)}
@@ -1926,6 +1931,56 @@ function RatioInputs({ field, values, onChange, readOnly }) {
   );
 }
 
+// HR_SYS-1 — list field: editable stack of {title, description} rows. Serializes
+// to JSON on every change via the SAME send-changed onChange (one field_key).
+function ListInputs({ field, values, onChange, readOnly }) {
+  const items = parseList(values[field.key]);
+  const commit = (next) => onChange(field.key, next.length === 0 ? '' : JSON.stringify(next));
+  const updateItem = (i, patch) => { const n = items.map((it, idx) => (idx === i ? { ...it, ...patch } : it)); commit(n); };
+  const addItem = () => commit([...items, { title: '', description: '' }]);
+  const removeItem = (i) => commit(items.filter((_, idx) => idx !== i));
+  const move = (i, dir) => {
+    const j = i + dir;
+    if (j < 0 || j >= items.length) return;
+    const n = items.slice();
+    const [m] = n.splice(i, 1);
+    n.splice(j, 0, m);
+    commit(n);
+  };
+  return (
+    <div style={styles.listInputs}>
+      {items.map((it, i) => (
+        <div key={i} style={styles.listRow}>
+          <div style={styles.listRowMain}>
+            <input
+              type="text" placeholder="Title"
+              style={{ ...styles.input, fontWeight: 600 }}
+              value={it.title} readOnly={readOnly} disabled={readOnly}
+              onChange={(e) => updateItem(i, { title: e.target.value })}
+            />
+            <textarea
+              rows={2} placeholder="Description"
+              style={{ ...styles.input, resize: 'vertical', minHeight: 54, fontFamily: 'inherit' }}
+              value={it.description} readOnly={readOnly} disabled={readOnly}
+              onChange={(e) => updateItem(i, { description: e.target.value })}
+            />
+          </div>
+          {!readOnly && (
+            <div style={styles.listRowControls}>
+              <button type="button" title="Move up" style={styles.editIconBtn} disabled={i === 0} onClick={() => move(i, -1)}>↑</button>
+              <button type="button" title="Move down" style={styles.editIconBtn} disabled={i === items.length - 1} onClick={() => move(i, 1)}>↓</button>
+              <button type="button" title="Remove" style={{ ...styles.editIconBtn, ...styles.editIconDanger }} onClick={() => removeItem(i)}>🗑</button>
+            </div>
+          )}
+        </div>
+      ))}
+      {!readOnly && (
+        <button type="button" style={styles.addFieldBtn} onClick={addItem}>+ Add item</button>
+      )}
+    </div>
+  );
+}
+
 function FieldCell({ field, values, computedValues, onChange, readOnly, allFields }) {
   const isComputed = field.source === 'computed';
   const display = isComputed ? computeFieldValue(field, computedValues || values, allFields) : null;
@@ -1948,6 +2003,8 @@ function FieldCell({ field, values, computedValues, onChange, readOnly, allField
             style={{ ...styles.input, ...styles.inputComputed, ...(isEmptyComputed ? styles.inputComputedEmpty : {}) }} />
         ) : field.type === 'ratio' ? (
           <RatioInputs field={field} values={values} onChange={onChange} readOnly={readOnly} />
+        ) : field.type === 'list' ? (
+          <ListInputs field={field} values={values} onChange={onChange} readOnly={readOnly} />
         ) : field.type === 'longtext' ? (
           <textarea rows={3}
             value={values[field.key] ?? ''} onChange={(e) => onChange(field.key, e.target.value)}
@@ -1963,7 +2020,7 @@ function FieldCell({ field, values, computedValues, onChange, readOnly, allField
             value={values[field.key] ?? ''} onChange={(e) => onChange(field.key, e.target.value)}
             readOnly={readOnly} disabled={readOnly} inputMode="decimal" style={styles.input} />
         )}
-        {field.unit && field.type !== 'ratio' && field.type !== 'text' && field.type !== 'longtext' && (<span style={styles.unit}>{field.unit}</span>)}
+        {field.unit && field.type !== 'ratio' && field.type !== 'text' && field.type !== 'longtext' && field.type !== 'list' && (<span style={styles.unit}>{field.unit}</span>)}
       </div>
     </div>
   );
@@ -2509,6 +2566,11 @@ const styles = {
     fontFamily: 'inherit', fontSize: 14, fontWeight: 500, textAlign: 'center', outline: 'none',
   },
   ratioSlash: { color: 'rgba(255,255,255,0.5)', fontSize: 16, fontWeight: 600, flexShrink: 0 },
+  // HR_SYS-1 — list field inputs
+  listInputs: { display: 'flex', flexDirection: 'column', gap: 10, width: '100%' },
+  listRow: { display: 'flex', gap: 8, alignItems: 'flex-start', padding: 10, background: 'rgba(0,0,0,0.15)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 10 },
+  listRowMain: { flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 6 },
+  listRowControls: { display: 'flex', flexDirection: 'column', gap: 4, flexShrink: 0 },
   inputComputed: {
     background: 'rgba(243,192,54,0.06)',
     borderColor: 'rgba(243,192,54,0.2)',
