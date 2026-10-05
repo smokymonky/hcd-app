@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import ModuleDataEntry from '../dashboards/ModuleDataEntry';
 import ModuleSnapshot from '../dashboards/ModuleSnapshot';
 import TASnapshot from '../dashboards/TASnapshot';
+import HRSysSnapshot from '../dashboards/HRSysSnapshot';
 import LDSnapshot from '../dashboards/LDSnapshot';
 import StatusBadge from '../dashboards/StatusBadge';
 import UserIdentityCard from '../hub/UserIdentityCard';
@@ -42,7 +43,7 @@ const MODULE_NAME_BY_CODE = {
 };
 
 // Per-module bespoke snapshot components (Design v5); default = engine snapshot.
-const SNAPSHOT_BY_CODE = { TA: TASnapshot, 'L&D': LDSnapshot };
+const SNAPSHOT_BY_CODE = { TA: TASnapshot, 'L&D': LDSnapshot, HR_SYS: HRSysSnapshot };
 
 export default function ModulePage({ user, onLogout }) {
   const { moduleCode, view: viewParam, year: yearParam, month: monthParam } = useParams();
