@@ -7,6 +7,7 @@ import HubPage from './pages/HubPage';
 import HROpsPage from './pages/HROpsPage';
 import ModuleEntryPreview from './pages/ModuleEntryPreview';
 import ModuleSnapshotPreview from './pages/ModuleSnapshotPreview';
+import DesignerPreview from './pages/DesignerPreview';
 import ModulePage from './pages/ModulePage';
 
 function App() {
@@ -88,6 +89,10 @@ function App() {
             Same /hub/preview/* namespace (avoids the HR_OPS/:view capture). The
             live HROpsSnapshot + /hub/dashboards/HR_OPS/snapshot are untouched. */}
         <Route path="/hub/preview/:moduleCode/snapshot-v2" element={user ? <ModuleSnapshotPreview user={user} onLogout={handleLogout} /> : <Navigate to="/login" />} />
+        {/* SNAPSHOT DESIGNER Y-1 — view a saved layout config (config-driven
+            renderer) against real published data. Additive preview; does NOT
+            touch live module routes or bespoke snapshots. */}
+        <Route path="/hub/preview/:moduleCode/designer-v1" element={user ? <DesignerPreview user={user} onLogout={handleLogout} /> : <Navigate to="/login" />} />
         {/* B6/TA-3 — generic LIVE module page (Data Entry | Snapshot) for engine
             modules (TA / L&D / HR_SYS). Declared AFTER the explicit HR_OPS
             routes so React Router v6's static-over-param ranking keeps HR_OPS
