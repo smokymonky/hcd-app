@@ -335,6 +335,28 @@ const initDatabase = async () => {
     await pool.query('ALTER TABLE module_fields ADD COLUMN IF NOT EXISTS featured BOOLEAN DEFAULT false');
 
     // =============================================
+    // SNAPSHOT DESIGNER (Y-1): versioned layout configs + per-module mode.
+    // Additive & idempotent. All 4 live modules stay snapshot_mode='bespoke';
+    // nothing flips to 'designer' here. (Designer UI + convert flow are Y-2+.)
+    // =============================================
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS snapshot_layouts (
+        id SERIAL PRIMARY KEY,
+        module_code VARCHAR(50) NOT NULL,
+        version INTEGER NOT NULL DEFAULT 1,
+        is_active BOOLEAN DEFAULT true,
+        config JSONB NOT NULL,
+        created_by INTEGER REFERENCES users(id),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    await pool.query('CREATE INDEX IF NOT EXISTS idx_snapshot_layouts_module_active ON snapshot_layouts(module_code, is_active)');
+    // Per-module snapshot source: 'bespoke' (code) | 'designer' (layout config).
+    // Defaults 'bespoke' so the 4 live modules are unaffected.
+    await pool.query("ALTER TABLE dashboard_modules ADD COLUMN IF NOT EXISTS snapshot_mode VARCHAR(20) NOT NULL DEFAULT 'bespoke'");
+
+    // =============================================
     // ACCESS MGMT: source tag on user_module_access ('auto' | 'manual').
     // Idempotent migration for the existing prod table. Existing rows were
     // all auto/seeded, so DEFAULT 'auto' backfills them correctly. The CHECK
@@ -1157,6 +1179,41 @@ const initDatabase = async () => {
       }
     }
     console.log('[Builder HR_SYS-2] HR_SYS field_targets seed checked (3 targets).');
+
+    // =============================================
+    // SNAPSHOT DESIGNER (Y-1): seed ONE sample TA layout (idempotent)
+    // =============================================
+    // Exercises the renderer (section_header + hero_kpi + stat_tile + ring_gauge)
+    // against real TA published data at /hub/preview/TA/designer-v1. is_active
+    // true, but TA's snapshot_mode stays 'bespoke' so the LIVE TA page is
+    // unaffected — only the preview route reads this. Guard: skip if any TA
+    // layout exists.
+    const existingTaLayout = await pool.query(
+      "SELECT 1 FROM snapshot_layouts WHERE module_code = 'TA' LIMIT 1"
+    );
+    if (existingTaLayout.rowCount === 0) {
+      const taSampleConfig = {
+        module_code: 'TA',
+        rows: [
+          { id: 'r1', columns: [
+            { width: 12, blocks: [{ id: 'b1', component: 'section_header', title: 'Overview' }] },
+          ] },
+          { id: 'r2', columns: [
+            { width: 4, blocks: [{ id: 'b2', component: 'hero_kpi', title: 'Hired %', bind: { field: 'hired_pct' }, style: { color: 'gold' } }] },
+            { width: 4, blocks: [{ id: 'b3', component: 'stat_tile', title: 'Total Hired (YTD)', bind: { field: 'total_hired_ytd' } }] },
+            { width: 4, blocks: [{ id: 'b4', component: 'ring_gauge', title: 'Hired %', bind: { field: 'hired_pct' }, style: { color: 'purple' } }] },
+          ] },
+        ],
+      };
+      await pool.query(
+        `INSERT INTO snapshot_layouts (module_code, version, is_active, config)
+         VALUES ('TA', 1, true, $1::jsonb)`,
+        [JSON.stringify(taSampleConfig)]
+      );
+      console.log('[Snapshot Designer Y-1] Seeded sample TA layout (preview-only).');
+    } else {
+      console.log('[Snapshot Designer Y-1] TA layout already exists — skipping seed.');
+    }
 
     // =============================================
     // PHASE 0: Seed workflow_targets registry
