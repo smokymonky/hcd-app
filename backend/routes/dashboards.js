@@ -1416,4 +1416,32 @@ router.post('/:moduleCode/subsections/:id/restore', authenticateToken, isAdmin, 
   }
 });
 
+// =============================================
+// SNAPSHOT DESIGNER (Y-1) — GET the active layout config for a module
+// =============================================
+// Viewer+ (same access as the snapshot). Returns the active layout's config,
+// or { config: null } when none (not a 404 — "no designer layout" is normal
+// for bespoke modules). Save/Publish endpoints arrive with the Y-2 designer.
+router.get('/:moduleCode/snapshot-layout', authenticateToken, checkModuleAccessParam('viewer'), async (req, res) => {
+  try {
+    const { moduleCode } = req.params;
+    const r = await pool.query(
+      `SELECT id, module_code, version, is_active, config
+       FROM snapshot_layouts
+       WHERE module_code = $1 AND is_active = true
+       ORDER BY version DESC, id DESC
+       LIMIT 1`,
+      [moduleCode]
+    );
+    if (r.rows.length === 0) {
+      return res.json({ config: null });
+    }
+    const row = r.rows[0];
+    res.json({ id: row.id, module_code: row.module_code, version: row.version, config: row.config });
+  } catch (err) {
+    console.error('GET /:moduleCode/snapshot-layout error:', err);
+    res.status(500).json({ error: 'Server error loading snapshot layout.' });
+  }
+});
+
 module.exports = router;
