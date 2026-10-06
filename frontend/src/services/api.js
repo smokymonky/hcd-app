@@ -156,6 +156,8 @@ export const dashboardsAPI = {
   getStructure: (moduleCode, { includeHidden } = {}) => request(
     `/dashboards/${encodeURIComponent(moduleCode)}/structure${includeHidden ? '?includeHidden=true' : ''}`
   ),
+  // SNAPSHOT DESIGNER (Y-1): active layout config for a module ({ config: null } if none).
+  getSnapshotLayout: (moduleCode) => request(`/dashboards/${encodeURIComponent(moduleCode)}/snapshot-layout`),
 };
 
 // =============================================
