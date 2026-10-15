@@ -82,9 +82,10 @@ function titleOf(block, fieldByKey) {
 // Core renderers — each (block, resolvedValues, fieldByKey) → JSX
 // =============================================
 const REGISTRY = {
-  section_header: (block) => (
-    <div style={ST.sectionHeader}>{block.title || 'Section'}</div>
-  ),
+  section_header: (block) => {
+    const c = (block.style && block.style.color) ? themeColor(block.style.color) : null;
+    return <div style={{ ...ST.sectionHeader, ...(c ? { color: c } : {}) }}>{block.title || 'Section'}</div>;
+  },
 
   hero_kpi: (block, rv, fbk) => {
     const color = themeColor(block.style && block.style.color);
@@ -111,14 +112,17 @@ const REGISTRY = {
     );
   },
 
-  ratio: (block, rv, fbk) => (
-    <div style={ST.st}>
-      <div style={{ ...ST.stN, color: THEME.gold }}>
-        {(() => { const r = rawOf(block, rv); return r === null ? '—' : formatRatio(r); })()}
+  ratio: (block, rv, fbk) => {
+    const color = (block.style && block.style.color) ? themeColor(block.style.color) : THEME.gold;
+    return (
+      <div style={ST.st}>
+        <div style={{ ...ST.stN, color }}>
+          {(() => { const r = rawOf(block, rv); return r === null ? '—' : formatRatio(r); })()}
+        </div>
+        <div style={ST.stL}>{titleOf(block, fbk)}</div>
       </div>
-      <div style={ST.stL}>{titleOf(block, fbk)}</div>
-    </div>
-  ),
+    );
+  },
 
   ring_gauge: (block, rv, fbk) => {
     const token = (block.style && block.style.color) || 'gold';
@@ -179,9 +183,12 @@ const REGISTRY = {
     );
   },
 
-  status_light: (block) => (
-    <span style={ST.statusLight}><span style={ST.statusDot} /> {block.title || 'All systems operational'}</span>
-  ),
+  status_light: (block) => {
+    const c = (block.style && block.style.color) ? themeColor(block.style.color) : null;
+    const pill = c ? { ...ST.statusLight, color: c } : ST.statusLight;
+    const dot = c ? { ...ST.statusDot, background: c, boxShadow: `0 0 10px ${c}` } : ST.statusDot;
+    return <span style={pill}><span style={dot} /> {block.title || 'All systems operational'}</span>;
+  },
 };
 
 export function renderBlock(block, resolvedValues, fieldByKey) {
