@@ -158,6 +158,14 @@ export const dashboardsAPI = {
   ),
   // SNAPSHOT DESIGNER (Y-1): active layout config for a module ({ config: null } if none).
   getSnapshotLayout: (moduleCode) => request(`/dashboards/${encodeURIComponent(moduleCode)}/snapshot-layout`),
+  // SNAPSHOT DESIGNER (Y-2a): save draft / publish / list versions (admin).
+  saveSnapshotLayout: (moduleCode, config) => request(`/dashboards/${encodeURIComponent(moduleCode)}/snapshot-layout`, {
+    method: 'POST', body: JSON.stringify({ config }),
+  }),
+  publishSnapshotLayout: (moduleCode, payload) => request(`/dashboards/${encodeURIComponent(moduleCode)}/snapshot-layout/publish`, {
+    method: 'POST', body: JSON.stringify(payload || {}),
+  }),
+  listSnapshotLayoutVersions: (moduleCode) => request(`/dashboards/${encodeURIComponent(moduleCode)}/snapshot-layout/versions`),
 };
 
 // =============================================
