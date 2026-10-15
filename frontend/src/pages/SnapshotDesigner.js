@@ -1,5 +1,10 @@
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import {
+  DndContext, DragOverlay, PointerSensor, useSensor, useSensors, closestCenter, useDraggable, useDroppable,
+} from '@dnd-kit/core';
+import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { dashboardsAPI, targetsAPI } from '../services/api';
 import { resolveComputedValues, buildMonthOptions } from '../engine/computers';
 import { renderBlock, GRADIENT_DEFS, COMPONENT_TYPES } from '../engine/snapshotComponents';
@@ -31,6 +36,95 @@ const PALETTE_LABELS = {
 
 let _uid = 0;
 const nextId = (p) => `${p}_${Date.now()}_${_uid++}`;
+
+// ---- DnD location helpers (pure, on a config) ----
+function findBlockLoc(config, blockId) {
+  const rows = config.rows || [];
+  for (let ri = 0; ri < rows.length; ri++) {
+    const cols = rows[ri].columns || [];
+    for (let ci = 0; ci < cols.length; ci++) {
+      const blocks = cols[ci].blocks || [];
+      for (let bi = 0; bi < blocks.length; bi++) {
+        if (blocks[bi].id === blockId) return { ri, ci, bi };
+      }
+    }
+  }
+  return null;
+}
+function findColumnLoc(config, colId) {
+  const rows = config.rows || [];
+  for (let ri = 0; ri < rows.length; ri++) {
+    const cols = rows[ri].columns || [];
+    for (let ci = 0; ci < cols.length; ci++) {
+      if (cols[ci].id === colId) return { ri, ci };
+    }
+  }
+  return null;
+}
+
+// Palette item — click to add (kept) + draggable (new).
+function PaletteItem({ type, label, onClick }) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: `palette:${type}`, data: { kind: 'palette', type } });
+  return (
+    <button
+      ref={setNodeRef} type="button" style={{ ...DS.palItem, ...(isDragging ? DS.dragging : {}) }}
+      onClick={onClick} {...listeners} {...attributes}
+    >
+      ⠿ {label}
+    </button>
+  );
+}
+
+// Column droppable wrapper — highlights when a drag is over it (empty cols too).
+function ColumnDroppable({ colId, children }) {
+  const { setNodeRef, isOver } = useDroppable({ id: `col:${colId}`, data: { kind: 'column', colId } });
+  return (
+    <div ref={setNodeRef} style={{ ...DS.colDrop, ...(isOver ? DS.colDropOver : {}) }}>
+      {children}
+    </div>
+  );
+}
+
+// A sortable canvas block — renders the block + selection + ↑/↓/✕ controls.
+function SortableBlock({ block, isSel, onSelect, onMoveUp, onMoveDown, onDelete, children }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: block.id, data: { kind: 'block', blockId: block.id } });
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.4 : 1,
+  };
+  return (
+    <div
+      ref={setNodeRef}
+      style={{ ...style, ...DS.blockWrap, ...(isSel ? DS.blockWrapSel : {}) }}
+      onClick={(e) => { e.stopPropagation(); onSelect(); }}
+    >
+      {isSel && (
+        <div style={DS.blockControls} onClick={(e) => e.stopPropagation()}>
+          <span style={DS.dragHandle} title="Drag to move" {...listeners} {...attributes}>⠿</span>
+          <button type="button" style={DS.ctrlBtn} title="Move up" onClick={onMoveUp}>↑</button>
+          <button type="button" style={DS.ctrlBtn} title="Move down" onClick={onMoveDown}>↓</button>
+          <button type="button" style={{ ...DS.ctrlBtn, ...DS.ctrlDanger }} title="Delete" onClick={onDelete}>✕</button>
+        </div>
+      )}
+      {children}
+    </div>
+  );
+}
+
+// Styles used by the DnD helper components (kept in sync with the main S below).
+const DS = {
+  palItem: { textAlign: 'left', padding: '10px 12px', borderRadius: 8, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', cursor: 'grab', fontFamily: 'inherit', fontSize: 13, fontWeight: 600, width: '100%' },
+  dragging: { opacity: 0.5 },
+  colDrop: { display: 'flex', flexDirection: 'column', gap: 10, minHeight: 40, borderRadius: 8, transition: 'background 0.12s ease' },
+  colDropOver: { background: 'rgba(243,192,54,0.08)', outline: '1px dashed rgba(243,192,54,0.5)' },
+  blockWrap: { position: 'relative', borderRadius: 10, border: '1px solid transparent', cursor: 'pointer', padding: 2 },
+  blockWrapSel: { border: '1px solid rgba(243,192,54,0.6)', boxShadow: '0 0 0 2px rgba(243,192,54,0.15)' },
+  blockControls: { position: 'absolute', top: -12, right: 6, display: 'flex', gap: 4, zIndex: 5, alignItems: 'center' },
+  dragHandle: { width: 24, height: 24, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: 6, background: '#2d1f42', border: '1px solid rgba(255,255,255,0.2)', color: 'rgba(255,255,255,0.7)', cursor: 'grab', fontSize: 12 },
+  ctrlBtn: { width: 26, height: 24, borderRadius: 6, background: '#2d1f42', border: '1px solid rgba(255,255,255,0.2)', color: '#fff', cursor: 'pointer', fontSize: 12, fontFamily: 'inherit' },
+  ctrlDanger: { background: 'rgba(239,68,68,0.3)', borderColor: 'rgba(239,68,68,0.5)' },
+};
 
 export default function SnapshotDesigner({ user }) {
   const { moduleCode } = useParams();
@@ -200,6 +294,72 @@ export default function SnapshotDesigner({ user }) {
     });
   }
 
+  // ---- drag & drop (dnd-kit) ----
+  // Buttons above remain the reliable fallback; DnD is additive.
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+  const [activeDrag, setActiveDrag] = useState(null); // { kind:'palette'|'block', type?, block? }
+
+  function handleDragStart(event) {
+    const data = event.active && event.active.data && event.active.data.current;
+    if (!data) return;
+    if (data.kind === 'palette') setActiveDrag({ kind: 'palette', type: data.type });
+    else if (data.kind === 'block') {
+      const loc = findBlockLoc(config, data.blockId);
+      const blk = loc ? config.rows[loc.ri].columns[loc.ci].blocks[loc.bi] : null;
+      setActiveDrag({ kind: 'block', block: blk });
+    }
+  }
+
+  // Resolve the drop target (column + index) from the `over` element.
+  function resolveTarget(draft, over) {
+    const od = over && over.data && over.data.current;
+    if (!od) return null;
+    if (od.kind === 'column') {
+      const loc = findColumnLoc(draft, od.colId);
+      if (!loc) return null;
+      const col = draft.rows[loc.ri].columns[loc.ci];
+      return { ri: loc.ri, ci: loc.ci, index: (col.blocks || []).length };
+    }
+    if (od.kind === 'block') {
+      const loc = findBlockLoc(draft, od.blockId);
+      if (!loc) return null;
+      return { ri: loc.ri, ci: loc.ci, index: loc.bi };
+    }
+    return null;
+  }
+
+  function handleDragEnd(event) {
+    const { active, over } = event;
+    setActiveDrag(null);
+    if (!over) return; // dropped outside any droppable → no-op (don't lose it)
+    const ad = active.data && active.data.current;
+    if (!ad) return;
+
+    mutate((d) => {
+      const target = resolveTarget(d, over);
+      if (!target) return;
+      const destCol = d.rows[target.ri].columns[target.ci];
+
+      if (ad.kind === 'palette') {
+        const block = { id: nextId('b'), component: ad.type, title: '', bind: {}, style: {} };
+        destCol.blocks.splice(target.index, 0, block);
+        setSelected({ r: target.ri, c: target.ci, b: target.index });
+        return;
+      }
+      if (ad.kind === 'block') {
+        const src = findBlockLoc(d, ad.blockId);
+        if (!src) return;
+        const srcCol = d.rows[src.ri].columns[src.ci];
+        const [moved] = srcCol.blocks.splice(src.bi, 1);
+        // If same column and removing shifted the target index, adjust.
+        let idx = target.index;
+        if (src.ri === target.ri && src.ci === target.ci && src.bi < target.index) idx -= 1;
+        destCol.blocks.splice(idx, 0, moved);
+        setSelected({ r: target.ri, c: target.ci, b: idx });
+      }
+    });
+  }
+
   // ---- save / publish ----
   async function handleSave() {
     setBusy(true); setMsg(null);
@@ -255,17 +415,16 @@ export default function SnapshotDesigner({ user }) {
       </div>
       {msg && <div style={msg.type === 'error' ? S.alertErr : S.alertOk}>{msg.text}</div>}
 
-      {/* 3 panes */}
+      {/* 3 panes (wrapped in DndContext; buttons remain the fallback) */}
+      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={handleDragStart} onDragEnd={handleDragEnd} onDragCancel={() => setActiveDrag(null)}>
       <div style={S.panes}>
-        {/* LEFT — palette */}
+        {/* LEFT — palette (draggable + click-to-add) */}
         <div style={S.palette}>
           <div style={S.paneTitle}>Components</div>
           {COMPONENT_TYPES.map((t) => (
-            <button key={t} type="button" style={S.palItem} onClick={() => addBlock(t)}>
-              + {PALETTE_LABELS[t] || t}
-            </button>
+            <PaletteItem key={t} type={t} label={PALETTE_LABELS[t] || t} onClick={() => addBlock(t)} />
           ))}
-          <div style={S.paneHint}>Click to add to the selected column (or the last row).</div>
+          <div style={S.paneHint}>Drag a component onto a column, or click to add to the selected column.</div>
         </div>
 
         {/* CENTER — canvas */}
@@ -277,28 +436,29 @@ export default function SnapshotDesigner({ user }) {
               <div style={S.rowGrid}>
                 {(row.columns || []).map((col, ci) => (
                   <div key={col.id || ci} style={{ ...S.canvasCol, gridColumn: `span ${Math.max(1, Math.min(12, col.width || 12))}` }}>
-                    {(col.blocks || []).length === 0 && (
-                      <div style={S.dropHint} onClick={() => setSelected({ r: ri, c: ci, b: -1 })}>empty column</div>
-                    )}
-                    {(col.blocks || []).map((block, bi) => {
-                      const isSel = selected && selected.r === ri && selected.c === ci && selected.b === bi;
-                      return (
-                        <div
-                          key={block.id || bi}
-                          style={{ ...S.blockWrap, ...(isSel ? S.blockWrapSel : {}) }}
-                          onClick={(e) => { e.stopPropagation(); selectBlock(ri, ci, bi); }}
-                        >
-                          {isSel && (
-                            <div style={S.blockControls} onClick={(e) => e.stopPropagation()}>
-                              <button type="button" style={S.ctrlBtn} title="Move up" onClick={() => moveBlock(-1)}>↑</button>
-                              <button type="button" style={S.ctrlBtn} title="Move down" onClick={() => moveBlock(1)}>↓</button>
-                              <button type="button" style={{ ...S.ctrlBtn, ...S.ctrlDanger }} title="Delete" onClick={deleteBlock}>✕</button>
-                            </div>
-                          )}
-                          {renderBlock(block, resolved, fieldByKey)}
-                        </div>
-                      );
-                    })}
+                    <ColumnDroppable colId={col.id}>
+                      <SortableContext items={(col.blocks || []).map((b) => b.id)} strategy={verticalListSortingStrategy}>
+                        {(col.blocks || []).length === 0 && (
+                          <div style={S.dropHint} onClick={() => setSelected({ r: ri, c: ci, b: -1 })}>drop here / empty column</div>
+                        )}
+                        {(col.blocks || []).map((block, bi) => {
+                          const isSel = selected && selected.r === ri && selected.c === ci && selected.b === bi;
+                          return (
+                            <SortableBlock
+                              key={block.id || bi}
+                              block={block}
+                              isSel={isSel}
+                              onSelect={() => selectBlock(ri, ci, bi)}
+                              onMoveUp={() => moveBlock(-1)}
+                              onMoveDown={() => moveBlock(1)}
+                              onDelete={deleteBlock}
+                            >
+                              {renderBlock(block, resolved, fieldByKey)}
+                            </SortableBlock>
+                          );
+                        })}
+                      </SortableContext>
+                    </ColumnDroppable>
                   </div>
                 ))}
               </div>
@@ -351,11 +511,23 @@ export default function SnapshotDesigner({ user }) {
                   />
                 </>
               )}
-              <div style={S.paneHint}>Color + variant options come in Y-2b.</div>
+              <div style={S.paneHint}>Color + variant options come later.</div>
             </>
           )}
         </div>
       </div>
+
+      {/* drag ghost */}
+      <DragOverlay>
+        {activeDrag ? (
+          <div style={S.dragGhost}>
+            {activeDrag.kind === 'palette'
+              ? `＋ ${PALETTE_LABELS[activeDrag.type] || activeDrag.type}`
+              : (activeDrag.block ? (PALETTE_LABELS[activeDrag.block.component] || activeDrag.block.component) : 'block')}
+          </div>
+        ) : null}
+      </DragOverlay>
+      </DndContext>
     </div>
   );
 }
@@ -417,4 +589,5 @@ const S = {
   notice: { maxWidth: 520, margin: '80px auto', padding: '20px 24px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 12, textAlign: 'center', fontSize: 14, color: 'rgba(255,255,255,0.75)' },
   link: { color: '#F3C036', cursor: 'pointer', fontWeight: 600 },
   spinner: { width: 36, height: 36, margin: '120px auto', border: '4px solid rgba(255,255,255,0.1)', borderTopColor: '#F3C036', borderRadius: '50%', animation: 'hrSpin 0.8s linear infinite' },
+  dragGhost: { padding: '8px 14px', borderRadius: 8, background: 'rgba(45,31,66,0.95)', border: '1px solid rgba(243,192,54,0.5)', color: '#F3C036', fontSize: 13, fontWeight: 700, boxShadow: '0 8px 24px rgba(0,0,0,0.4)', fontFamily: "'Inter', sans-serif" },
 };
