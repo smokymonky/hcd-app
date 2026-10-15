@@ -8,6 +8,7 @@ import HROpsPage from './pages/HROpsPage';
 import ModuleEntryPreview from './pages/ModuleEntryPreview';
 import ModuleSnapshotPreview from './pages/ModuleSnapshotPreview';
 import DesignerPreview from './pages/DesignerPreview';
+import SnapshotDesigner from './pages/SnapshotDesigner';
 import ModulePage from './pages/ModulePage';
 
 function App() {
@@ -93,6 +94,10 @@ function App() {
             renderer) against real published data. Additive preview; does NOT
             touch live module routes or bespoke snapshots. */}
         <Route path="/hub/preview/:moduleCode/designer-v1" element={user ? <DesignerPreview user={user} onLogout={handleLogout} /> : <Navigate to="/login" />} />
+        {/* SNAPSHOT DESIGNER Y-2a — admin 3-pane layout editor. Admin-gated
+            inside the component (non-admin → Admin link). Edits snapshot_layouts
+            only; live snapshots stay bespoke until the Y-3 mode flip. */}
+        <Route path="/hub/admin/designer/:moduleCode" element={user ? <SnapshotDesigner user={user} onLogout={handleLogout} /> : <Navigate to="/login" />} />
         {/* B6/TA-3 — generic LIVE module page (Data Entry | Snapshot) for engine
             modules (TA / L&D / HR_SYS). Declared AFTER the explicit HR_OPS
             routes so React Router v6's static-over-param ranking keeps HR_OPS
