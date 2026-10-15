@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { dashboardsAPI, targetsAPI } from '../services/api';
 import { resolveComputedValues, buildMonthOptions } from '../engine/computers';
 import { renderBlock, GRADIENT_DEFS, COMPONENT_TYPES } from '../engine/snapshotComponents';
+import Dropdown from '../dashboards/Dropdown';
 
 // =============================================
 // SnapshotDesigner — admin 3-pane snapshot layout editor (Y-2a)
@@ -341,10 +342,13 @@ export default function SnapshotDesigner({ user }) {
               ) : (
                 <>
                   <label style={S.propLabel}>Bound field</label>
-                  <select style={S.propInput} value={(selectedBlock.bind && selectedBlock.bind.field) || ''} onChange={(e) => setSelectedBind({ field: e.target.value })}>
-                    <option value="">— none —</option>
-                    {fieldOptions.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
-                  </select>
+                  <Dropdown
+                    label="Field"
+                    value={(selectedBlock.bind && selectedBlock.bind.field) || ''}
+                    options={[{ value: '', label: '— none —' }, ...fieldOptions.map((o) => ({ value: o.key, label: o.label }))]}
+                    onChange={(v) => setSelectedBind({ field: v })}
+                    width={248}
+                  />
                 </>
               )}
               <div style={S.paneHint}>Color + variant options come in Y-2b.</div>
