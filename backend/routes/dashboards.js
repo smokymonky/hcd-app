@@ -1444,4 +1444,114 @@ router.get('/:moduleCode/snapshot-layout', authenticateToken, checkModuleAccessP
   }
 });
 
+// =============================================
+// SNAPSHOT DESIGNER (Y-2a) — save / publish / list layout versions (ADMIN)
+// =============================================
+// All admin-only. These edit snapshot_layouts ONLY. Publishing activates a
+// version; it does NOT touch dashboard_modules.snapshot_mode, so the LIVE
+// snapshot stays bespoke until the mode flip (Y-3). Versions are kept (never
+// deleted) for rollback.
+
+// POST /:moduleCode/snapshot-layout — SAVE DRAFT (new version, is_active=false)
+router.post('/:moduleCode/snapshot-layout', authenticateToken, isAdmin, async (req, res) => {
+  try {
+    const { moduleCode } = req.params;
+    const { config } = req.body;
+    if (!config || typeof config !== 'object') {
+      return res.status(400).json({ error: 'config (object) is required.' });
+    }
+    const vr = await pool.query(
+      'SELECT COALESCE(MAX(version), 0) + 1 AS next FROM snapshot_layouts WHERE module_code = $1',
+      [moduleCode]
+    );
+    const nextVersion = vr.rows[0].next;
+    const r = await pool.query(
+      `INSERT INTO snapshot_layouts (module_code, version, is_active, config, created_by)
+       VALUES ($1, $2, false, $3::jsonb, $4)
+       RETURNING id, module_code, version, is_active, updated_at`,
+      [moduleCode, nextVersion, JSON.stringify(config), req.user.id]
+    );
+    res.status(201).json(r.rows[0]);
+  } catch (err) {
+    console.error('POST /:moduleCode/snapshot-layout error:', err);
+    res.status(500).json({ error: 'Server error saving snapshot layout.' });
+  }
+});
+
+// POST /:moduleCode/snapshot-layout/publish — activate a version.
+// Body: { version } to activate an existing version, OR { config } to
+// save-then-activate in one call. Atomic: deactivates all others. Does NOT
+// change snapshot_mode.
+router.post('/:moduleCode/snapshot-layout/publish', authenticateToken, isAdmin, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { moduleCode } = req.params;
+    const { version, config } = req.body;
+    await client.query('BEGIN');
+
+    let targetVersion = version;
+    if (config && typeof config === 'object') {
+      // save-then-activate
+      const vr = await client.query(
+        'SELECT COALESCE(MAX(version), 0) + 1 AS next FROM snapshot_layouts WHERE module_code = $1',
+        [moduleCode]
+      );
+      targetVersion = vr.rows[0].next;
+      await client.query(
+        `INSERT INTO snapshot_layouts (module_code, version, is_active, config, created_by)
+         VALUES ($1, $2, false, $3::jsonb, $4)`,
+        [moduleCode, targetVersion, JSON.stringify(config), req.user.id]
+      );
+    }
+    if (targetVersion == null) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Provide { version } or { config } to publish.' });
+    }
+
+    // Ensure the target exists for this module.
+    const exists = await client.query(
+      'SELECT id FROM snapshot_layouts WHERE module_code = $1 AND version = $2',
+      [moduleCode, targetVersion]
+    );
+    if (exists.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: `Version ${targetVersion} not found for this module.` });
+    }
+
+    await client.query('UPDATE snapshot_layouts SET is_active = false, updated_at = CURRENT_TIMESTAMP WHERE module_code = $1', [moduleCode]);
+    const r = await client.query(
+      `UPDATE snapshot_layouts SET is_active = true, updated_at = CURRENT_TIMESTAMP
+       WHERE module_code = $1 AND version = $2
+       RETURNING id, module_code, version, is_active, config`,
+      [moduleCode, targetVersion]
+    );
+    await client.query('COMMIT');
+    res.json(r.rows[0]);
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('POST /:moduleCode/snapshot-layout/publish error:', err);
+    res.status(500).json({ error: 'Server error publishing snapshot layout.' });
+  } finally {
+    client.release();
+  }
+});
+
+// GET /:moduleCode/snapshot-layout/versions — list versions (for the designer)
+router.get('/:moduleCode/snapshot-layout/versions', authenticateToken, isAdmin, async (req, res) => {
+  try {
+    const { moduleCode } = req.params;
+    const r = await pool.query(
+      `SELECT id, version, is_active, updated_at
+       FROM snapshot_layouts
+       WHERE module_code = $1
+       ORDER BY version DESC`,
+      [moduleCode]
+    );
+    res.json(r.rows);
+  } catch (err) {
+    console.error('GET /:moduleCode/snapshot-layout/versions error:', err);
+    res.status(500).json({ error: 'Server error listing layout versions.' });
+  }
+});
+
 module.exports = router;
