@@ -29,6 +29,14 @@ const MODULE_NAME_BY_CODE = {
 const MULTI_FIELD = new Set(['donut']);
 const NO_BIND = new Set(['section_header', 'status_light']);
 
+// Y-2b-2: curated theme swatches + which components accept a color.
+const COLOR_SWATCHES = [
+  ['gold', '#F3C036'], ['magenta', '#ec4899'], ['purple', '#a855f7'],
+  ['blue', '#3b82f6'], ['green', '#22c55e'],
+];
+const COLOR_COMPONENTS = new Set(['hero_kpi', 'stat_tile', 'ratio', 'ring_gauge', 'donut', 'status_light', 'section_header']);
+const isValidHex = (s) => /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(String(s || '').trim());
+
 const PALETTE_LABELS = {
   section_header: 'Section header', hero_kpi: 'Hero KPI', stat_tile: 'Stat tile',
   ratio: 'Ratio', ring_gauge: 'Ring gauge', donut: 'Donut', status_light: 'Status light',
@@ -138,6 +146,8 @@ export default function SnapshotDesigner({ user }) {
   const [values, setValues] = useState({});
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState(null);     // { r, c, b } indices | null
+  const [advColor, setAdvColor] = useState(false);    // Y-2b-2: advanced custom-hex revealed
+  const [hexInput, setHexInput] = useState('');       // draft hex in the advanced field
   const [dirty, setDirty] = useState(false);
   const [msg, setMsg] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -291,6 +301,16 @@ export default function SnapshotDesigner({ user }) {
     mutate((d) => {
       const blk = d.rows[selected.r].columns[selected.c].blocks[selected.b];
       blk.bind = bind;
+    });
+  }
+  // Y-2b-2: set/clear the selected block's color (token or #hex). color=null resets to theme default.
+  function setSelectedColor(color) {
+    if (!selected) return;
+    mutate((d) => {
+      const blk = d.rows[selected.r].columns[selected.c].blocks[selected.b];
+      if (!blk.style) blk.style = {};
+      if (color) blk.style.color = color;
+      else delete blk.style.color;
     });
   }
 
@@ -511,7 +531,51 @@ export default function SnapshotDesigner({ user }) {
                   />
                 </>
               )}
-              <div style={S.paneHint}>Color + variant options come later.</div>
+              {COLOR_COMPONENTS.has(selectedBlock.component) && (() => {
+                const cur = (selectedBlock.style && selectedBlock.style.color) || '';
+                const curIsHex = isValidHex(cur);
+                return (
+                  <div style={S.colorBlock}>
+                    <label style={S.propLabel}>Color</label>
+                    <div style={S.swatchRow}>
+                      {COLOR_SWATCHES.map(([token, hex]) => (
+                        <button
+                          key={token} type="button" title={token}
+                          style={{ ...S.swatch, background: hex, ...(cur === token ? S.swatchSel : {}) }}
+                          onClick={() => setSelectedColor(token)}
+                        />
+                      ))}
+                      <button
+                        type="button" title="Reset to theme default"
+                        style={{ ...S.swatch, ...S.swatchReset, ...(!cur ? S.swatchSel : {}) }}
+                        onClick={() => { setSelectedColor(null); setAdvColor(false); setHexInput(''); }}
+                      >✕</button>
+                    </div>
+                    {selectedBlock.component === 'donut' && (
+                      <div style={S.paneHint}>Donut uses this as its accent; per-segment colors come in Y-2b-3.</div>
+                    )}
+                    <button type="button" style={S.advToggle} onClick={() => { setAdvColor((v) => !v); if (!advColor && curIsHex) setHexInput(cur); }}>
+                      {advColor ? '▾ Advanced' : '▸ Advanced · custom color'}
+                    </button>
+                    {advColor && (
+                      <div style={S.advRow}>
+                        <input
+                          type="text" placeholder="#22d3ee"
+                          value={hexInput}
+                          onChange={(e) => setHexInput(e.target.value)}
+                          style={{ ...S.propInput, ...(hexInput && !isValidHex(hexInput) ? S.inputInvalid : {}) }}
+                        />
+                        <button
+                          type="button" style={S.advApply}
+                          disabled={!isValidHex(hexInput)}
+                          onClick={() => setSelectedColor(hexInput.trim())}
+                        >Apply</button>
+                      </div>
+                    )}
+                    {curIsHex && <div style={S.paneHint}>Custom: {cur}</div>}
+                  </div>
+                );
+              })()}
             </>
           )}
         </div>
@@ -590,4 +654,14 @@ const S = {
   link: { color: '#F3C036', cursor: 'pointer', fontWeight: 600 },
   spinner: { width: 36, height: 36, margin: '120px auto', border: '4px solid rgba(255,255,255,0.1)', borderTopColor: '#F3C036', borderRadius: '50%', animation: 'hrSpin 0.8s linear infinite' },
   dragGhost: { padding: '8px 14px', borderRadius: 8, background: 'rgba(45,31,66,0.95)', border: '1px solid rgba(243,192,54,0.5)', color: '#F3C036', fontSize: 13, fontWeight: 700, boxShadow: '0 8px 24px rgba(0,0,0,0.4)', fontFamily: "'Inter', sans-serif" },
+  // Y-2b-2 color control
+  colorBlock: { marginTop: 14, paddingTop: 12, borderTop: '1px solid rgba(255,255,255,0.08)' },
+  swatchRow: { display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 4 },
+  swatch: { width: 26, height: 26, borderRadius: 7, border: '2px solid transparent', cursor: 'pointer', padding: 0, outline: 'none' },
+  swatchSel: { border: '2px solid #fff', boxShadow: '0 0 0 2px rgba(255,255,255,0.25)' },
+  swatchReset: { background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.6)', fontSize: 12, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' },
+  advToggle: { marginTop: 10, background: 'transparent', border: 'none', color: 'rgba(255,255,255,0.6)', cursor: 'pointer', fontFamily: 'inherit', fontSize: 11.5, padding: 0, textAlign: 'left' },
+  advRow: { display: 'flex', gap: 8, marginTop: 8, alignItems: 'center' },
+  advApply: { padding: '8px 12px', borderRadius: 8, background: 'rgba(243,192,54,0.15)', border: '1px solid rgba(243,192,54,0.4)', color: '#F3C036', cursor: 'pointer', fontFamily: 'inherit', fontSize: 12, fontWeight: 600 },
+  inputInvalid: { borderColor: 'rgba(239,68,68,0.6)' },
 };
