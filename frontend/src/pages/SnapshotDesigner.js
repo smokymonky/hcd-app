@@ -32,19 +32,22 @@ const NO_BIND = new Set(['section_header', 'status_light']);
 const LIST_FIELD = new Set(['list']);
 // split_bar wants exactly two single-field pickers (A, B) rather than a checkbox multi.
 const TWO_FIELD = new Set(['split_bar']);
+// Y-2d-2: section-bound components — bind.section (a module section, renders its fields).
+const SECTION_BIND = new Set(['ranked_bars', 'labeled_grid']);
 
 // Y-2b-2: curated theme swatches + which components accept a color.
 const COLOR_SWATCHES = [
   ['gold', '#F3C036'], ['magenta', '#ec4899'], ['purple', '#a855f7'],
   ['blue', '#3b82f6'], ['green', '#22c55e'],
 ];
-const COLOR_COMPONENTS = new Set(['hero_kpi', 'stat_tile', 'ratio', 'ring_gauge', 'donut', 'status_light', 'section_header', 'big_number', 'progress_bar', 'list']);
+const COLOR_COMPONENTS = new Set(['hero_kpi', 'stat_tile', 'ratio', 'ring_gauge', 'donut', 'status_light', 'section_header', 'big_number', 'progress_bar', 'list', 'ranked_bars', 'labeled_grid']);
 const isValidHex = (s) => /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(String(s || '').trim());
 
 const PALETTE_LABELS = {
   section_header: 'Section header', hero_kpi: 'Hero KPI', stat_tile: 'Stat tile',
   ratio: 'Ratio', ring_gauge: 'Ring gauge', donut: 'Donut', status_light: 'Status light',
   big_number: 'Big number', progress_bar: 'Progress bar', split_bar: 'Split bar', list: 'List',
+  ranked_bars: 'Ranked bars', labeled_grid: 'Labeled grid',
 };
 
 let _uid = 0;
@@ -280,6 +283,13 @@ export default function SnapshotDesigner({ user }) {
       }
     }
     return out;
+  }, [structure]);
+
+  // Y-2d-2: module sections (for section-bound components' bind picker).
+  const sectionOptions = useMemo(() => {
+    return ((structure && structure.sections) || [])
+      .filter((s) => s.is_active !== false)
+      .map((s) => ({ key: s.key, label: s.title || s.key }));
   }, [structure]);
 
   const fieldByKey = useMemo(() => {
@@ -577,6 +587,18 @@ export default function SnapshotDesigner({ user }) {
 
               {NO_BIND.has(selectedBlock.component) ? (
                 <div style={S.paneHint}>This component needs no field binding.</div>
+              ) : SECTION_BIND.has(selectedBlock.component) ? (
+                <>
+                  <label style={S.propLabel}>Bound section</label>
+                  <Dropdown
+                    label="Section"
+                    value={(selectedBlock.bind && selectedBlock.bind.section) || ''}
+                    options={[{ value: '', label: '— none —' }, ...sectionOptions.map((o) => ({ value: o.key, label: o.label }))]}
+                    onChange={(v) => setSelectedBind({ section: v })}
+                    width={248}
+                  />
+                  <div style={S.paneHint}>Renders every field in the chosen section.</div>
+                </>
               ) : TWO_FIELD.has(selectedBlock.component) ? (
                 <>
                   <label style={S.propLabel}>Field A</label>
@@ -806,6 +828,26 @@ export default function SnapshotDesigner({ user }) {
                         <div style={VS.segLabel}>Columns</div>
                         <Seg value={String(st.columns || 2)} opts={[['1', '1'], ['2', '2']]} onChange={(v) => setSelectedStyleProp('columns', v === '2' ? null : 1)} />
                         <Toggle on={st.showDescription !== false} label="Show description" onChange={(on) => setSelectedStyleProp('showDescription', on ? null : false)} />
+                      </>
+                    )}
+
+                    {c === 'ranked_bars' && (
+                      <>
+                        <div style={VS.segLabel}>Sort</div>
+                        <Seg value={st.sort || 'desc'} opts={[['desc', 'High→Low'], ['asc', 'Low→High'], ['entered', 'As entered']]} onChange={(v) => setSelectedStyleProp('sort', v === 'desc' ? null : v)} />
+                        <Toggle on={st.showValue !== false} label="Show value" onChange={(on) => setSelectedStyleProp('showValue', on ? null : false)} />
+                        <label style={S.propLabel}>Max items (blank = all)</label>
+                        <input type="number" min="1" style={S.propInput} value={st.maxItems || ''} onChange={(e) => { const v = e.target.value; setSelectedStyleProp('maxItems', v === '' ? null : Math.max(1, parseInt(v, 10) || 1)); }} />
+                      </>
+                    )}
+
+                    {c === 'labeled_grid' && (
+                      <>
+                        <div style={VS.segLabel}>Columns</div>
+                        <Seg value={String(st.columns || 6)} opts={[['4', '4'], ['5', '5'], ['6', '6']]} onChange={(v) => setSelectedStyleProp('columns', v === '6' ? null : parseInt(v, 10))} />
+                        <div style={VS.segLabel}>Sort</div>
+                        <Seg value={st.sort || 'entered'} opts={[['entered', 'As entered'], ['desc', 'High→Low'], ['asc', 'Low→High']]} onChange={(v) => setSelectedStyleProp('sort', v === 'entered' ? null : v)} />
+                        <Toggle on={st.showPercent !== false} label="Show percent" onChange={(on) => setSelectedStyleProp('showPercent', on ? null : false)} />
                       </>
                     )}
                   </div>
