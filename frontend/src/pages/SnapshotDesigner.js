@@ -120,6 +120,45 @@ function SortableBlock({ block, isSel, onSelect, onMoveUp, onMoveDown, onDelete,
   );
 }
 
+// Y-2b-3 — themed segmented control (NOT a native select). opts = [[value,label],...].
+// `def` is the value treated as the default (rendered active when current is unset).
+function Seg({ value, opts, onChange }) {
+  return (
+    <div style={VS.seg}>
+      {opts.map(([v, lbl]) => {
+        const active = value === v;
+        return (
+          <button key={String(v)} type="button" style={{ ...VS.segBtn, ...(active ? VS.segBtnActive : {}) }} onClick={() => onChange(v)}>
+            {lbl}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+// On/off toggle.
+function Toggle({ on, onChange, label }) {
+  return (
+    <button type="button" style={{ ...VS.toggle, ...(on ? VS.toggleOn : {}) }} onClick={() => onChange(!on)}>
+      <span style={{ ...VS.toggleKnob, ...(on ? VS.toggleKnobOn : {}) }} /> {label}
+    </button>
+  );
+}
+const VS = {
+  seg: { display: 'inline-flex', background: 'rgba(0,0,0,0.25)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, padding: 3, gap: 2, marginTop: 4, flexWrap: 'wrap' },
+  segBtn: { padding: '6px 11px', borderRadius: 6, background: 'transparent', border: 'none', color: 'rgba(255,255,255,0.6)', cursor: 'pointer', fontFamily: 'inherit', fontSize: 11.5, fontWeight: 600 },
+  segBtnActive: { background: 'linear-gradient(135deg, rgba(243,192,54,0.22), rgba(236,72,153,0.15))', color: '#fff' },
+  toggle: { display: 'inline-flex', alignItems: 'center', gap: 8, marginTop: 6, padding: '6px 10px', borderRadius: 8, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.12)', color: 'rgba(255,255,255,0.8)', cursor: 'pointer', fontFamily: 'inherit', fontSize: 12 },
+  toggleOn: { background: 'rgba(243,192,54,0.12)', borderColor: 'rgba(243,192,54,0.4)', color: '#F3C036' },
+  toggleKnob: { width: 26, height: 14, borderRadius: 8, background: 'rgba(255,255,255,0.2)', position: 'relative', flexShrink: 0, transition: 'background 0.15s' },
+  toggleKnobOn: { background: 'rgba(243,192,54,0.5)' },
+  segLabel: { display: 'block', fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,0.6)', margin: '12px 0 2px', textTransform: 'uppercase', letterSpacing: '0.4px' },
+  segColorDot: { width: 20, height: 20, borderRadius: 5, border: '2px solid transparent', cursor: 'pointer', padding: 0 },
+  segColorSel: { border: '2px solid #fff' },
+  segFieldRow: { display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 },
+  segFieldName: { flex: 1, fontSize: 12, color: 'rgba(255,255,255,0.75)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+};
+
 // Styles used by the DnD helper components (kept in sync with the main S below).
 const DS = {
   palItem: { textAlign: 'left', padding: '10px 12px', borderRadius: 8, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', cursor: 'grab', fontFamily: 'inherit', fontSize: 13, fontWeight: 600, width: '100%' },
@@ -311,6 +350,27 @@ export default function SnapshotDesigner({ user }) {
       if (!blk.style) blk.style = {};
       if (color) blk.style.color = color;
       else delete blk.style.color;
+    });
+  }
+  // Y-2b-3: merge a style prop (value===undefined/null deletes it → back to default).
+  function setSelectedStyleProp(key, value) {
+    if (!selected) return;
+    mutate((d) => {
+      const blk = d.rows[selected.r].columns[selected.c].blocks[selected.b];
+      if (!blk.style) blk.style = {};
+      if (value === undefined || value === null) delete blk.style[key];
+      else blk.style[key] = value;
+    });
+  }
+  // Y-2b-3: per-segment donut color (token). token=null clears that segment back to the cycle.
+  function setSegmentColor(fieldKey, token) {
+    if (!selected) return;
+    mutate((d) => {
+      const blk = d.rows[selected.r].columns[selected.c].blocks[selected.b];
+      if (!blk.style) blk.style = {};
+      if (!blk.style.segmentColors) blk.style.segmentColors = {};
+      if (token) blk.style.segmentColors[fieldKey] = token;
+      else delete blk.style.segmentColors[fieldKey];
     });
   }
 
@@ -573,6 +633,92 @@ export default function SnapshotDesigner({ user }) {
                       </div>
                     )}
                     {curIsHex && <div style={S.paneHint}>Custom: {cur}</div>}
+                  </div>
+                );
+              })()}
+
+              {/* Y-2b-3 — per-component variant controls */}
+              {(() => {
+                const c = selectedBlock.component;
+                const st = selectedBlock.style || {};
+                const sizeOpts = [['S', 'S'], ['M', 'M'], ['L', 'L']];
+                return (
+                  <div style={S.colorBlock}>
+                    <label style={S.propLabel}>Variant</label>
+
+                    {c === 'section_header' && (
+                      <>
+                        <div style={VS.segLabel}>Style</div>
+                        <Seg value={st.headerVariant || 'plain'} opts={[['plain', 'Plain'], ['underline', 'Underline'], ['band', 'Band']]} onChange={(v) => setSelectedStyleProp('headerVariant', v === 'plain' ? null : v)} />
+                        <div style={VS.segLabel}>Size</div>
+                        <Seg value={st.size || 'M'} opts={sizeOpts} onChange={(v) => setSelectedStyleProp('size', v === 'M' ? null : v)} />
+                      </>
+                    )}
+
+                    {c === 'hero_kpi' && (
+                      <>
+                        <div style={VS.segLabel}>Size</div>
+                        <Seg value={st.size || 'M'} opts={sizeOpts} onChange={(v) => setSelectedStyleProp('size', v === 'M' ? null : v)} />
+                        <div style={VS.segLabel}>Align</div>
+                        <Seg value={st.align || 'left'} opts={[['left', 'Left'], ['center', 'Center']]} onChange={(v) => setSelectedStyleProp('align', v === 'left' ? null : v)} />
+                        <Toggle on={!!st.showTarget} label="Show target line" onChange={(on) => setSelectedStyleProp('showTarget', on ? true : null)} />
+                      </>
+                    )}
+
+                    {c === 'stat_tile' && (
+                      <>
+                        <div style={VS.segLabel}>Size</div>
+                        <Seg value={st.size || 'M'} opts={sizeOpts} onChange={(v) => setSelectedStyleProp('size', v === 'M' ? null : v)} />
+                        <Toggle on={st.showLabel !== false} label="Show label" onChange={(on) => setSelectedStyleProp('showLabel', on ? null : false)} />
+                      </>
+                    )}
+
+                    {c === 'ratio' && (
+                      <Toggle on={st.showPercent !== false} label="Show percent" onChange={(on) => setSelectedStyleProp('showPercent', on ? null : false)} />
+                    )}
+
+                    {c === 'ring_gauge' && (
+                      <>
+                        <div style={VS.segLabel}>Thickness</div>
+                        <Seg value={st.thickness || 'medium'} opts={[['thin', 'Thin'], ['medium', 'Medium'], ['thick', 'Thick']]} onChange={(v) => setSelectedStyleProp('thickness', v === 'medium' ? null : v)} />
+                        <div style={VS.segLabel}>Size</div>
+                        <Seg value={st.size || 'M'} opts={sizeOpts} onChange={(v) => setSelectedStyleProp('size', v === 'M' ? null : v)} />
+                        <div style={VS.segLabel}>Center</div>
+                        <Seg value={st.center || 'value'} opts={[['value', 'Value'], ['value_label', 'Value + label']]} onChange={(v) => setSelectedStyleProp('center', v === 'value' ? null : v)} />
+                      </>
+                    )}
+
+                    {c === 'donut' && (
+                      <>
+                        <div style={VS.segLabel}>Shape</div>
+                        <Seg value={st.donutVariant || 'donut'} opts={[['donut', 'Donut'], ['pie', 'Pie']]} onChange={(v) => setSelectedStyleProp('donutVariant', v === 'donut' ? null : v)} />
+                        <div style={VS.segLabel}>Thickness</div>
+                        <Seg value={st.thickness || 'medium'} opts={[['thin', 'Thin'], ['medium', 'Medium'], ['thick', 'Thick']]} onChange={(v) => setSelectedStyleProp('thickness', v === 'medium' ? null : v)} />
+                        <div style={VS.segLabel}>Legend</div>
+                        <Seg value={st.legend || 'right'} opts={[['right', 'Right'], ['bottom', 'Bottom'], ['none', 'None']]} onChange={(v) => setSelectedStyleProp('legend', v === 'right' ? null : v)} />
+                        <div style={VS.segLabel}>Center</div>
+                        <Seg value={st.center || 'total'} opts={[['total', 'Total'], ['none', 'None']]} onChange={(v) => setSelectedStyleProp('center', v === 'total' ? null : v)} />
+                        <div style={VS.segLabel}>Segment colors</div>
+                        {((selectedBlock.bind && selectedBlock.bind.fields) || []).length === 0 ? (
+                          <div style={S.paneHint}>Bind fields above to color segments.</div>
+                        ) : (selectedBlock.bind.fields).map((fk) => {
+                          const curTok = (st.segmentColors && st.segmentColors[fk]) || '';
+                          const label = (fieldOptions.find((o) => o.key === fk) || {}).label || fk;
+                          return (
+                            <div key={fk} style={VS.segFieldRow}>
+                              <span style={VS.segFieldName}>{label}</span>
+                              {COLOR_SWATCHES.map(([token, hex]) => (
+                                <button key={token} type="button" title={token} style={{ ...VS.segColorDot, background: hex, ...(curTok === token ? VS.segColorSel : {}) }} onClick={() => setSegmentColor(fk, curTok === token ? null : token)} />
+                              ))}
+                            </div>
+                          );
+                        })}
+                      </>
+                    )}
+
+                    {c === 'status_light' && (
+                      <div style={S.paneHint}>Color (above) is the only option for this component.</div>
+                    )}
                   </div>
                 );
               })()}
