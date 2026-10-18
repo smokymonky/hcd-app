@@ -1,5 +1,5 @@
 import React from 'react';
-import { formatValue, formatRatio } from './computers';
+import { formatValue, formatRatio, parseList } from './computers';
 
 // =============================================
 // snapshotComponents — component registry for the config-driven snapshot
@@ -252,7 +252,129 @@ const REGISTRY = {
     const dot = c ? { ...ST.statusDot, background: c, boxShadow: `0 0 10px ${c}` } : ST.statusDot;
     return <span style={pill}><span style={dot} /> {block.title || 'All systems operational'}</span>;
   },
+
+  // Y-2d-1: big_number — LDSnapshot "Option C" big value + gradient underline.
+  big_number: (block, rv, fbk) => {
+    const st = block.style || {};
+    const f = fieldOf(block, fbk);
+    const val = dispOf(block, rv, fbk);
+    const color = st.color ? themeColor(st.color) : '#F3C036';
+    const n = numOf(block, rv);
+    const isPct = f && (f.type === 'percentage');
+    const target = (f && f.target && Number.isFinite(Number(f.target.value))) ? Number(f.target.value) : null;
+    let bar = 100;
+    if (n !== null) {
+      if (isPct) bar = n;
+      else if (target && target !== 0) bar = (n / target) * 100;
+    }
+    bar = Math.max(0, Math.min(100, bar));
+    const showUnderline = st.showUnderline !== false; // default on
+    const showTarget = !!st.showTarget;
+    return (
+      <div style={ST.bn}>
+        <div style={{ ...ST.bnV, color }}>{val}{f && f.unit && val !== '—' ? <span style={ST.bnSm}> {f.unit}</span> : null}</div>
+        <div style={ST.bnL}>{titleOf(block, fbk)}</div>
+        {showUnderline && <div style={ST.uline}><div style={{ ...ST.ulineF, width: `${bar}%` }} /></div>}
+        {showTarget && target !== null && <div style={ST.bnTarget}>target {formatValue(f, target)}</div>}
+      </div>
+    );
+  },
+
+  // Y-2d-1: progress_bar — label + track/fill (value% or value/target).
+  progress_bar: (block, rv, fbk) => {
+    const st = block.style || {};
+    const f = fieldOf(block, fbk);
+    const color = st.color ? themeColor(st.color) : null;
+    const n = numOf(block, rv);
+    const isPct = f && (f.type === 'percentage');
+    const target = (f && f.target && Number.isFinite(Number(f.target.value))) ? Number(f.target.value) : null;
+    let fill = 0;
+    if (n !== null) {
+      if (isPct) fill = n;
+      else if (target && target !== 0) fill = (n / target) * 100;
+    }
+    fill = Math.max(0, Math.min(100, fill));
+    const h = st.height === 'thick' ? 10 : 6;
+    const showValue = st.showValue !== false; // default on
+    const showTarget = !!st.showTarget;
+    const fillStyle = color
+      ? { ...ST.pbFill, height: '100%', background: color }
+      : { ...ST.pbFill, height: '100%' };
+    return (
+      <div style={ST.pb}>
+        <div style={ST.pbHead}>
+          <span style={ST.pbLabel}>{titleOf(block, fbk)}{showTarget && target !== null ? ` · target ${formatValue(f, target)}` : ''}</span>
+          {showValue && <b style={ST.pbVal}>{dispOf(block, rv, fbk)}</b>}
+        </div>
+        <div style={{ ...ST.pbTrack, height: h }}><div style={{ ...fillStyle, width: `${fill}%` }} /></div>
+      </div>
+    );
+  },
+
+  // Y-2d-1: split_bar — one bar split by two field values (e.g. 37% / 63%).
+  split_bar: (block, rv, fbk) => {
+    const st = block.style || {};
+    const keys = (block.bind && Array.isArray(block.bind.fields)) ? block.bind.fields.slice(0, 2) : [];
+    if (keys.length < 2) return <div style={ST.unsupported}>Split bar needs two fields.</div>;
+    const [ka, kb] = keys;
+    const toN = (k) => { const v = rv[k]; const x = (v === undefined || v === null || v === '') ? null : parseFloat(v); return Number.isFinite(x) ? x : 0; };
+    const a = toN(ka); const b = toN(kb);
+    const sum = a + b;
+    const aPct = sum > 0 ? (a / sum) * 100 : 50;
+    const bPct = sum > 0 ? (b / sum) * 100 : 50;
+    const cA = themeColor(st.colorA || 'gold');
+    const cB = themeColor(st.colorB || 'purple');
+    const labA = (fbk[ka] && fbk[ka].label) || ka;
+    const labB = (fbk[kb] && fbk[kb].label) || kb;
+    const showPercent = st.showPercent !== false; // default on
+    const fmt = (k, pct) => showPercent ? `${Math.round(pct)}%` : (dispByKey(fbk, rv, k));
+    return (
+      <div>
+        {block.title ? <div style={ST.splitTitle}>{block.title}</div> : null}
+        <div style={ST.splitBar}>
+          <div style={{ ...ST.splitSeg, width: `${aPct}%`, background: `linear-gradient(90deg, ${cA}, ${cA})` }}>{showPercent && aPct > 10 ? `${Math.round(aPct)}%` : ''}</div>
+          <div style={{ ...ST.splitSeg, width: `${bPct}%`, background: `linear-gradient(90deg, ${cB}, ${cB})` }}>{showPercent && bPct > 10 ? `${Math.round(bPct)}%` : ''}</div>
+        </div>
+        <div style={ST.splitLegend}>
+          <span><span style={{ ...ST.dkDot, background: cA, display: 'inline-block', marginRight: 6 }} />{labA} {fmt(ka, aPct)}</span>
+          <span>{labB} {fmt(kb, bPct)}<span style={{ ...ST.dkDot, background: cB, display: 'inline-block', marginLeft: 6 }} /></span>
+        </div>
+      </div>
+    );
+  },
+
+  // Y-2d-1: list — HRSysSnapshot highlights cards (title bold + description, gold left-rule).
+  list: (block, rv, fbk) => {
+    const st = block.style || {};
+    const key = block.bind && block.bind.field;
+    const items = key ? parseList(rv[key]) : [];
+    const cols = st.columns === 1 ? 1 : 2; // default 2
+    const showDesc = st.showDescription !== false; // default on
+    const accent = st.color ? themeColor(st.color) : '#F3C036';
+    if (items.length === 0) return <div style={ST.unsupported}>—</div>;
+    return (
+      <div>
+        {block.title ? <div style={ST.sectionHeader}>{block.title}</div> : null}
+        <div style={{ ...ST.hlGrid, gridTemplateColumns: `repeat(${cols}, 1fr)` }}>
+          {items.map((it, i) => (
+            <div key={i} style={{ ...ST.hli, borderLeft: `3px solid ${accent}` }}>
+              <div style={ST.hliT}>{it.title || '—'}</div>
+              {showDesc && it.description ? <div style={ST.hliD}>{it.description}</div> : null}
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  },
 };
+
+// Helper for split_bar label when showing raw values.
+function dispByKey(fbk, rv, key) {
+  const f = fbk[key];
+  const v = rv[key];
+  if (v === undefined || v === null || v === '') return '—';
+  return f ? formatValue(f, v) : String(v);
+}
 
 export function renderBlock(block, resolvedValues, fieldByKey) {
   const fn = REGISTRY[block && block.component];
@@ -299,4 +421,29 @@ const ST = {
   statusLight: { display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 11, fontWeight: 600, padding: '5px 12px', borderRadius: 20, background: 'rgba(243,192,54,0.12)', border: '1px solid rgba(243,192,54,0.4)', color: '#F3C036' },
   statusDot: { width: 8, height: 8, borderRadius: '50%', background: '#F3C036', boxShadow: '0 0 10px #F3C036' },
   unsupported: { padding: '10px 12px', borderRadius: 8, background: 'rgba(255,255,255,0.03)', border: '1px dashed rgba(255,255,255,0.2)', color: 'rgba(255,255,255,0.5)', fontSize: 12 },
+  // Y-2d-1 — big_number (LD Option C)
+  bn: { padding: '2px 0' },
+  bnV: { fontSize: 32, fontWeight: 800, color: '#F3C036', lineHeight: 1, fontVariantNumeric: 'tabular-nums' },
+  bnSm: { fontSize: 15, color: 'rgba(255,255,255,0.55)', fontWeight: 700 },
+  bnL: { fontSize: 12, color: 'rgba(255,255,255,0.7)', margin: '5px 0 8px', textTransform: 'uppercase', letterSpacing: '0.4px' },
+  uline: { height: 5, background: 'rgba(255,255,255,0.07)', borderRadius: 3, overflow: 'hidden' },
+  ulineF: { height: '100%', background: 'linear-gradient(90deg, #F3C036, #ec4899)' },
+  bnTarget: { fontSize: 11, color: 'rgba(255,255,255,0.5)', marginTop: 6 },
+  // Y-2d-1 — progress_bar
+  pb: { padding: '2px 0' },
+  pbHead: { display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', fontSize: 12, color: 'rgba(255,255,255,0.7)', marginBottom: 4 },
+  pbLabel: { fontSize: 12, color: 'rgba(255,255,255,0.7)' },
+  pbVal: { color: '#F3C036', fontWeight: 800, fontSize: 13 },
+  pbTrack: { background: 'rgba(255,255,255,0.07)', borderRadius: 4, overflow: 'hidden' },
+  pbFill: { background: 'linear-gradient(90deg, #F3C036, #ec4899)', borderRadius: 4 },
+  // Y-2d-1 — split_bar
+  splitTitle: { fontSize: 12, color: 'rgba(255,255,255,0.7)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.4px' },
+  splitBar: { display: 'flex', height: 38, borderRadius: 9, overflow: 'hidden' },
+  splitSeg: { display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 13, color: '#1a1028', minWidth: 0 },
+  splitLegend: { display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'rgba(255,255,255,0.6)', marginTop: 8 },
+  // Y-2d-1 — list (HRSys highlights cards)
+  hlGrid: { display: 'grid', gap: 12 },
+  hli: { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderLeft: '3px solid #F3C036', borderRadius: 9, padding: '12px 15px' },
+  hliT: { fontSize: 14, fontWeight: 700, color: '#fff' },
+  hliD: { fontSize: 12, color: 'rgba(255,255,255,0.6)', marginTop: 3, lineHeight: 1.5 },
 };
