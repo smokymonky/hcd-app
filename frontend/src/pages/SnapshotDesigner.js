@@ -26,20 +26,25 @@ const MODULE_NAME_BY_CODE = {
   'L&D': 'Learning & Development', HR_SYS: 'HR Systems',
 };
 // Components that take a single field / multiple fields / none.
-const MULTI_FIELD = new Set(['donut']);
+const MULTI_FIELD = new Set(['donut', 'split_bar']);
 const NO_BIND = new Set(['section_header', 'status_light']);
+// Y-2d-1: list binds to a single field, but FILTERED to type 'list'.
+const LIST_FIELD = new Set(['list']);
+// split_bar wants exactly two single-field pickers (A, B) rather than a checkbox multi.
+const TWO_FIELD = new Set(['split_bar']);
 
 // Y-2b-2: curated theme swatches + which components accept a color.
 const COLOR_SWATCHES = [
   ['gold', '#F3C036'], ['magenta', '#ec4899'], ['purple', '#a855f7'],
   ['blue', '#3b82f6'], ['green', '#22c55e'],
 ];
-const COLOR_COMPONENTS = new Set(['hero_kpi', 'stat_tile', 'ratio', 'ring_gauge', 'donut', 'status_light', 'section_header']);
+const COLOR_COMPONENTS = new Set(['hero_kpi', 'stat_tile', 'ratio', 'ring_gauge', 'donut', 'status_light', 'section_header', 'big_number', 'progress_bar', 'list']);
 const isValidHex = (s) => /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(String(s || '').trim());
 
 const PALETTE_LABELS = {
   section_header: 'Section header', hero_kpi: 'Hero KPI', stat_tile: 'Stat tile',
   ratio: 'Ratio', ring_gauge: 'Ring gauge', donut: 'Donut', status_light: 'Status light',
+  big_number: 'Big number', progress_bar: 'Progress bar', split_bar: 'Split bar', list: 'List',
 };
 
 let _uid = 0;
@@ -261,6 +266,17 @@ export default function SnapshotDesigner({ user }) {
     for (const s of ((structure && structure.sections) || [])) {
       for (const f of (s.fields || [])) {
         if (f.is_active !== false) out.push({ key: f.key, label: `${f.label} (${f.key})` });
+      }
+    }
+    return out;
+  }, [structure]);
+
+  // Y-2d-1: 'list'-typed fields only (for the list component's bind picker).
+  const listFieldOptions = useMemo(() => {
+    const out = [];
+    for (const s of ((structure && structure.sections) || [])) {
+      for (const f of (s.fields || [])) {
+        if (f.is_active !== false && f.type === 'list') out.push({ key: f.key, label: `${f.label} (${f.key})` });
       }
     }
     return out;
@@ -561,6 +577,37 @@ export default function SnapshotDesigner({ user }) {
 
               {NO_BIND.has(selectedBlock.component) ? (
                 <div style={S.paneHint}>This component needs no field binding.</div>
+              ) : TWO_FIELD.has(selectedBlock.component) ? (
+                <>
+                  <label style={S.propLabel}>Field A</label>
+                  <Dropdown
+                    label="A"
+                    value={((selectedBlock.bind && selectedBlock.bind.fields) || [])[0] || ''}
+                    options={[{ value: '', label: '— none —' }, ...fieldOptions.map((o) => ({ value: o.key, label: o.label }))]}
+                    onChange={(v) => { const cur = (selectedBlock.bind && selectedBlock.bind.fields) || []; setSelectedBind({ fields: [v, cur[1] || ''] }); }}
+                    width={248}
+                  />
+                  <label style={S.propLabel}>Field B</label>
+                  <Dropdown
+                    label="B"
+                    value={((selectedBlock.bind && selectedBlock.bind.fields) || [])[1] || ''}
+                    options={[{ value: '', label: '— none —' }, ...fieldOptions.map((o) => ({ value: o.key, label: o.label }))]}
+                    onChange={(v) => { const cur = (selectedBlock.bind && selectedBlock.bind.fields) || []; setSelectedBind({ fields: [cur[0] || '', v] }); }}
+                    width={248}
+                  />
+                </>
+              ) : LIST_FIELD.has(selectedBlock.component) ? (
+                <>
+                  <label style={S.propLabel}>Bound list field</label>
+                  <Dropdown
+                    label="List field"
+                    value={(selectedBlock.bind && selectedBlock.bind.field) || ''}
+                    options={[{ value: '', label: '— none —' }, ...listFieldOptions.map((o) => ({ value: o.key, label: o.label }))]}
+                    onChange={(v) => setSelectedBind({ field: v })}
+                    width={248}
+                  />
+                  {listFieldOptions.length === 0 && <div style={S.paneHint}>This module has no 'list' fields.</div>}
+                </>
               ) : MULTI_FIELD.has(selectedBlock.component) ? (
                 <>
                   <label style={S.propLabel}>Bound fields (donut segments)</label>
@@ -718,6 +765,48 @@ export default function SnapshotDesigner({ user }) {
 
                     {c === 'status_light' && (
                       <div style={S.paneHint}>Color (above) is the only option for this component.</div>
+                    )}
+
+                    {c === 'big_number' && (
+                      <>
+                        <Toggle on={st.showUnderline !== false} label="Show underline" onChange={(on) => setSelectedStyleProp('showUnderline', on ? null : false)} />
+                        <Toggle on={!!st.showTarget} label="Show target line" onChange={(on) => setSelectedStyleProp('showTarget', on ? true : null)} />
+                      </>
+                    )}
+
+                    {c === 'progress_bar' && (
+                      <>
+                        <div style={VS.segLabel}>Height</div>
+                        <Seg value={st.height || 'thin'} opts={[['thin', 'Thin'], ['thick', 'Thick']]} onChange={(v) => setSelectedStyleProp('height', v === 'thin' ? null : v)} />
+                        <Toggle on={st.showValue !== false} label="Show value" onChange={(on) => setSelectedStyleProp('showValue', on ? null : false)} />
+                        <Toggle on={!!st.showTarget} label="Show target" onChange={(on) => setSelectedStyleProp('showTarget', on ? true : null)} />
+                      </>
+                    )}
+
+                    {c === 'split_bar' && (
+                      <>
+                        <div style={VS.segLabel}>Color A</div>
+                        <div style={S.swatchRow}>
+                          {COLOR_SWATCHES.map(([token, hex]) => (
+                            <button key={token} type="button" title={token} style={{ ...S.swatch, background: hex, ...((st.colorA || 'gold') === token ? S.swatchSel : {}) }} onClick={() => setSelectedStyleProp('colorA', token === 'gold' ? null : token)} />
+                          ))}
+                        </div>
+                        <div style={VS.segLabel}>Color B</div>
+                        <div style={S.swatchRow}>
+                          {COLOR_SWATCHES.map(([token, hex]) => (
+                            <button key={token} type="button" title={token} style={{ ...S.swatch, background: hex, ...((st.colorB || 'purple') === token ? S.swatchSel : {}) }} onClick={() => setSelectedStyleProp('colorB', token === 'purple' ? null : token)} />
+                          ))}
+                        </div>
+                        <Toggle on={st.showPercent !== false} label="Show percent" onChange={(on) => setSelectedStyleProp('showPercent', on ? null : false)} />
+                      </>
+                    )}
+
+                    {c === 'list' && (
+                      <>
+                        <div style={VS.segLabel}>Columns</div>
+                        <Seg value={String(st.columns || 2)} opts={[['1', '1'], ['2', '2']]} onChange={(v) => setSelectedStyleProp('columns', v === '2' ? null : 1)} />
+                        <Toggle on={st.showDescription !== false} label="Show description" onChange={(on) => setSelectedStyleProp('showDescription', on ? null : false)} />
+                      </>
                     )}
                   </div>
                 );
