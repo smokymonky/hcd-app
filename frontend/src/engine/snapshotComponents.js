@@ -366,7 +366,94 @@ const REGISTRY = {
       </div>
     );
   },
+
+  // Y-2d-2: ranked_bars — bind.section → one horizontal bar per field (TA source look).
+  ranked_bars: (block, rv, fbk) => {
+    const st = block.style || {};
+    const rows = sectionRows(fbk, rv, block.bind && block.bind.section);
+    if (rows.length === 0) return <div style={ST.unsupported}>—</div>;
+    const sort = st.sort || 'desc';
+    let ordered = rows.slice();
+    if (sort === 'desc') ordered.sort((a, b) => (b.n ?? -Infinity) - (a.n ?? -Infinity));
+    else if (sort === 'asc') ordered.sort((a, b) => (a.n ?? Infinity) - (b.n ?? Infinity));
+    // 'entered' keeps sectionRows order (sort_order)
+    const maxItems = (st.maxItems && Number(st.maxItems) > 0) ? Number(st.maxItems) : ordered.length;
+    ordered = ordered.slice(0, maxItems);
+    const max = ordered.reduce((m, r) => Math.max(m, r.n ?? 0), 0) || 1;
+    const color = st.color ? themeColor(st.color) : null;
+    const fillBg = color ? { background: color } : {};
+    const showValue = st.showValue !== false; // default on
+    return (
+      <div>
+        {block.title ? <div style={ST.sectionHeader}>{block.title}</div> : null}
+        <div style={ST.rbWrap}>
+          {ordered.map((r) => (
+            <div key={r.key} style={ST.rbRow}>
+              <span style={ST.rbName}>{r.label}</span>
+              <span style={ST.rbTrack}><span style={{ ...ST.rbFill, ...fillBg, width: `${Math.round(((r.n ?? 0) / max) * 100)}%` }} /></span>
+              {showValue && <span style={ST.rbVal}>{r.disp}</span>}
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  },
+
+  // Y-2d-2: labeled_grid — bind.section → grid of fields (count + % of total), HRSys by-module look.
+  labeled_grid: (block, rv, fbk) => {
+    const st = block.style || {};
+    const rows = sectionRows(fbk, rv, block.bind && block.bind.section);
+    if (rows.length === 0) return <div style={ST.unsupported}>—</div>;
+    const sort = st.sort || 'entered';
+    let ordered = rows.slice();
+    if (sort === 'desc') ordered.sort((a, b) => (b.n ?? -Infinity) - (a.n ?? -Infinity));
+    else if (sort === 'asc') ordered.sort((a, b) => (a.n ?? Infinity) - (b.n ?? Infinity));
+    const cols = [4, 5, 6].includes(Number(st.columns)) ? Number(st.columns) : 6;
+    const showPercent = st.showPercent !== false; // default on
+    const accent = st.color ? themeColor(st.color) : '#F3C036';
+    const total = rows.reduce((s, r) => s + (r.n ?? 0), 0);
+    const pct = (n) => {
+      if (total === 0 || n === null) return '0%';
+      const p = (n / total) * 100;
+      return (p > 0 && p < 1) ? `${p.toFixed(1)}%` : `${Math.round(p)}%`;
+    };
+    return (
+      <div>
+        {block.title ? <div style={ST.sectionHeader}>{block.title}</div> : null}
+        <div style={{ ...ST.lgGrid, gridTemplateColumns: `repeat(${cols}, 1fr)` }}>
+          {ordered.map((r) => {
+            const isZero = r.n === 0 || r.n === null;
+            return (
+              <div key={r.key} style={ST.lgCell}>
+                <div style={ST.lgName}>{r.label}</div>
+                <div style={{ ...ST.lgVal, ...(isZero ? { color: 'rgba(255,255,255,0.3)' } : {}) }}>
+                  {r.disp}{showPercent ? <span style={{ ...ST.lgPct, color: accent }}>{pct(r.n)}</span> : null}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  },
 };
+
+// Y-2d-2: gather a section's active manual-ish fields → [{key,label,n,disp}] in sort_order.
+function sectionRows(fbk, rv, sectionKey) {
+  if (!sectionKey) return [];
+  const out = [];
+  for (const key of Object.keys(fbk || {})) {
+    const f = fbk[key];
+    if (!f || f.section !== sectionKey) continue;
+    if (f.is_active === false) continue;
+    const v = rv[key];
+    const n = (v === undefined || v === null || v === '') ? null : (Number.isFinite(parseFloat(v)) ? parseFloat(v) : null);
+    const disp = (v === undefined || v === null || v === '') ? '—' : formatValue(f, v);
+    out.push({ key, label: f.label, n, disp, sort_order: f.sort_order ?? 0 });
+  }
+  out.sort((a, b) => (a.sort_order - b.sort_order));
+  return out;
+}
 
 // Helper for split_bar label when showing raw values.
 function dispByKey(fbk, rv, key) {
@@ -446,4 +533,17 @@ const ST = {
   hli: { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderLeft: '3px solid #F3C036', borderRadius: 9, padding: '12px 15px' },
   hliT: { fontSize: 14, fontWeight: 700, color: '#fff' },
   hliD: { fontSize: 12, color: 'rgba(255,255,255,0.6)', marginTop: 3, lineHeight: 1.5 },
+  // Y-2d-2 — ranked_bars (TA source look)
+  rbWrap: { display: 'flex', flexDirection: 'column', gap: 10 },
+  rbRow: { display: 'flex', alignItems: 'center', gap: 10 },
+  rbName: { width: 130, fontSize: 13, color: 'rgba(255,255,255,0.8)', flexShrink: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+  rbTrack: { flex: 1, height: 10, background: 'rgba(255,255,255,0.06)', borderRadius: 6, overflow: 'hidden' },
+  rbFill: { display: 'block', height: '100%', background: 'linear-gradient(90deg, #F3C036, #ec4899)' },
+  rbVal: { width: 40, textAlign: 'right', fontWeight: 800, color: '#F3C036', fontSize: 14, flexShrink: 0, fontVariantNumeric: 'tabular-nums' },
+  // Y-2d-2 — labeled_grid (HRSys by-module look)
+  lgGrid: { display: 'grid', gap: 9 },
+  lgCell: { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 9, padding: '10px 11px' },
+  lgName: { fontSize: 11, color: 'rgba(255,255,255,0.65)', marginBottom: 4 },
+  lgVal: { fontSize: 17, fontWeight: 800, color: '#fff', fontVariantNumeric: 'tabular-nums' },
+  lgPct: { fontSize: 11, color: '#F3C036', fontWeight: 700, marginLeft: 4 },
 };
