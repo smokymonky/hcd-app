@@ -86,7 +86,7 @@ export default function ConfigurableSnapshot({ config, values }) {
                 >
                   {blocks.map((block, bi) => (
                     <div key={block.id || bi} style={S.block}>
-                      {renderBlock(block, resolved, fieldByKey)}
+                      {renderBlock(block, resolved, fieldByKey, (config && config.sections) || [])}
                     </div>
                   ))}
                 </div>
