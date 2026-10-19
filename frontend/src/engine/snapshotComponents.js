@@ -436,7 +436,132 @@ const REGISTRY = {
       </div>
     );
   },
+
+  // Y-2d-3: matrix — bind.section → rows×cols table from mtx_<row>_<col> fields
+  // (reconstructs via dimension_row/col, falling back to key parse). TA look.
+  matrix: (block, rv, fbk, sections) => {
+    const sectionKey = block.bind && block.bind.section;
+    if (!sectionKey) return <div style={ST.unsupported}>—</div>;
+    const fields = Object.keys(fbk || {}).map((k) => fbk[k])
+      .filter((f) => f && f.section === sectionKey && f.is_active !== false);
+    const rowOrder = {}; const colOrder = {}; const cellMap = {};
+    for (const f of fields) {
+      let r = f.dimension_row || f.dimensionRow;
+      let c = f.dimension_col || f.dimensionCol;
+      if ((!r || !c) && /^mtx_/.test(f.key)) {
+        // parse mtx_<row>_<col> where col is the LAST token.
+        const rest = f.key.replace(/^mtx_/, '');
+        const idx = rest.lastIndexOf('_');
+        if (idx > 0) { r = r || rest.slice(0, idx); c = c || rest.slice(idx + 1); }
+      }
+      if (!r || !c) continue;
+      const so = f.sort_order ?? 0;
+      if (rowOrder[r] === undefined || so < rowOrder[r]) rowOrder[r] = so;
+      if (colOrder[c] === undefined || so < colOrder[c]) colOrder[c] = so;
+      cellMap[`${r}|${c}`] = f;
+    }
+    const rows = Object.keys(rowOrder).sort((a, b) => rowOrder[a] - rowOrder[b]);
+    const cols = Object.keys(colOrder).sort((a, b) => colOrder[a] - colOrder[b]);
+    if (rows.length === 0 || cols.length === 0) return <div style={ST.unsupported}>—</div>;
+    const accent = (block.style && block.style.color) ? themeColor(block.style.color) : '#F3C036';
+    const pad = (block.style && block.style.density === 'compact') ? '7px 10px' : '11px 14px';
+    return (
+      <div style={ST.mxScroll}>
+        {block.title ? <div style={ST.sectionHeader}>{block.title}</div> : null}
+        <table style={ST.mxTable}>
+          <thead>
+            <tr>
+              <th style={ST.mxThL} />
+              {cols.map((c) => <th key={c} style={ST.mxTh}>{humanizeToken(c)}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r}>
+                <td style={{ ...ST.mxTdL, padding: pad }}>{humanizeToken(r)}</td>
+                {cols.map((c) => {
+                  const f = cellMap[`${r}|${c}`];
+                  if (!f) return <td key={c} style={{ ...ST.mxTdN, padding: pad }}>—</td>;
+                  const v = rv[f.key];
+                  const txt = (v === undefined || v === null || v === '') ? '—' : formatValue(f, v);
+                  const computed = f.source === 'computed';
+                  return <td key={c} style={{ ...ST.mxTdN, padding: pad, ...(computed ? { color: accent } : {}) }}>{txt}</td>;
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  },
+
+  // Y-2d-3: program_cards — bind.section (group layout) → one card per active
+  // subsection (program): name + number totals + ratio chips. LD Option-B look.
+  program_cards: (block, rv, fbk, sections) => {
+    const sectionKey = block.bind && block.bind.section;
+    const sec = (sections || []).find((s) => s.key === sectionKey);
+    if (!sec) return <div style={ST.unsupported}>—</div>;
+    const programs = (sec.subsections || [])
+      .filter((ss) => ss.is_active !== false)
+      .slice()
+      .sort((a, b) => ((a.sort_order ?? 0) - (b.sort_order ?? 0)));
+    if (programs.length === 0) return <div style={ST.unsupported}>—</div>;
+    const accent = (block.style && block.style.color) ? themeColor(block.style.color) : '#F3C036';
+    const layout = block.style && block.style.layout ? block.style.layout : 'chips'; // chips|rows|table
+    const fieldsOf = (ssKey) => Object.keys(fbk || {}).map((k) => fbk[k])
+      .filter((f) => f && f.section === sectionKey && f.subsection === ssKey && f.is_active !== false)
+      .sort((a, b) => ((a.sort_order ?? 0) - (b.sort_order ?? 0)));
+    const disp = (f) => { const v = rv[f.key]; return (v === undefined || v === null || v === '') ? '—' : formatValue(f, v); };
+    return (
+      <div>
+        {block.title ? <div style={ST.sectionHeader}>{block.title}</div> : null}
+        <div style={ST.pcWrap}>
+          {programs.map((ss) => {
+            const pf = fieldsOf(ss.key);
+            const totals = pf.filter((f) => f.type !== 'ratio');
+            const ratios = pf.filter((f) => f.type === 'ratio');
+            return (
+              <div key={ss.id || ss.key} style={ST.pcCard}>
+                <div style={ST.pcHead}>
+                  <span style={ST.pcName}>{ss.title}</span>
+                  <div style={ST.pcTotals}>
+                    {totals.map((f) => (
+                      <div key={f.key} style={ST.pcTotal}>
+                        <div style={{ ...ST.pcTotalN, color: accent }}>{disp(f)}</div>
+                        <div style={ST.pcTotalL}>{f.label}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                {ratios.length > 0 && (
+                  layout === 'rows' || layout === 'table' ? (
+                    <div style={ST.pcRows}>
+                      {ratios.map((f) => (
+                        <div key={f.key} style={ST.pcRow}><span>{f.label}</span><b style={{ color: accent }}>{(() => { const v = rv[f.key]; return (v === undefined || v === null || v === '') ? '—' : formatRatio(v); })()}</b></div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div style={ST.pcChips}>
+                      {ratios.map((f) => (
+                        <span key={f.key} style={{ ...ST.pcChip, borderColor: `${accent}55` }}>{f.label} <b style={{ ...ST.pcChipB, color: accent }}>{(() => { const v = rv[f.key]; return (v === undefined || v === null || v === '') ? '—' : formatRatio(v); })()}</b></span>
+                      ))}
+                    </div>
+                  )
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  },
 };
+
+// Humanize a dimension token: 'head_office' → 'Head Office'.
+function humanizeToken(t) {
+  if (!t) return '';
+  return String(t).replace(/_/g, ' ').replace(/\b\w/g, (ch) => ch.toUpperCase());
+}
 
 // Y-2d-2: gather a section's active manual-ish fields → [{key,label,n,disp}] in sort_order.
 function sectionRows(fbk, rv, sectionKey) {
@@ -463,13 +588,15 @@ function dispByKey(fbk, rv, key) {
   return f ? formatValue(f, v) : String(v);
 }
 
-export function renderBlock(block, resolvedValues, fieldByKey) {
+export function renderBlock(block, resolvedValues, fieldByKey, sections) {
   const fn = REGISTRY[block && block.component];
   if (!fn) {
     return <div style={ST.unsupported}>Unsupported component: {block && block.component ? String(block.component) : '(none)'}</div>;
   }
   try {
-    return fn(block, resolvedValues || {}, fieldByKey || {});
+    // 4th arg `sections` is additive — only matrix / program_cards use it; the
+    // other 13 renderers ignore it.
+    return fn(block, resolvedValues || {}, fieldByKey || {}, sections || []);
   } catch (e) {
     return <div style={ST.unsupported}>Component error: {block.component}</div>;
   }
@@ -546,4 +673,25 @@ const ST = {
   lgName: { fontSize: 11, color: 'rgba(255,255,255,0.65)', marginBottom: 4 },
   lgVal: { fontSize: 17, fontWeight: 800, color: '#fff', fontVariantNumeric: 'tabular-nums' },
   lgPct: { fontSize: 11, color: '#F3C036', fontWeight: 700, marginLeft: 4 },
+  // Y-2d-3 — matrix (TA look)
+  mxScroll: { overflowX: 'auto', width: '100%', WebkitOverflowScrolling: 'touch' },
+  mxTable: { borderCollapse: 'separate', borderSpacing: '8px 8px', minWidth: 'max-content' },
+  mxTh: { fontSize: 10, letterSpacing: '1px', color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', textAlign: 'right', padding: '0 14px', fontWeight: 700 },
+  mxThL: { background: 'transparent' },
+  mxTdL: { background: 'rgba(255,255,255,0.03)', fontSize: 15, color: 'rgba(255,255,255,0.8)', borderRadius: '9px 0 0 9px', whiteSpace: 'nowrap' },
+  mxTdN: { background: 'rgba(255,255,255,0.03)', fontSize: 15, textAlign: 'right', fontWeight: 700, color: '#fff', borderRadius: '0 9px 9px 0', fontVariantNumeric: 'tabular-nums' },
+  // Y-2d-3 — program_cards (LD Option-B look)
+  pcWrap: { display: 'flex', flexDirection: 'column', gap: 12 },
+  pcCard: { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 13, padding: '15px 18px' },
+  pcHead: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 18, flexWrap: 'wrap' },
+  pcName: { fontSize: 15, fontWeight: 700, color: '#fff' },
+  pcTotals: { display: 'flex', alignItems: 'center', gap: 26 },
+  pcTotal: { textAlign: 'center', minWidth: 76 },
+  pcTotalN: { fontSize: 22, fontWeight: 800, color: '#F3C036', lineHeight: 1, fontVariantNumeric: 'tabular-nums' },
+  pcTotalL: { fontSize: 10, color: 'rgba(255,255,255,0.5)', textTransform: 'uppercase', letterSpacing: '0.4px', marginTop: 4 },
+  pcChips: { display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 },
+  pcChip: { background: 'rgba(243,192,54,0.08)', border: '1px solid rgba(243,192,54,0.22)', borderRadius: 20, padding: '6px 13px', fontSize: 12, color: 'rgba(255,255,255,0.82)' },
+  pcChipB: { color: '#F3C036', marginLeft: 5, fontWeight: 800 },
+  pcRows: { display: 'flex', flexDirection: 'column', gap: 6, marginTop: 12 },
+  pcRow: { display: 'flex', justifyContent: 'space-between', fontSize: 13, color: 'rgba(255,255,255,0.78)', padding: '6px 0', borderTop: '1px solid rgba(255,255,255,0.06)' },
 };
