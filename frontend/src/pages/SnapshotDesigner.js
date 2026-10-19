@@ -33,14 +33,14 @@ const LIST_FIELD = new Set(['list']);
 // split_bar wants exactly two single-field pickers (A, B) rather than a checkbox multi.
 const TWO_FIELD = new Set(['split_bar']);
 // Y-2d-2: section-bound components — bind.section (a module section, renders its fields).
-const SECTION_BIND = new Set(['ranked_bars', 'labeled_grid']);
+const SECTION_BIND = new Set(['ranked_bars', 'labeled_grid', 'matrix', 'program_cards']);
 
 // Y-2b-2: curated theme swatches + which components accept a color.
 const COLOR_SWATCHES = [
   ['gold', '#F3C036'], ['magenta', '#ec4899'], ['purple', '#a855f7'],
   ['blue', '#3b82f6'], ['green', '#22c55e'],
 ];
-const COLOR_COMPONENTS = new Set(['hero_kpi', 'stat_tile', 'ratio', 'ring_gauge', 'donut', 'status_light', 'section_header', 'big_number', 'progress_bar', 'list', 'ranked_bars', 'labeled_grid']);
+const COLOR_COMPONENTS = new Set(['hero_kpi', 'stat_tile', 'ratio', 'ring_gauge', 'donut', 'status_light', 'section_header', 'big_number', 'progress_bar', 'list', 'ranked_bars', 'labeled_grid', 'matrix', 'program_cards']);
 const isValidHex = (s) => /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(String(s || '').trim());
 
 const PALETTE_LABELS = {
@@ -48,6 +48,7 @@ const PALETTE_LABELS = {
   ratio: 'Ratio', ring_gauge: 'Ring gauge', donut: 'Donut', status_light: 'Status light',
   big_number: 'Big number', progress_bar: 'Progress bar', split_bar: 'Split bar', list: 'List',
   ranked_bars: 'Ranked bars', labeled_grid: 'Labeled grid',
+  matrix: 'Matrix', program_cards: 'Program cards',
 };
 
 let _uid = 0;
@@ -848,6 +849,22 @@ export default function SnapshotDesigner({ user }) {
                         <div style={VS.segLabel}>Sort</div>
                         <Seg value={st.sort || 'entered'} opts={[['entered', 'As entered'], ['desc', 'High→Low'], ['asc', 'Low→High']]} onChange={(v) => setSelectedStyleProp('sort', v === 'entered' ? null : v)} />
                         <Toggle on={st.showPercent !== false} label="Show percent" onChange={(on) => setSelectedStyleProp('showPercent', on ? null : false)} />
+                      </>
+                    )}
+
+                    {c === 'matrix' && (
+                      <>
+                        <div style={VS.segLabel}>Density</div>
+                        <Seg value={st.density || 'comfortable'} opts={[['comfortable', 'Comfortable'], ['compact', 'Compact']]} onChange={(v) => setSelectedStyleProp('density', v === 'comfortable' ? null : v)} />
+                        <div style={S.paneHint}>Reads this section's matrix cells (rows × columns).</div>
+                      </>
+                    )}
+
+                    {c === 'program_cards' && (
+                      <>
+                        <div style={VS.segLabel}>Ratio layout</div>
+                        <Seg value={st.layout || 'chips'} opts={[['chips', 'Chips'], ['rows', 'Rows'], ['table', 'Table']]} onChange={(v) => setSelectedStyleProp('layout', v === 'chips' ? null : v)} />
+                        <div style={S.paneHint}>Each subsection (program) → a card with totals + ratios.</div>
                       </>
                     )}
                   </div>
