@@ -200,6 +200,7 @@ export default function SnapshotDesigner({ user }) {
   const [msg, setMsg] = useState(null);
   const [busy, setBusy] = useState(false);
   const [activeVersion, setActiveVersion] = useState(null);
+  const [snapshotMode, setSnapshotMode] = useState('bespoke'); // Y-3a: live snapshot source for this module
 
   // Load structure + published + active layout.
   useEffect(() => {
@@ -248,6 +249,7 @@ export default function SnapshotDesigner({ user }) {
         const loaded = layoutRes && layoutRes.config ? layoutRes.config : { module_code: moduleCode, rows: [] };
         setConfig(normalizeConfig(loaded, moduleCode));
         setActiveVersion(layoutRes && layoutRes.version ? layoutRes.version : null);
+        setSnapshotMode(structureRes.snapshot_mode || 'bespoke');
       } catch (err) {
         if (!cancelled) setMsg({ type: 'error', text: `Load failed: ${err.message || 'unknown'}` });
       } finally {
@@ -487,6 +489,20 @@ export default function SnapshotDesigner({ user }) {
     } catch (err) { setMsg({ type: 'error', text: `Publish failed: ${err.message || 'unknown'}` }); }
     finally { setBusy(false); }
   }
+  // Y-3a: flip the LIVE snapshot source for this module (bespoke ⇄ designer).
+  async function handleFlipMode() {
+    const next = snapshotMode === 'designer' ? 'bespoke' : 'designer';
+    if (next === 'designer' && !window.confirm(`Switch ${moduleName}'s LIVE snapshot to the designer layout? (Reversible — flip back to bespoke any time.)`)) return;
+    setBusy(true); setMsg(null);
+    try {
+      const row = await dashboardsAPI.setSnapshotMode(moduleCode, next);
+      setSnapshotMode(row.snapshot_mode);
+      setMsg({ type: 'success', text: row.snapshot_mode === 'designer'
+        ? 'Live snapshot now uses the published designer layout. Flip back to Bespoke to revert.'
+        : 'Live snapshot reverted to the bespoke (coded) component.' });
+    } catch (err) { setMsg({ type: 'error', text: `Mode change failed: ${err.message || 'unknown'}` }); }
+    finally { setBusy(false); }
+  }
 
   const selectedBlock = selected
     ? (((config.rows[selected.r] || {}).columns || [])[selected.c] || {}).blocks?.[selected.b]
@@ -515,9 +531,15 @@ export default function SnapshotDesigner({ user }) {
         <button type="button" style={S.backBtn} onClick={() => navigate(`/hub/dashboards/${moduleCode}`)}>← {moduleName}</button>
         <div style={S.title}>Snapshot Designer — {moduleName}</div>
         <span style={S.versionTag}>{activeVersion ? `active v${activeVersion}` : 'no published layout'}{dirty ? ' · unsaved' : ''}</span>
+        <span style={{ ...S.modeTag, ...(snapshotMode === 'designer' ? S.modeTagDesigner : {}) }}>
+          LIVE: {snapshotMode === 'designer' ? 'Designer' : 'Bespoke'}
+        </span>
         <div style={S.topActions}>
           <button type="button" style={S.btnGhost} disabled={busy} onClick={handleSave}>Save draft</button>
           <button type="button" style={S.btnPrimary} disabled={busy} onClick={handlePublish}>Publish</button>
+          <button type="button" style={{ ...S.btnGhost, ...(snapshotMode === 'designer' ? S.flipOn : {}) }} disabled={busy} onClick={handleFlipMode} title="Switch the live snapshot source">
+            {snapshotMode === 'designer' ? '↩ Revert to Bespoke' : '▶ Go Live (Designer)'}
+          </button>
         </div>
       </div>
       {msg && <div style={msg.type === 'error' ? S.alertErr : S.alertOk}>{msg.text}</div>}
@@ -909,7 +931,10 @@ const S = {
   backBtn: { padding: '8px 14px', borderRadius: 8, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.12)', color: 'rgba(255,255,255,0.8)', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, fontWeight: 600 },
   title: { fontSize: 18, fontWeight: 700, letterSpacing: '-0.3px' },
   versionTag: { fontSize: 11, color: 'rgba(255,255,255,0.5)', fontWeight: 600 },
-  topActions: { marginLeft: 'auto', display: 'flex', gap: 10 },
+  modeTag: { fontSize: 10.5, fontWeight: 700, letterSpacing: '0.5px', padding: '4px 9px', borderRadius: 14, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.14)', color: 'rgba(255,255,255,0.7)' },
+  modeTagDesigner: { background: 'rgba(34,197,94,0.14)', borderColor: 'rgba(34,197,94,0.4)', color: '#86efac' },
+  flipOn: { background: 'rgba(34,197,94,0.12)', borderColor: 'rgba(34,197,94,0.4)', color: '#86efac' },
+  topActions: { marginLeft: 'auto', display: 'flex', gap: 10, flexWrap: 'wrap' },
   btnGhost: { padding: '9px 16px', borderRadius: 8, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.15)', color: 'rgba(255,255,255,0.85)', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, fontWeight: 600 },
   btnPrimary: { padding: '9px 18px', borderRadius: 8, background: 'linear-gradient(135deg, #F3C036 0%, #ec4899 100%)', border: 'none', color: '#1a1028', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, fontWeight: 700 },
   alertErr: { margin: '10px 28px 0', padding: '10px 14px', borderRadius: 8, background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.35)', color: '#fca5a5', fontSize: 13 },
