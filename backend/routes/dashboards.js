@@ -791,11 +791,13 @@ router.get('/:moduleCode/structure', authenticateToken, checkModuleAccessParam('
     // (no param) is active-only — byte-identical to the original behavior.
     const includeHidden = String(req.query.includeHidden) === 'true';
 
-    // Module must exist.
-    const m = await pool.query('SELECT id FROM dashboard_modules WHERE code = $1', [moduleCode]);
+    // Module must exist. Also read snapshot_mode (Y-3a) so the renderer knows
+    // whether to use the bespoke component or the config-driven designer layout.
+    const m = await pool.query('SELECT id, snapshot_mode FROM dashboard_modules WHERE code = $1', [moduleCode]);
     if (m.rows.length === 0) {
       return res.status(404).json({ error: `Unknown module '${moduleCode}'.` });
     }
+    const snapshotMode = m.rows[0].snapshot_mode || 'bespoke';
 
     const sectionsRes = await pool.query(
       `SELECT id, key, title, layout, sort_order, is_active
@@ -869,7 +871,7 @@ router.get('/:moduleCode/structure', authenticateToken, checkModuleAccessParam('
       })),
     }));
 
-    res.json({ module_code: moduleCode, sections });
+    res.json({ module_code: moduleCode, snapshot_mode: snapshotMode, sections });
   } catch (err) {
     console.error('GET /:moduleCode/structure error:', err);
     res.status(500).json({ error: 'Server error loading module structure.' });
@@ -1551,6 +1553,56 @@ router.get('/:moduleCode/snapshot-layout/versions', authenticateToken, isAdmin, 
   } catch (err) {
     console.error('GET /:moduleCode/snapshot-layout/versions error:', err);
     res.status(500).json({ error: 'Server error listing layout versions.' });
+  }
+});
+
+// =============================================
+// SNAPSHOT DESIGNER (Y-3a) — the CONVERT flip: per-module snapshot_mode (ADMIN)
+// =============================================
+// GET returns the module's current mode. PUT sets it: 'bespoke' (the coded
+// component — the rollback) | 'designer' (ConfigurableSnapshot reads the active
+// layout). Flipping to 'designer' requires an active published layout, else the
+// live snapshot would be empty. Reversible: flip back to 'bespoke' instantly.
+router.get('/:moduleCode/snapshot-mode', authenticateToken, isAdmin, async (req, res) => {
+  try {
+    const { moduleCode } = req.params;
+    const r = await pool.query('SELECT snapshot_mode FROM dashboard_modules WHERE code = $1', [moduleCode]);
+    if (r.rows.length === 0) return res.status(404).json({ error: `Unknown module '${moduleCode}'.` });
+    res.json({ module_code: moduleCode, snapshot_mode: r.rows[0].snapshot_mode || 'bespoke' });
+  } catch (err) {
+    console.error('GET /:moduleCode/snapshot-mode error:', err);
+    res.status(500).json({ error: 'Server error reading snapshot mode.' });
+  }
+});
+
+router.put('/:moduleCode/snapshot-mode', authenticateToken, isAdmin, async (req, res) => {
+  try {
+    const { moduleCode } = req.params;
+    const { mode } = req.body;
+    if (mode !== 'bespoke' && mode !== 'designer') {
+      return res.status(400).json({ error: "mode must be 'bespoke' or 'designer'." });
+    }
+    const mod = await pool.query('SELECT id FROM dashboard_modules WHERE code = $1', [moduleCode]);
+    if (mod.rows.length === 0) return res.status(404).json({ error: `Unknown module '${moduleCode}'.` });
+
+    if (mode === 'designer') {
+      const active = await pool.query(
+        'SELECT 1 FROM snapshot_layouts WHERE module_code = $1 AND is_active = true LIMIT 1',
+        [moduleCode]
+      );
+      if (active.rows.length === 0) {
+        return res.status(400).json({ error: 'Publish a layout before switching this module to designer mode.' });
+      }
+    }
+    const r = await pool.query(
+      `UPDATE dashboard_modules SET snapshot_mode = $1 WHERE code = $2
+       RETURNING code AS module_code, snapshot_mode`,
+      [mode, moduleCode]
+    );
+    res.json(r.rows[0]);
+  } catch (err) {
+    console.error('PUT /:moduleCode/snapshot-mode error:', err);
+    res.status(500).json({ error: 'Server error setting snapshot mode.' });
   }
 });
 
