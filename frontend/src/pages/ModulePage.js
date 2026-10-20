@@ -5,6 +5,7 @@ import ModuleSnapshot from '../dashboards/ModuleSnapshot';
 import TASnapshot from '../dashboards/TASnapshot';
 import HRSysSnapshot from '../dashboards/HRSysSnapshot';
 import HROpsSnapshot from '../dashboards/HROpsSnapshot';
+import ConfigurableSnapshot from '../dashboards/ConfigurableSnapshot';
 import LDSnapshot from '../dashboards/LDSnapshot';
 import StatusBadge from '../dashboards/StatusBadge';
 import UserIdentityCard from '../hub/UserIdentityCard';
@@ -79,6 +80,8 @@ export default function ModulePage({ user, onLogout }) {
   const [structureError, setStructureError] = useState(null);
   const [editMode, setEditMode] = useState(false);
   const [currentStatus, setCurrentStatus] = useState('empty'); // for the entry StatusBadge
+  const [snapshotMode, setSnapshotMode] = useState('bespoke'); // Y-3a: 'bespoke' | 'designer'
+  const [layout, setLayout] = useState(null);                  // Y-3a: active designer layout config (when mode==='designer')
 
   // ---- snapshot published values + state ----
   const [snapValues, setSnapValues] = useState({});
@@ -137,13 +140,17 @@ export default function ModulePage({ user, onLogout }) {
     return Promise.all([
       dashboardsAPI.getStructure(moduleCode, { includeHidden: withHidden }),
       targetsAPI.list(moduleCode).catch((e) => { console.error('[ModulePage] targets failed (non-fatal):', e); return []; }),
+      dashboardsAPI.getSnapshotLayout(moduleCode).catch((e) => { console.error('[ModulePage] layout fetch failed (non-fatal):', e); return { config: null }; }),
     ])
-      .then(([structure, targets]) => {
+      .then(([structure, targets, layoutRes]) => {
         setConfig({
           code: structure.module_code || moduleCode,
           name: moduleName,
           sections: buildSections(structure, targets),
         });
+        // Y-3a: snapshot source for this module + its active designer layout.
+        setSnapshotMode(structure.snapshot_mode || 'bespoke');
+        setLayout(layoutRes ? layoutRes.config : null);
       })
       .catch((err) => { console.error('[ModulePage] structure fetch failed:', err); setStructureError(err && err.message ? err.message : 'Could not load module structure.'); })
       .finally(() => { setStructureLoading(false); setStructureRefetching(false); });
@@ -185,9 +192,11 @@ export default function ModulePage({ user, onLogout }) {
   }, [moduleCode, year, month]);
 
   // Load published whenever snapshot tab is active + period changes.
+  // Skip only for HR_OPS in BESPOKE mode (its standalone snapshot self-fetches).
+  // In designer mode every module (incl. HR_OPS) needs values for ConfigurableSnapshot.
   useEffect(() => {
-    if (accessResolved && activeView === 'snapshot' && moduleCode !== 'HR_OPS') loadPublished();
-  }, [accessResolved, activeView, loadPublished, moduleCode]);
+    if (accessResolved && activeView === 'snapshot' && (moduleCode !== 'HR_OPS' || snapshotMode === 'designer')) loadPublished();
+  }, [accessResolved, activeView, loadPublished, moduleCode, snapshotMode]);
 
   // FIX3 — discover published periods (year → [months]) for the snapshot month
   // dropdown, and default the snapshot to the LATEST published month (mirrors
@@ -394,7 +403,7 @@ export default function ModulePage({ user, onLogout }) {
       )}
 
       {/* Snapshot period selector (entry has its own inside ModuleDataEntry) */}
-      {activeView === 'snapshot' && moduleCode !== 'HR_OPS' && (
+      {activeView === 'snapshot' && !(moduleCode === 'HR_OPS' && snapshotMode !== 'designer') && (
         <div style={{ ...S.selectorOuter, ...(isMobile ? S.selectorOuterMobile : {}) }}>
         <div style={{ ...S.selector, ...(isMobile ? S.selectorMobile : {}) }}>
           <span style={S.selectorLabel}>VIEWING</span>
@@ -427,6 +436,15 @@ export default function ModulePage({ user, onLogout }) {
             onStructureChanged={onStructureChanged}
             onStructurePatch={applyStructurePatch}
           />
+        ) : (snapshotMode === 'designer' && layout) ? (
+          // Y-3a CONVERT: this module is in 'designer' mode with a published
+          // layout → render the config-driven ConfigurableSnapshot. Flipping
+          // snapshot_mode back to 'bespoke' instantly restores the branches below.
+          snapLoading ? <div style={S.spinner} /> : notPublished ? (
+            <div style={S.notice}>No published data for {monthName} {year}. Choose another period{canEnter ? ', or publish this month from the Approvals tab.' : '.'}</div>
+          ) : (
+            <ConfigurableSnapshot config={{ ...layout, sections: config.sections }} values={snapValues} />
+          )
         ) : moduleCode === 'HR_OPS' ? (
           // CUTOVER: HR Ops keeps its bespoke, SELF-CONTAINED snapshot. It
           // self-fetches published data + has its own year/month selector, so
