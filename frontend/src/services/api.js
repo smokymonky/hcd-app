@@ -166,6 +166,11 @@ export const dashboardsAPI = {
     method: 'POST', body: JSON.stringify(payload || {}),
   }),
   listSnapshotLayoutVersions: (moduleCode) => request(`/dashboards/${encodeURIComponent(moduleCode)}/snapshot-layout/versions`),
+  // SNAPSHOT DESIGNER (Y-3a): per-module snapshot source — 'bespoke' | 'designer'.
+  getSnapshotMode: (moduleCode) => request(`/dashboards/${encodeURIComponent(moduleCode)}/snapshot-mode`),
+  setSnapshotMode: (moduleCode, mode) => request(`/dashboards/${encodeURIComponent(moduleCode)}/snapshot-mode`, {
+    method: 'PUT', body: JSON.stringify({ mode }),
+  }),
 };
 
 // =============================================
