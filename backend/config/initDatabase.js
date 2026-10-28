@@ -1216,6 +1216,90 @@ const initDatabase = async () => {
     }
 
     // =============================================
+    // SNAPSHOT DESIGNER (Convert TA) — full starter layout reproducing TASnapshot
+    // =============================================
+    // Inserts a complete TA layout as a NEW active version (deactivating the Y-1
+    // demo), so an admin can open it in the designer, tweak, publish, and flip.
+    // Uses the REAL TA section/field keys. snapshot_mode is NOT touched (stays
+    // 'bespoke') — /hub/dashboards/TA still renders the bespoke TASnapshot until
+    // an admin flips. Guard: skip if a layout tagged _starter:'ta-full-v1' exists.
+    const existingTaFull = await pool.query(
+      "SELECT 1 FROM snapshot_layouts WHERE module_code = 'TA' AND config->>'_starter' = 'ta-full-v1' LIMIT 1"
+    );
+    if (existingTaFull.rowCount === 0) {
+      const taFullConfig = {
+        module_code: 'TA',
+        _starter: 'ta-full-v1',
+        rows: [
+          // R1 — hero
+          { id: 'r1', columns: [
+            { id: 'r1c1', width: 4, blocks: [{ id: 'b_hero_pct', component: 'hero_kpi', title: 'Hired %', bind: { field: 'hired_pct' }, style: { color: 'gold' } }] },
+            { id: 'r1c2', width: 4, blocks: [{ id: 'b_hero_hired', component: 'hero_kpi', title: 'Total Hired (YTD)', bind: { field: 'total_hired_ytd' } }] },
+            { id: 'r1c3', width: 4, blocks: [{ id: 'b_hero_ttf', component: 'hero_kpi', title: 'Avg. Time to Fill', bind: { field: 'avg_time_to_fill' } }] },
+          ] },
+          // R2 — section header
+          { id: 'r2', columns: [
+            { id: 'r2c1', width: 12, blocks: [{ id: 'b_sh1', component: 'section_header', title: 'Vacancies, Hired & Overview' }] },
+          ] },
+          // R3 — stat tiles | HO/OP splits
+          { id: 'r3', columns: [
+            { id: 'r3c1', width: 6, blocks: [
+              { id: 'b_st_vac', component: 'stat_tile', title: 'Total Vacant', bind: { field: 'total_vacant' } },
+              { id: 'b_st_hired', component: 'stat_tile', title: 'Total Hired (YTD)', bind: { field: 'total_hired_ytd' } },
+              { id: 'b_st_month', component: 'stat_tile', title: 'Hired (in month)', bind: { field: 'hired_in_month' } },
+            ] },
+            { id: 'r3c2', width: 6, blocks: [
+              { id: 'b_split_hired', component: 'split_bar', title: 'Hired — HO vs OP', bind: { fields: ['ov_hired_ho', 'ov_hired_op'] }, style: { colorA: 'gold', colorB: 'purple' } },
+              { id: 'b_split_intv', component: 'split_bar', title: 'Interviews — HO vs OP', bind: { fields: ['ov_interviews_ho', 'ov_interviews_op'] }, style: { colorA: 'gold', colorB: 'magenta' } },
+            ] },
+          ] },
+          // R4 — matrix | hiring source grid
+          { id: 'r4', columns: [
+            { id: 'r4c1', width: 6, blocks: [{ id: 'b_matrix', component: 'matrix', title: 'Vacant / Filled / Remaining', bind: { section: 'vfr' } }] },
+            { id: 'r4c2', width: 6, blocks: [{ id: 'b_src', component: 'labeled_grid', title: 'Hiring Source', bind: { section: 'hiring_source' }, style: { columns: 4 } }] },
+          ] },
+          // R5 — gender split | internal mobility
+          { id: 'r5', columns: [
+            { id: 'r5c1', width: 6, blocks: [{ id: 'b_gender', component: 'split_bar', title: 'Gender of Hired', bind: { fields: ['female_pct', 'male_pct'] }, style: { colorA: 'magenta', colorB: 'blue' } }] },
+            { id: 'r5c2', width: 6, blocks: [
+              { id: 'b_sh_int', component: 'section_header', title: 'Internal Mobility' },
+              { id: 'b_int_posts', component: 'stat_tile', title: 'Internal Job Posts', bind: { field: 'internal_job_post' } },
+              { id: 'b_int_total', component: 'stat_tile', title: 'Total Movement', bind: { field: 'internal_total' } },
+            ] },
+          ] },
+          // R6 — header
+          { id: 'r6', columns: [
+            { id: 'r6c1', width: 12, blocks: [{ id: 'b_sh2', component: 'section_header', title: 'Hired by Department' }] },
+          ] },
+          // R7 — department grid (5-wide)
+          { id: 'r7', columns: [
+            { id: 'r7c1', width: 12, blocks: [{ id: 'b_dept', component: 'labeled_grid', bind: { section: 'hired_by_dept' }, style: { columns: 5, sort: 'desc' } }] },
+          ] },
+          // R8 — header
+          { id: 'r8', columns: [
+            { id: 'r8c1', width: 12, blocks: [{ id: 'b_sh3', component: 'section_header', title: 'Training & Outcomes' }] },
+          ] },
+          // R9 — training grid
+          { id: 'r9', columns: [
+            { id: 'r9c1', width: 12, blocks: [{ id: 'b_train', component: 'labeled_grid', bind: { section: 'training' }, style: { columns: 5, showPercent: false } }] },
+          ] },
+        ],
+      };
+      // New active version; deactivate prior TA layouts (the Y-1 demo).
+      const vr = await pool.query("SELECT COALESCE(MAX(version), 0) + 1 AS next FROM snapshot_layouts WHERE module_code = 'TA'");
+      const nextV = vr.rows[0].next;
+      await pool.query("UPDATE snapshot_layouts SET is_active = false WHERE module_code = 'TA'");
+      await pool.query(
+        `INSERT INTO snapshot_layouts (module_code, version, is_active, config)
+         VALUES ('TA', $1, true, $2::jsonb)`,
+        [nextV, JSON.stringify(taFullConfig)]
+      );
+      console.log(`[Snapshot Designer] Seeded full TA starter layout (version ${nextV}, active). snapshot_mode unchanged ('bespoke').`);
+    } else {
+      console.log('[Snapshot Designer] TA full starter layout already present — skipping.');
+    }
+
+    // =============================================
     // PHASE 0: Seed workflow_targets registry
     // dashboard_submission: workflow active (used by HR Dashboards in Phase 0)
     // activity_completion:  workflow inactive (placeholder for future Annual Plan
