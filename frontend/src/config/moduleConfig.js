@@ -124,37 +124,58 @@ export function getShellEntry(id) {
 // Build the children of a category by merging API-fetched modules
 // with DASHBOARD_CODE_META. Returns an array of tile-shaped objects.
 // apiModules: array from /api/dashboards/my-access (may be undefined → empty)
-export function buildCategoryChildren(categoryId, apiModules) {
+// PHASE 8a-2: dbModules (from listModules) + isAdmin make the MODULE cards
+// DB-driven — a module appears in its category (by module.category) with no
+// code change. Signature is backward-compatible: when dbModules is omitted,
+// the original my-access-only behavior runs (graceful fallback if listModules
+// fails). The category DEFINITIONS + icon map stay in this file (structural).
+export function buildCategoryChildren(categoryId, apiModules, dbModules, isAdmin) {
   const category = getShellEntry(categoryId);
   if (!category || category.type !== 'category') return [];
-
-  if (category.childrenSource === 'api:dashboards') {
-    const list = Array.isArray(apiModules) ? apiModules : [];
-    return list.map((m) => {
-      const meta = DASHBOARD_CODE_META[m.code] || {};
-      return {
-        // Identity
-        id: meta.id || `dashboard_${m.code.toLowerCase().replace(/[^a-z0-9]+/g, '_')}`,
-        type: 'module',
-        parent: category.id,
-        // Display
-        title: m.name,
-        description: meta.description || m.description || '',
-        iconKey: meta.iconKey || 'dashboards',
-        route: meta.route || `/hub/dashboards/${encodeURIComponent(m.code)}`,
-        // Backend
-        moduleCode: m.code,
-        accessLevel: m.access_level,           // 'admin' | 'owner' | 'viewer' (from API)
-        // API may add optional fields (lastViewed, favorited, pinned) — pass through
-        // any extra keys untouched so future fields don't crash this code (Rule 13 #6).
-        extras: { ...m },
-        sortOrder: m.sort_order || 0,
-      };
-    }).sort((a, b) => a.sortOrder - b.sortOrder);
+  if (category.childrenSource !== 'api:dashboards') {
+    // Future childrenSource types (e.g. 'static:list', 'api:reports') plug in here.
+    return [];
   }
 
-  // Future childrenSource types (e.g. 'static:list', 'api:reports') plug in here.
-  return [];
+  const access = Array.isArray(apiModules) ? apiModules : [];
+  const accessByCode = {};
+  for (const a of access) accessByCode[a.code] = a.access_level;
+
+  const tileFor = (code, name, description, iconKey, accent, sortOrder, accessLevel) => {
+    const meta = DASHBOARD_CODE_META[code] || {};
+    return {
+      id: meta.id || `dashboard_${String(code).toLowerCase().replace(/[^a-z0-9]+/g, '_')}`,
+      type: 'module',
+      parent: category.id,
+      title: name,
+      description: description || meta.description || '',
+      iconKey: iconKey || meta.iconKey || 'dashboards',
+      accent: accent || null,                 // HubTile uses its own default; passed through
+      route: `/hub/dashboards/${encodeURIComponent(code)}`,
+      moduleCode: code,
+      accessLevel,
+      sortOrder: sortOrder || 0,
+    };
+  };
+
+  // 8a-2 path: DB is the source of which modules exist + their meta.
+  if (Array.isArray(dbModules)) {
+    return dbModules
+      .filter((m) => m && m.category === categoryId && m.is_active !== false)
+      .map((m) => {
+        const has = Object.prototype.hasOwnProperty.call(accessByCode, m.code);
+        if (!isAdmin && !has) return null;      // non-admin sees only accessible modules
+        const accessLevel = has ? accessByCode[m.code] : (isAdmin ? 'admin' : null);
+        return tileFor(m.code, m.name, m.description, m.icon_key, m.accent, m.sort_order, accessLevel);
+      })
+      .filter(Boolean)
+      .sort((a, b) => a.sortOrder - b.sortOrder);
+  }
+
+  // Fallback (no dbModules): original my-access-only behavior.
+  return access
+    .map((m) => tileFor(m.code, m.name, m.description, (DASHBOARD_CODE_META[m.code] || {}).iconKey, null, m.sort_order, m.access_level))
+    .sort((a, b) => a.sortOrder - b.sortOrder);
 }
 
 // Build the top-level tiles for Level 1. Pure pass-through of HUB_SHELL
