@@ -31,6 +31,7 @@ export default function HubPage({ user, onLogout }) {
 
   // API-fetched module access (the "fill" data)
   const [apiModules, setApiModules] = useState(null);     // null = loading, [] = loaded empty, [...] = ok
+  const [dbModules, setDbModules] = useState(null);       // 8a-2: all active modules + meta (listModules); null until loaded
   const [apiError, setApiError] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -69,6 +70,24 @@ export default function HubPage({ user, onLogout }) {
         }
       } catch (_) { /* ignore */ }
     }
+
+    // 8a-2: module registry (meta + category). Cache-first, non-fatal.
+    const cachedDb = localStorage.getItem('hcd_dashboard_modules');
+    if (cachedDb) {
+      try { const p = JSON.parse(cachedDb); if (Array.isArray(p)) setDbModules(p); } catch (_) { /* ignore */ }
+    }
+    dashboardsAPI.listModules()
+      .then((data) => {
+        if (cancelled) return;
+        const list = Array.isArray(data) ? data : [];
+        setDbModules(list);
+        localStorage.setItem('hcd_dashboard_modules', JSON.stringify(list));
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        // Non-fatal: fall back to my-access-only rendering (old behavior).
+        console.error('[Hub] /api/dashboards/modules failed (non-fatal):', err);
+      });
 
     // Always refresh from server
     dashboardsAPI.getMyAccess()
@@ -112,8 +131,11 @@ export default function HubPage({ user, onLogout }) {
   const level1Tiles = useMemo(() => buildLevel1Tiles(), []);
   const level2Tiles = useMemo(() => {
     if (!categoryEntry) return [];
-    return buildCategoryChildren(categoryEntry.id, apiModules || []);
-  }, [categoryEntry, apiModules]);
+    const isAdmin = !!(user && String(user.role || '').toLowerCase() === 'admin');
+    // Pass dbModules only once loaded; until then (or on failure) buildCategoryChildren
+    // falls back to the my-access-only path — identical to pre-8a-2 behavior.
+    return buildCategoryChildren(categoryEntry.id, apiModules || [], dbModules || undefined, isAdmin);
+  }, [categoryEntry, apiModules, dbModules, user]);
 
   // Permission resolution per tile.
   // Locked = the user cannot click into this tile.
