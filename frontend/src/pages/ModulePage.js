@@ -276,8 +276,14 @@ export default function ModulePage({ user, onLogout }) {
   if (structureError) {
     return (<div style={S.shell}><div style={S.notice}>Could not load {moduleName}: {structureError}</div></div>);
   }
-  if (!config || !config.sections || config.sections.length === 0) {
-    return (<div style={S.shell}><div style={S.notice}>No structure found for "{moduleCode}". (Has it been seeded?)</div></div>);
+  if (!config || !config.sections) {
+    return (<div style={S.shell}><div style={S.notice}>Loading {moduleName}…</div></div>);
+  }
+  // Empty-module (0 sections): an ADMIN should be able to BUILD it (header +
+  // tabs + ✎ Edit dashboard + ModuleDataEntry's "+ Add section"), so fall
+  // through to the normal render. A non-admin sees a friendly empty state.
+  if (config.sections.length === 0 && !isAdmin) {
+    return (<div style={S.shell}><div style={S.notice}>This dashboard doesn't have any content yet.</div></div>);
   }
 
   const yearOptions = buildYearOptions();
@@ -436,6 +442,9 @@ export default function ModulePage({ user, onLogout }) {
             onStructureChanged={onStructureChanged}
             onStructurePatch={applyStructurePatch}
           />
+        ) : (config.sections.length === 0 && !(snapshotMode === 'designer' && layout)) ? (
+          // Empty module (0 sections) with no designer layout → nothing to render.
+          <div style={S.notice}>Nothing to show yet. {isAdmin ? 'Add sections and fields in Data Entry → ✎ Edit dashboard.' : ''}</div>
         ) : (snapshotMode === 'designer' && layout) ? (
           // Y-3a CONVERT: this module is in 'designer' mode with a published
           // layout → render the config-driven ConfigurableSnapshot. Flipping
