@@ -264,18 +264,15 @@ export default function HubPage({ user, onLogout }) {
               </div>
               {/* + New action — admin-only, disabled with tooltip per Phase 1 spec */}
               {isAdmin && categoryEntry.allowsCreation && (() => {
-                // 8a-3: admins get an ACTIVE button; the "arrives in Phase 8"
-                // disabled reason no longer applies to them.
-                const disabledReason = '';
+                // 8a-3: admins get an ACTIVE button (dashed '+ New' affordance);
+                // no disabled state to carry.
                 return (
                 <button
                   type="button"
                   style={styles.headerAction}
-                  title={disabledReason}
+                  title="Create a new dashboard"
                   onClick={handleNewAction}
-                  disabled={!!disabledReason}
-                  aria-disabled={!!disabledReason}
-                  onMouseEnter={(e) => { if (!disabledReason) Object.assign(e.currentTarget.style, styles.headerActionHover); }}
+                  onMouseEnter={(e) => Object.assign(e.currentTarget.style, styles.headerActionHover)}
                   onMouseLeave={(e) => Object.assign(e.currentTarget.style, styles.headerAction)}
                 >
                   <span style={styles.plusGlyph}>+</span>
@@ -464,9 +461,9 @@ const styles = {
     fontSize: 12.5,
     fontWeight: 600,
     letterSpacing: '0.2px',
-    cursor: 'help',                          // help cursor signals tooltip exists
+    cursor: 'pointer',
     transition: 'all 0.2s ease',
-    opacity: 0.85,
+    opacity: 1,
   },
   headerActionHover: {
     background: 'rgba(243,192,54,0.12)',
