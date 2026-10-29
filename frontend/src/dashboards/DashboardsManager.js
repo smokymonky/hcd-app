@@ -133,6 +133,8 @@ export default function DashboardsManager() {
                     <td style={S.td}>{m.sort_order ?? 0}</td>
                     <td style={S.td}><span style={active ? S.badgeOn : S.badgeOff}>{active ? 'Active' : 'Inactive'}</span></td>
                     <td style={S.tdR}>
+                      <a style={S.quickLink} href={`/hub/dashboards/${encodeURIComponent(m.code)}`} title="Build structure (Data Entry → ✎ Edit dashboard)">Build</a>
+                      <a style={S.quickLink} href={`/hub/admin/designer/${encodeURIComponent(m.code)}`} title="Design the snapshot">Design</a>
                       <button type="button" style={S.linkBtn} disabled={busy} onClick={() => openEdit(m)}>Edit</button>
                       <button type="button" style={active ? S.deactBtn : S.actBtn} disabled={busy} onClick={() => toggleActive(m)}>
                         {active ? 'Deactivate' : 'Activate'}
@@ -235,6 +237,7 @@ const S = {
   iconCell: { display: 'inline-flex', verticalAlign: 'middle', marginRight: 9, color: '#F3C036' },
   badgeOn: { padding: '3px 10px', borderRadius: 12, fontSize: 11, fontWeight: 700, background: 'rgba(34,197,94,0.15)', border: '1px solid rgba(34,197,94,0.4)', color: '#86efac' },
   badgeOff: { padding: '3px 10px', borderRadius: 12, fontSize: 11, fontWeight: 700, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.15)', color: 'rgba(255,255,255,0.55)' },
+  quickLink: { display: 'inline-block', marginRight: 8, padding: '6px 11px', borderRadius: 7, background: 'rgba(243,192,54,0.1)', border: '1px solid rgba(243,192,54,0.35)', color: '#F3C036', textDecoration: 'none', fontFamily: 'inherit', fontSize: 12, fontWeight: 600 },
   linkBtn: { marginRight: 10, padding: '6px 12px', borderRadius: 7, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.15)', color: '#fff', cursor: 'pointer', fontFamily: 'inherit', fontSize: 12, fontWeight: 600 },
   actBtn: { padding: '6px 12px', borderRadius: 7, background: 'rgba(34,197,94,0.12)', border: '1px solid rgba(34,197,94,0.4)', color: '#86efac', cursor: 'pointer', fontFamily: 'inherit', fontSize: 12, fontWeight: 600 },
   deactBtn: { padding: '6px 12px', borderRadius: 7, background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.35)', color: '#fca5a5', cursor: 'pointer', fontFamily: 'inherit', fontSize: 12, fontWeight: 600 },
