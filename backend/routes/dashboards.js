@@ -90,7 +90,7 @@ const checkAccessForSubmission = (requiredLevel = 'viewer') => {
 router.get('/modules', authenticateToken, async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT id, code, name, description, sort_order, is_active
+      `SELECT id, code, name, description, category, icon_key, accent, snapshot_mode, sort_order, is_active
        FROM dashboard_modules
        WHERE is_active = true
        ORDER BY sort_order ASC, name ASC`
@@ -99,6 +99,84 @@ router.get('/modules', authenticateToken, async (req, res) => {
   } catch (err) {
     console.error('GET /modules error:', err);
     res.status(500).json({ error: 'Server error loading modules.' });
+  }
+});
+
+// =============================================
+// PHASE 8a-1 — create / edit modules (ADMIN). Lets a new dashboard be
+// registered (so 8a-2's Hub can show it) without a code change. No structure
+// or layout is auto-seeded; the admin builds those next.
+// =============================================
+const MODULE_CODE_RE = /^[A-Z0-9_&]+$/;
+
+// POST /modules — create a module.
+router.post('/modules', authenticateToken, isAdmin, async (req, res) => {
+  try {
+    const { code, name, description, category, icon_key, accent, sort_order } = req.body;
+    if (!code || !String(code).trim()) return res.status(400).json({ error: 'code is required.' });
+    const codeVal = String(code).trim();
+    if (!MODULE_CODE_RE.test(codeVal)) {
+      return res.status(400).json({ error: 'code must be uppercase letters, digits, _ or & (e.g. HR_OPS, L&D).' });
+    }
+    if (!name || !String(name).trim()) return res.status(400).json({ error: 'name is required.' });
+    if (!category || !String(category).trim()) return res.status(400).json({ error: 'category is required.' });
+
+    const dup = await pool.query('SELECT 1 FROM dashboard_modules WHERE code = $1', [codeVal]);
+    if (dup.rows.length > 0) return res.status(409).json({ error: `A module with code '${codeVal}' already exists.` });
+
+    // Default sort_order = end of the list.
+    let order = sort_order;
+    if (order == null) {
+      const ord = await pool.query('SELECT COALESCE(MAX(sort_order), 0) + 1 AS next FROM dashboard_modules');
+      order = ord.rows[0].next;
+    }
+    const r = await pool.query(
+      `INSERT INTO dashboard_modules (code, name, description, category, icon_key, accent, sort_order, is_active)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, true)
+       RETURNING id, code, name, description, category, icon_key, accent, snapshot_mode, sort_order, is_active`,
+      [codeVal, name.trim(), description ?? null, String(category).trim(), icon_key ?? null, accent ?? null, order]
+    );
+    res.status(201).json(r.rows[0]);
+  } catch (err) {
+    console.error('POST /modules error:', err);
+    res.status(500).json({ error: 'Server error creating module.' });
+  }
+});
+
+// PUT /modules/:id — edit a module. code is IMMUTABLE (ignored if sent).
+router.put('/modules/:id', authenticateToken, isAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, description, category, icon_key, accent, sort_order, is_active } = req.body;
+    if (name !== undefined && !String(name).trim()) return res.status(400).json({ error: 'name cannot be empty.' });
+    if (category !== undefined && !String(category).trim()) return res.status(400).json({ error: 'category cannot be empty.' });
+    const r = await pool.query(
+      `UPDATE dashboard_modules
+       SET name = COALESCE($1, name),
+           description = COALESCE($2, description),
+           category = COALESCE($3, category),
+           icon_key = COALESCE($4, icon_key),
+           accent = COALESCE($5, accent),
+           sort_order = COALESCE($6, sort_order),
+           is_active = COALESCE($7, is_active)
+       WHERE id = $8
+       RETURNING id, code, name, description, category, icon_key, accent, snapshot_mode, sort_order, is_active`,
+      [
+        name !== undefined ? name.trim() : null,
+        description ?? null,
+        category !== undefined ? String(category).trim() : null,
+        icon_key ?? null,
+        accent ?? null,
+        sort_order ?? null,
+        (typeof is_active === 'boolean') ? is_active : null,
+        id,
+      ]
+    );
+    if (r.rows.length === 0) return res.status(404).json({ error: 'Module not found.' });
+    res.json(r.rows[0]);
+  } catch (err) {
+    console.error('PUT /modules/:id error:', err);
+    res.status(500).json({ error: 'Server error updating module.' });
   }
 });
 
