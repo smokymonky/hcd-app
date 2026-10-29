@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { activitiesAPI, usersAPI, dashboardsAPI } from '../services/api';
 import TargetsManager from '../dashboards/TargetsManager';
 import ApprovalsManager from '../dashboards/ApprovalsManager';
+import DashboardsManager from '../dashboards/DashboardsManager';
 import '../styles/dashboard.css';
 
 const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -28,7 +29,14 @@ function sortActivities(items) {
 
 const AdminPage = ({ user, onLogout }) => {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState('activities');
+  // 8a-3: allow deep-linking to a tab via ?tab=dashboards (from the Hub button).
+  const initialTab = (() => {
+    try {
+      const t = new URLSearchParams(window.location.search).get('tab');
+      return ['activities', 'users', 'targets', 'approvals', 'dashboards'].includes(t) ? t : 'activities';
+    } catch (_) { return 'activities'; }
+  })();
+  const [activeTab, setActiveTab] = useState(initialTab);
   const [activities, setActivities] = useState(() => {
     const cached = localStorage.getItem('hcd_activities_cache');
     if (cached) {
@@ -380,6 +388,7 @@ const AdminPage = ({ user, onLogout }) => {
         <button style={{...S.tab, ...(isMobile?S.tabMobile:{}), ...(activeTab==='users'?S.tabActive:{})}} onClick={()=>setActiveTab('users')}>👥 Users</button>
         <button style={{...S.tab, ...(isMobile?S.tabMobile:{}), ...(activeTab==='targets'?S.tabActive:{})}} onClick={()=>setActiveTab('targets')}>🎯 Targets</button>
         <button style={{...S.tab, ...(isMobile?S.tabMobile:{}), ...(activeTab==='approvals'?S.tabActive:{})}} onClick={()=>setActiveTab('approvals')}>✅ Approvals</button>
+        <button style={{...S.tab, ...(isMobile?S.tabMobile:{}), ...(activeTab==='dashboards'?S.tabActive:{})}} onClick={()=>setActiveTab('dashboards')}>🗂️ Dashboards</button>
       </div>
 
       {/* Activities Tab */}
@@ -645,6 +654,13 @@ const AdminPage = ({ user, onLogout }) => {
       {activeTab === 'approvals' && (
         <div className="view-section" style={{padding:'16px', overflow:'visible'}}>
           <ApprovalsManager />
+        </div>
+      )}
+
+      {/* Dashboards Tab (Phase 8a-3) */}
+      {activeTab === 'dashboards' && (
+        <div className="view-section" style={{padding:'16px', overflow:'visible'}}>
+          <DashboardsManager />
         </div>
       )}
 
