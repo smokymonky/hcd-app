@@ -357,6 +357,34 @@ const initDatabase = async () => {
     await pool.query("ALTER TABLE dashboard_modules ADD COLUMN IF NOT EXISTS snapshot_mode VARCHAR(20) NOT NULL DEFAULT 'bespoke'");
 
     // =============================================
+    // PHASE 8a-1: Hub metadata on dashboard_modules (additive, idempotent).
+    // category (Hub category id), icon_key (maps to a Hub SVG), accent (theme
+    // token/hex). Lets a NEW module appear in the Hub without a code change (8a-2
+    // consumes these). The 4 existing modules are backfilled, code/name/
+    // description/sort_order unchanged.
+    // =============================================
+    await pool.query('ALTER TABLE dashboard_modules ADD COLUMN IF NOT EXISTS category TEXT');
+    await pool.query('ALTER TABLE dashboard_modules ADD COLUMN IF NOT EXISTS icon_key TEXT');
+    await pool.query('ALTER TABLE dashboard_modules ADD COLUMN IF NOT EXISTS accent TEXT');
+    // Backfill the 4 existing modules (only where category is still NULL — idempotent).
+    // iconKey values match moduleConfig's DASHBOARD_CODE_META exactly.
+    const moduleMetaBackfill = [
+      ['HR_OPS', 'hrOps', 'gold'],
+      ['TA', 'ta', 'magenta'],
+      ['L&D', 'ld', 'purple'],
+      ['HR_SYS', 'hrSys', 'blue'],
+    ];
+    for (const [code, iconKey, accent] of moduleMetaBackfill) {
+      await pool.query(
+        `UPDATE dashboard_modules
+         SET category = 'hr_dashboards', icon_key = $2, accent = $3
+         WHERE code = $1 AND category IS NULL`,
+        [code, iconKey, accent]
+      );
+    }
+    console.log('[Phase 8a-1] dashboard_modules Hub metadata ensured (category/icon_key/accent; 4 modules backfilled).');
+
+    // =============================================
     // ACCESS MGMT: source tag on user_module_access ('auto' | 'manual').
     // Idempotent migration for the existing prod table. Existing rows were
     // all auto/seeded, so DEFAULT 'auto' backfills them correctly. The CHECK
