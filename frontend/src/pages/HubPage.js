@@ -180,10 +180,11 @@ export default function HubPage({ user, onLogout }) {
     navigate('/hub');
   }
 
-  // + New Dashboard (admin-only, disabled with tooltip per Phase 1 Option 1)
+  // + New Dashboard (admin-only). 8a-3: active for admins → the AdminPage
+  // Dashboards tab (create/edit/activate modules). Non-admins keep the
+  // disabled tooltip state unchanged.
   function handleNewAction() {
-    // Currently no-op; Phase 8 will wire this. The tile shows the entry
-    // point exists, the tooltip explains when it activates.
+    navigate('/admin?tab=dashboards');
   }
 
   // Render
@@ -262,21 +263,26 @@ export default function HubPage({ user, onLogout }) {
                 <div style={styles.l2Title}>{categoryEntry.title}</div>
               </div>
               {/* + New action — admin-only, disabled with tooltip per Phase 1 spec */}
-              {isAdmin && categoryEntry.allowsCreation && (
+              {isAdmin && categoryEntry.allowsCreation && (() => {
+                // 8a-3: admins get an ACTIVE button; the "arrives in Phase 8"
+                // disabled reason no longer applies to them.
+                const disabledReason = '';
+                return (
                 <button
                   type="button"
                   style={styles.headerAction}
-                  title={categoryEntry.newActionDisabledReason || ''}
+                  title={disabledReason}
                   onClick={handleNewAction}
-                  disabled={!!categoryEntry.newActionDisabledReason}
-                  aria-disabled={!!categoryEntry.newActionDisabledReason}
-                  onMouseEnter={(e) => { if (!categoryEntry.newActionDisabledReason) Object.assign(e.currentTarget.style, styles.headerActionHover); }}
+                  disabled={!!disabledReason}
+                  aria-disabled={!!disabledReason}
+                  onMouseEnter={(e) => { if (!disabledReason) Object.assign(e.currentTarget.style, styles.headerActionHover); }}
                   onMouseLeave={(e) => Object.assign(e.currentTarget.style, styles.headerAction)}
                 >
                   <span style={styles.plusGlyph}>+</span>
                   {(categoryEntry.newActionLabel || '+ New Item').replace(/^\+\s*/, '')}
                 </button>
-              )}
+                );
+              })()}
             </div>
           </div>
 
