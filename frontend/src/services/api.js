@@ -107,6 +107,10 @@ export const dashboardsAPI = {
 
   // GET /api/dashboards/modules — full list (any authed user)
   listModules: () => request('/dashboards/modules'),
+  // PHASE 8a-1: admin module registry (create/edit). listModules returns meta
+  // (category, icon_key, accent, snapshot_mode, sort_order, is_active).
+  createModule: (payload) => request('/dashboards/modules', { method: 'POST', body: JSON.stringify(payload) }),
+  updateModule: (id, payload) => request(`/dashboards/modules/${id}`, { method: 'PUT', body: JSON.stringify(payload) }),
 
   // GET /api/dashboards/:moduleCode/submissions?year=&status=
   listSubmissions: (moduleCode, filters = {}) => {
