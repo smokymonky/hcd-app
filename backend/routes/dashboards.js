@@ -992,7 +992,7 @@ function uniqueKey(base, existingKeys) {
 // ---------- SECTION endpoints ----------
 
 // POST /:moduleCode/sections  { key?, title, layout, sort_order? }
-router.post('/:moduleCode/sections', authenticateToken, isAdmin, async (req, res) => {
+router.post('/:moduleCode/sections', authenticateToken, checkModuleAccessParam('owner'), async (req, res) => {
   try {
     const { moduleCode } = req.params;
     const { key, title, layout, sort_order } = req.body;
@@ -1038,7 +1038,7 @@ router.post('/:moduleCode/sections', authenticateToken, isAdmin, async (req, res
 
 // PUT /:moduleCode/sections/reorder  { orderedIds:[...] }
 // NOTE: declared BEFORE '/sections/:id' so 'reorder' isn't captured as :id.
-router.put('/:moduleCode/sections/reorder', authenticateToken, isAdmin, async (req, res) => {
+router.put('/:moduleCode/sections/reorder', authenticateToken, checkModuleAccessParam('owner'), async (req, res) => {
   const client = await pool.connect();
   try {
     const { moduleCode } = req.params;
@@ -1065,7 +1065,7 @@ router.put('/:moduleCode/sections/reorder', authenticateToken, isAdmin, async (r
 });
 
 // PUT /:moduleCode/sections/:id  { title?, layout?, sort_order? }  (key IMMUTABLE)
-router.put('/:moduleCode/sections/:id', authenticateToken, isAdmin, async (req, res) => {
+router.put('/:moduleCode/sections/:id', authenticateToken, checkModuleAccessParam('owner'), async (req, res) => {
   try {
     const { moduleCode, id } = req.params;
     const { title, layout, sort_order } = req.body;
@@ -1096,7 +1096,7 @@ router.put('/:moduleCode/sections/:id', authenticateToken, isAdmin, async (req, 
 });
 
 // DELETE /:moduleCode/sections/:id  → soft-hide (fields stay linked)
-router.delete('/:moduleCode/sections/:id', authenticateToken, isAdmin, async (req, res) => {
+router.delete('/:moduleCode/sections/:id', authenticateToken, checkModuleAccessParam('owner'), async (req, res) => {
   try {
     const { moduleCode, id } = req.params;
     const r = await pool.query(
@@ -1115,7 +1115,7 @@ router.delete('/:moduleCode/sections/:id', authenticateToken, isAdmin, async (re
 });
 
 // POST /:moduleCode/sections/:id/restore
-router.post('/:moduleCode/sections/:id/restore', authenticateToken, isAdmin, async (req, res) => {
+router.post('/:moduleCode/sections/:id/restore', authenticateToken, checkModuleAccessParam('owner'), async (req, res) => {
   try {
     const { moduleCode, id } = req.params;
     const r = await pool.query(
@@ -1138,7 +1138,7 @@ router.post('/:moduleCode/sections/:id/restore', authenticateToken, isAdmin, asy
 
 // PUT /:moduleCode/fields/reorder  { orderedIds:[...] }
 // Declared BEFORE '/fields/:id' so 'reorder' isn't captured as :id.
-router.put('/:moduleCode/fields/reorder', authenticateToken, isAdmin, async (req, res) => {
+router.put('/:moduleCode/fields/reorder', authenticateToken, checkModuleAccessParam('owner'), async (req, res) => {
   const client = await pool.connect();
   try {
     const { moduleCode } = req.params;
@@ -1165,7 +1165,7 @@ router.put('/:moduleCode/fields/reorder', authenticateToken, isAdmin, async (req
 });
 
 // POST /:moduleCode/sections/:sectionId/fields
-router.post('/:moduleCode/sections/:sectionId/fields', authenticateToken, isAdmin, async (req, res) => {
+router.post('/:moduleCode/sections/:sectionId/fields', authenticateToken, checkModuleAccessParam('owner'), async (req, res) => {
   try {
     const { moduleCode, sectionId } = req.params;
     const {
@@ -1232,7 +1232,7 @@ router.post('/:moduleCode/sections/:sectionId/fields', authenticateToken, isAdmi
 });
 
 // PUT /:moduleCode/fields/:id  (key IMMUTABLE; section_id present = move)
-router.put('/:moduleCode/fields/:id', authenticateToken, isAdmin, async (req, res) => {
+router.put('/:moduleCode/fields/:id', authenticateToken, checkModuleAccessParam('owner'), async (req, res) => {
   try {
     const { moduleCode, id } = req.params;
     const {
@@ -1305,7 +1305,7 @@ router.put('/:moduleCode/fields/:id', authenticateToken, isAdmin, async (req, re
 });
 
 // DELETE /:moduleCode/fields/:id  → soft-hide
-router.delete('/:moduleCode/fields/:id', authenticateToken, isAdmin, async (req, res) => {
+router.delete('/:moduleCode/fields/:id', authenticateToken, checkModuleAccessParam('owner'), async (req, res) => {
   try {
     const { moduleCode, id } = req.params;
     const r = await pool.query(
@@ -1324,7 +1324,7 @@ router.delete('/:moduleCode/fields/:id', authenticateToken, isAdmin, async (req,
 });
 
 // POST /:moduleCode/fields/:id/restore
-router.post('/:moduleCode/fields/:id/restore', authenticateToken, isAdmin, async (req, res) => {
+router.post('/:moduleCode/fields/:id/restore', authenticateToken, checkModuleAccessParam('owner'), async (req, res) => {
   try {
     const { moduleCode, id } = req.params;
     const r = await pool.query(
@@ -1354,7 +1354,7 @@ router.post('/:moduleCode/fields/:id/restore', authenticateToken, isAdmin, async
 // "reorder" isn't captured as an :id.
 
 // PUT /:moduleCode/subsections/reorder  { orderedIds:[...] }
-router.put('/:moduleCode/subsections/reorder', authenticateToken, isAdmin, async (req, res) => {
+router.put('/:moduleCode/subsections/reorder', authenticateToken, checkModuleAccessParam('owner'), async (req, res) => {
   const client = await pool.connect();
   try {
     const { moduleCode } = req.params;
@@ -1381,7 +1381,7 @@ router.put('/:moduleCode/subsections/reorder', authenticateToken, isAdmin, async
 });
 
 // POST /:moduleCode/sections/:sectionId/subsections  { title, sort_order? }
-router.post('/:moduleCode/sections/:sectionId/subsections', authenticateToken, isAdmin, async (req, res) => {
+router.post('/:moduleCode/sections/:sectionId/subsections', authenticateToken, checkModuleAccessParam('owner'), async (req, res) => {
   try {
     const { moduleCode, sectionId } = req.params;
     const { title, sort_order } = req.body;
@@ -1431,7 +1431,7 @@ router.post('/:moduleCode/sections/:sectionId/subsections', authenticateToken, i
 });
 
 // PUT /:moduleCode/subsections/:id  { title?, sort_order? }  (key IMMUTABLE)
-router.put('/:moduleCode/subsections/:id', authenticateToken, isAdmin, async (req, res) => {
+router.put('/:moduleCode/subsections/:id', authenticateToken, checkModuleAccessParam('owner'), async (req, res) => {
   try {
     const { moduleCode, id } = req.params;
     const { title, sort_order } = req.body;
@@ -1458,7 +1458,7 @@ router.put('/:moduleCode/subsections/:id', authenticateToken, isAdmin, async (re
 });
 
 // DELETE /:moduleCode/subsections/:id  → soft-hide (fields keep their tag)
-router.delete('/:moduleCode/subsections/:id', authenticateToken, isAdmin, async (req, res) => {
+router.delete('/:moduleCode/subsections/:id', authenticateToken, checkModuleAccessParam('owner'), async (req, res) => {
   try {
     const { moduleCode, id } = req.params;
     const r = await pool.query(
@@ -1477,7 +1477,7 @@ router.delete('/:moduleCode/subsections/:id', authenticateToken, isAdmin, async 
 });
 
 // POST /:moduleCode/subsections/:id/restore
-router.post('/:moduleCode/subsections/:id/restore', authenticateToken, isAdmin, async (req, res) => {
+router.post('/:moduleCode/subsections/:id/restore', authenticateToken, checkModuleAccessParam('owner'), async (req, res) => {
   try {
     const { moduleCode, id } = req.params;
     const r = await pool.query(
@@ -1533,7 +1533,7 @@ router.get('/:moduleCode/snapshot-layout', authenticateToken, checkModuleAccessP
 // deleted) for rollback.
 
 // POST /:moduleCode/snapshot-layout — SAVE DRAFT (new version, is_active=false)
-router.post('/:moduleCode/snapshot-layout', authenticateToken, isAdmin, async (req, res) => {
+router.post('/:moduleCode/snapshot-layout', authenticateToken, checkModuleAccessParam('owner'), async (req, res) => {
   try {
     const { moduleCode } = req.params;
     const { config } = req.body;
@@ -1562,7 +1562,7 @@ router.post('/:moduleCode/snapshot-layout', authenticateToken, isAdmin, async (r
 // Body: { version } to activate an existing version, OR { config } to
 // save-then-activate in one call. Atomic: deactivates all others. Does NOT
 // change snapshot_mode.
-router.post('/:moduleCode/snapshot-layout/publish', authenticateToken, isAdmin, async (req, res) => {
+router.post('/:moduleCode/snapshot-layout/publish', authenticateToken, checkModuleAccessParam('owner'), async (req, res) => {
   const client = await pool.connect();
   try {
     const { moduleCode } = req.params;
@@ -1617,7 +1617,7 @@ router.post('/:moduleCode/snapshot-layout/publish', authenticateToken, isAdmin, 
 });
 
 // GET /:moduleCode/snapshot-layout/versions — list versions (for the designer)
-router.get('/:moduleCode/snapshot-layout/versions', authenticateToken, isAdmin, async (req, res) => {
+router.get('/:moduleCode/snapshot-layout/versions', authenticateToken, checkModuleAccessParam('owner'), async (req, res) => {
   try {
     const { moduleCode } = req.params;
     const r = await pool.query(
@@ -1641,7 +1641,7 @@ router.get('/:moduleCode/snapshot-layout/versions', authenticateToken, isAdmin, 
 // component — the rollback) | 'designer' (ConfigurableSnapshot reads the active
 // layout). Flipping to 'designer' requires an active published layout, else the
 // live snapshot would be empty. Reversible: flip back to 'bespoke' instantly.
-router.get('/:moduleCode/snapshot-mode', authenticateToken, isAdmin, async (req, res) => {
+router.get('/:moduleCode/snapshot-mode', authenticateToken, checkModuleAccessParam('owner'), async (req, res) => {
   try {
     const { moduleCode } = req.params;
     const r = await pool.query('SELECT snapshot_mode FROM dashboard_modules WHERE code = $1', [moduleCode]);
@@ -1653,7 +1653,7 @@ router.get('/:moduleCode/snapshot-mode', authenticateToken, isAdmin, async (req,
   }
 });
 
-router.put('/:moduleCode/snapshot-mode', authenticateToken, isAdmin, async (req, res) => {
+router.put('/:moduleCode/snapshot-mode', authenticateToken, checkModuleAccessParam('owner'), async (req, res) => {
   try {
     const { moduleCode } = req.params;
     const { mode } = req.body;
