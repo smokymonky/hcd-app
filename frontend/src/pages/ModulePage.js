@@ -162,12 +162,12 @@ export default function ModulePage({ user, onLogout }) {
     if (!accessResolved) return;
     const background = hasLoadedRef.current;
     hasLoadedRef.current = true;
-    loadStructure({ background, withHidden: editMode && isAdmin });
-  }, [editMode, accessResolved, isAdmin, loadStructure]);
+    loadStructure({ background, withHidden: editMode && canEnter });
+  }, [editMode, accessResolved, canEnter, loadStructure]);
 
   const onStructureChanged = useCallback(
-    () => loadStructure({ background: true, withHidden: editMode && isAdmin }),
-    [loadStructure, editMode, isAdmin]
+    () => loadStructure({ background: true, withHidden: editMode && canEnter }),
+    [loadStructure, editMode, canEnter]
   );
   const applyStructurePatch = useCallback((updater) => {
     setConfig((prev) => (prev ? { ...prev, sections: updater(prev.sections || []) } : prev));
@@ -282,7 +282,7 @@ export default function ModulePage({ user, onLogout }) {
   // Empty-module (0 sections): an ADMIN should be able to BUILD it (header +
   // tabs + ✎ Edit dashboard + ModuleDataEntry's "+ Add section"), so fall
   // through to the normal render. A non-admin sees a friendly empty state.
-  if (config.sections.length === 0 && !isAdmin) {
+  if (config.sections.length === 0 && !canEnter) {
     return (<div style={S.shell}><div style={S.notice}>This dashboard doesn't have any content yet.</div></div>);
   }
 
@@ -355,7 +355,17 @@ export default function ModulePage({ user, onLogout }) {
         <div style={{ ...S.titleRight, ...(isMobile ? S.titleRightMobile : {}) }}>
           <span style={S.periodBadge}>{monthName} {year}</span>
           {activeView === 'entry' && <StatusBadge status={currentStatus} />}
-          {isAdmin && activeView === 'entry' && (
+          {canEnter && (
+            <button
+              type="button"
+              style={S.designLink}
+              title="Design this dashboard's snapshot"
+              onClick={() => navigate(`/hub/admin/designer/${encodeURIComponent(moduleCode)}`)}
+            >
+              ✎ Design snapshot
+            </button>
+          )}
+          {canEnter && activeView === 'entry' && (
             <button
               type="button"
               style={{ ...S.editToggle, ...(editMode ? S.editToggleOn : {}) }}
@@ -437,14 +447,14 @@ export default function ModulePage({ user, onLogout }) {
             month={month}
             onPeriodChange={handlePeriodChange}
             onStatusChange={setCurrentStatus}
-            canEditStructure={isAdmin}
-            editMode={editMode && isAdmin}
+            canEditStructure={canEnter}
+            editMode={editMode && canEnter}
             onStructureChanged={onStructureChanged}
             onStructurePatch={applyStructurePatch}
           />
         ) : (config.sections.length === 0 && !(snapshotMode === 'designer' && layout)) ? (
           // Empty module (0 sections) with no designer layout → nothing to render.
-          <div style={S.notice}>Nothing to show yet. {isAdmin ? 'Add sections and fields in Data Entry → ✎ Edit dashboard.' : ''}</div>
+          <div style={S.notice}>Nothing to show yet. {canEnter ? 'Add sections and fields in Data Entry → ✎ Edit dashboard.' : ''}</div>
         ) : (snapshotMode === 'designer' && layout) ? (
           // Y-3a CONVERT: this module is in 'designer' mode with a published
           // layout → render the config-driven ConfigurableSnapshot. Flipping
@@ -536,6 +546,11 @@ const S = {
   },
   tabMobile: { minHeight: 40, textAlign: 'center' },
   tabActive: { background: 'linear-gradient(135deg, rgba(243,192,54,0.18), rgba(236,72,153,0.12))', color: '#fff', boxShadow: '0 2px 8px rgba(0,0,0,0.2)' },
+  designLink: {
+    padding: '8px 14px', borderRadius: 8, background: 'rgba(168,85,247,0.12)',
+    border: '1px solid rgba(168,85,247,0.4)', color: '#c084fc', cursor: 'pointer',
+    fontFamily: 'inherit', fontSize: 12.5, fontWeight: 600,
+  },
   editToggle: {
     padding: '8px 16px', borderRadius: 8,
     background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.15)',
