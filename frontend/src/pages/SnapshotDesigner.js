@@ -187,6 +187,25 @@ export default function SnapshotDesigner({ user }) {
   const navigate = useNavigate();
 
   const isAdmin = user && String(user.role || '').toLowerCase() === 'admin';
+  // Phase 8b: admin OR owner of THIS module may design it. Resolve the user's
+  // access_level for :moduleCode (admin bypasses the lookup). The backend
+  // enforces the same on every write (checkModuleAccessParam('owner')).
+  const [accessLevel, setAccessLevel] = useState(null);
+  const [accessResolved, setAccessResolved] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    if (isAdmin) { setAccessLevel('admin'); setAccessResolved(true); return undefined; }
+    dashboardsAPI.getMyAccess()
+      .then((rows) => {
+        if (cancelled) return;
+        const r = (Array.isArray(rows) ? rows : []).find((x) => x.code === moduleCode || x.module_code === moduleCode);
+        setAccessLevel(r ? r.access_level : null);
+      })
+      .catch((e) => { if (!cancelled) { console.error('[SnapshotDesigner] access check failed:', e); setAccessLevel(null); } })
+      .finally(() => { if (!cancelled) setAccessResolved(true); });
+    return () => { cancelled = true; };
+  }, [moduleCode, isAdmin]);
+  const canDesign = isAdmin || accessLevel === 'owner';
   const moduleName = MODULE_NAME_BY_CODE[moduleCode] || moduleCode;
 
   const [config, setConfig] = useState({ module_code: moduleCode, rows: [] });
@@ -204,7 +223,7 @@ export default function SnapshotDesigner({ user }) {
 
   // Load structure + published + active layout.
   useEffect(() => {
-    if (!isAdmin) return undefined;
+    if (!canDesign) return undefined;
     let cancelled = false;
     setLoading(true);
     (async () => {
@@ -257,7 +276,7 @@ export default function SnapshotDesigner({ user }) {
       }
     })();
     return () => { cancelled = true; };
-  }, [moduleCode, isAdmin, moduleName]);
+  }, [moduleCode, canDesign, moduleName]);
 
   // Unsaved-changes guard.
   useEffect(() => {
@@ -508,8 +527,11 @@ export default function SnapshotDesigner({ user }) {
     ? (((config.rows[selected.r] || {}).columns || [])[selected.c] || {}).blocks?.[selected.b]
     : null;
 
-  if (!isAdmin) {
-    return <div style={S.shell}><div style={S.notice}>Admins only. <span style={S.link} onClick={() => navigate('/admin')}>Go to Admin</span></div></div>;
+  if (!accessResolved) {
+    return <div style={S.shell}><div style={S.spinner} /><style>{`@keyframes hrSpin{to{transform:rotate(360deg)}}`}</style></div>;
+  }
+  if (!canDesign) {
+    return <div style={S.shell}><div style={S.notice}>You need owner or admin access to design this dashboard. <span style={S.link} onClick={() => navigate(`/hub/dashboards/${encodeURIComponent(moduleCode)}`)}>Back to {moduleName}</span></div></div>;
   }
   if (loading) {
     return <div style={S.shell}><div style={S.spinner} /><style>{`@keyframes hrSpin{to{transform:rotate(360deg)}}`}</style></div>;
