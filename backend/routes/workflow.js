@@ -171,9 +171,11 @@ const performAdminTransition = async (opts) => {
       }
     }
 
-    // 4. Validate transition. actorIsOwner irrelevant for admin actions
-    //    but pass true defensively (admin-override branch fires first anyway).
-    const trans = validateTransition(currentStatus, toState, actorRole, true);
+    // 4. Validate transition. actorIsOwner defaults to true for the admin
+    //    handlers (unchanged); the generic /transition endpoint passes the real
+    //    ownership (created_by === actor) so owner-gated transitions work.
+    const actorIsOwner = (opts.actorIsOwner !== undefined) ? opts.actorIsOwner : true;
+    const trans = validateTransition(currentStatus, toState, actorRole, actorIsOwner);
     if (!trans.valid) {
       await client.query('ROLLBACK');
       return {
@@ -224,6 +226,66 @@ const performAdminTransition = async (opts) => {
     client.release();
   }
 };
+
+// =============================================
+// POST /api/workflow/transition  (Phase 3 Round 2a)
+// Generic transition: executes ANY transition allowed by validateTransition,
+// which already encodes who-can-do-what (ALLOWED_TRANSITIONS). This single
+// endpoint powers the non-admin review chain — function_head
+// (submitted -> head_reviewed), hr_director (head_reviewed -> director_reviewed),
+// owner resume (rejected -> draft) — and any role's allowed transition. Admin
+// may also use it, but the admin-* endpoints remain for the admin queue.
+// Body: { target_type, target_id, to_state, reason?: string }
+// Gating is entirely validateTransition's (role + ownership); 403 on invalid.
+// =============================================
+router.post('/transition', authenticateToken, async (req, res) => {
+  const v = validateActionBody(req.body, { reasonRequired: false });
+  if (!v.ok) return res.status(400).json({ error: v.error });
+
+  const { target_type, target_id, to_state, reason } = req.body;
+  if (typeof to_state !== 'string' || to_state.length === 0) {
+    return res.status(400).json({ error: 'to_state (string) is required.' });
+  }
+  const tid = parseInt(target_id, 10);
+
+  // Determine ownership for owner-gated transitions (e.g. rejected -> draft).
+  // Only dashboard_submission carries created_by here; load it to compare.
+  let actorIsOwner = false;
+  if (target_type === 'dashboard_submission') {
+    try {
+      const r = await pool.query('SELECT created_by FROM dashboard_submissions WHERE id = $1', [tid]);
+      if (r.rows.length === 0) {
+        return res.status(404).json({ error: `Target row not found: ${target_type}#${tid}` });
+      }
+      actorIsOwner = (r.rows[0].created_by === req.user.id);
+    } catch (err) {
+      console.error('POST /transition ownership lookup failed:', err);
+      return res.status(500).json({ error: 'Failed to load target row.' });
+    }
+  }
+
+  // Reuse the same atomic helper as the admin handlers (workflow-active check,
+  // FOR UPDATE load, validateTransition, update + workflow_history, commit).
+  // validateTransition returns a 403-worthy reason; map its 409 to 403 so the
+  // caller sees an authorization error for a disallowed transition.
+  const result = await performAdminTransition({
+    target_type,
+    target_id: tid,
+    toState: to_state,
+    action: 'transition',
+    reason: (typeof reason === 'string' && reason.trim() !== '') ? reason.trim() : null,
+    actorUserId: req.user.id,
+    actorRole: req.user.role,
+    actorIsOwner,
+  });
+  // An illegal/ unauthorized transition comes back as 409 'Illegal state
+  // transition'; surface it as 403 (the actor isn't permitted) per the spec.
+  const http = (result.http === 409 && result.body && result.body.error === 'Illegal state transition') ? 403 : result.http;
+  const body = (http === 403)
+    ? { error: (result.body && result.body.reason) || 'Transition not allowed.', from: result.body && result.body.from, to: result.body && result.body.to }
+    : result.body;
+  res.status(http).json(body);
+});
 
 // =============================================
 // POST /api/workflow/admin-approve
