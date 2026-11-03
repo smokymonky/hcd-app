@@ -284,6 +284,11 @@ export const labelsAPI = {
 // Workflow (Phase 1+ — admin/review actions)
 // =============================================
 export const workflowAPI = {
+  // Phase 3 Round 2a: generic transition (function_head/hr_director review chain,
+  // owner resume, any role's allowed transition). Gated by validateTransition.
+  transition: (target_type, target_id, to_state, reason) => request('/workflow/transition', {
+    method: 'POST', body: JSON.stringify({ target_type, target_id, to_state, reason })
+  }),
   adminApprove: (target_type, target_id, reason) => request('/workflow/admin-approve', {
     method: 'POST', body: JSON.stringify({ target_type, target_id, reason })
   }),
