@@ -289,6 +289,8 @@ export const workflowAPI = {
   transition: (target_type, target_id, to_state, reason) => request('/workflow/transition', {
     method: 'POST', body: JSON.stringify({ target_type, target_id, to_state, reason })
   }),
+  // Round 2b: submissions awaiting the current user's action (with allowedActions).
+  getMyInbox: () => request('/workflow/my-inbox'),
   adminApprove: (target_type, target_id, reason) => request('/workflow/admin-approve', {
     method: 'POST', body: JSON.stringify({ target_type, target_id, reason })
   }),
