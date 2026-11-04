@@ -4,6 +4,7 @@ import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
 import AdminPage from './pages/AdminPage';
 import HubPage from './pages/HubPage';
+import WorkflowInbox from './pages/WorkflowInbox';
 import HROpsPage from './pages/HROpsPage';
 import ModuleEntryPreview from './pages/ModuleEntryPreview';
 import ModuleSnapshotPreview from './pages/ModuleSnapshotPreview';
@@ -59,6 +60,8 @@ function App() {
             Login still routes to /dashboard (Annual Plan) — Phase 7 flips the
             cutover to /hub. Hub exists but is unlinked from login flow until then. */}
         <Route path="/hub" element={user ? <HubPage user={user} onLogout={handleLogout} /> : <Navigate to="/login" />} />
+        {/* Round 2b — My Inbox (workflow review chain + audit trail), any authed user. */}
+        <Route path="/hub/inbox" element={user ? <WorkflowInbox user={user} onLogout={handleLogout} /> : <Navigate to="/login" />} />
         <Route path="/hub/:categoryId" element={user ? <HubPage user={user} onLogout={handleLogout} /> : <Navigate to="/login" />} />
         {/* HR OPERATIONS MODULE — CUTOVER (Rule 9/10). HR_OPS now routes through
             the generic ModulePage (engine entry = builder-editable) like TA/L&D/
