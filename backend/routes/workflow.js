@@ -27,7 +27,8 @@ const {
   updateTargetStatus,
   getWorkflowTarget,
   getTargetRow,
-  resolveModuleForTarget
+  resolveModuleForTarget,
+  STATUS_VALUES
 } = require('../lib/workflow');
 
 // =============================================
@@ -285,6 +286,81 @@ router.post('/transition', authenticateToken, async (req, res) => {
     ? { error: (result.body && result.body.reason) || 'Transition not allowed.', from: result.body && result.body.from, to: result.body && result.body.to }
     : result.body;
   res.status(http).json(body);
+});
+
+// =============================================
+// GET /api/workflow/my-inbox  (Round 2b)
+// Returns submissions on which the CURRENT user can take the next action,
+// computed via validateTransition (so it mirrors the chain exactly): a
+// function_head sees 'submitted' (→ head_reviewed), hr_director sees
+// 'head_reviewed' (→ director_reviewed), an owner sees their 'rejected' (→
+// draft resume), admin sees all in-flight with their full actions. Each row
+// has the admin-queue shape + allowedActions:[to_state,...]. Only rows with
+// ≥1 allowed action for this user are returned.
+// =============================================
+router.get('/my-inbox', authenticateToken, async (req, res) => {
+  try {
+    // Candidate rows: in-flight states + the user's own rejected/draft. Same
+    // join shape as dashboards admin-queue (module + owner + last action).
+    const r = await pool.query(
+      `SELECT s.id, s.module_id, m.code AS module_code, m.name AS module_name,
+              s.year, s.month, s.status, s.created_by,
+              u.name AS owner_name, u.role AS owner_role,
+              s.updated_at,
+              wh.created_at AS last_action_at,
+              au.name AS last_action_by_name
+       FROM dashboard_submissions s
+       JOIN dashboard_modules m ON s.module_id = m.id
+       LEFT JOIN users u ON s.created_by = u.id
+       LEFT JOIN LATERAL (
+         SELECT h.created_at, h.action_by
+         FROM workflow_history h
+         WHERE h.target_type = 'dashboard_submission' AND h.target_id = s.id
+         ORDER BY h.created_at DESC, h.id DESC
+         LIMIT 1
+       ) wh ON true
+       LEFT JOIN users au ON wh.action_by = au.id
+       WHERE s.status IN ('submitted','head_reviewed','director_reviewed','approved','published')
+          OR (s.created_by = $1 AND s.status IN ('rejected','draft'))
+       ORDER BY s.updated_at DESC`,
+      [req.user.id]
+    );
+
+    const role = req.user.role;
+    // Candidate to_states to probe for each row (every known status except the
+    // from-state); validateTransition decides which are actually allowed for
+    // this role+ownership.
+    const candidateStates = Array.isArray(STATUS_VALUES) ? STATUS_VALUES : [];
+    const inbox = [];
+    for (const row of r.rows) {
+      const actorIsOwner = row.created_by === req.user.id;
+      const allowedActions = candidateStates.filter((to) => {
+        if (to === row.status) return false;
+        const t = validateTransition(row.status, to, role, actorIsOwner);
+        return t && t.valid;
+      });
+      if (allowedActions.length === 0) continue;
+      inbox.push({
+        id: row.id,
+        target_type: 'dashboard_submission',
+        module_code: row.module_code,
+        module_name: row.module_name,
+        year: row.year,
+        month: row.month,
+        status: row.status,
+        owner_name: row.owner_name,
+        owner_role: row.owner_role,
+        updated_at: row.updated_at,
+        last_action_at: row.last_action_at,
+        last_action_by_name: row.last_action_by_name,
+        allowedActions,
+      });
+    }
+    res.json(inbox);
+  } catch (err) {
+    console.error('GET /my-inbox error:', err);
+    res.status(500).json({ error: 'Server error loading inbox.' });
+  }
 });
 
 // =============================================
