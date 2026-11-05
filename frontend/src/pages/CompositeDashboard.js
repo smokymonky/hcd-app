@@ -10,6 +10,7 @@ import LDSnapshot from '../dashboards/LDSnapshot';
 import HRSysSnapshot from '../dashboards/HRSysSnapshot';
 import HROpsSnapshot from '../dashboards/HROpsSnapshot';
 import ConfigurableSnapshot from '../dashboards/ConfigurableSnapshot';
+import { exportCompositeToPDF } from '../utils/compositeExport';
 
 // =============================================
 // CompositeDashboard — select N dashboards + a period → stacked snapshots
@@ -60,6 +61,32 @@ export default function CompositeDashboard({ user }) {
   const [modules, setModules] = useState(null);   // accessible modules [{code,name}]
   const [selected, setSelected] = useState([]);   // selected module codes
   const [modErr, setModErr] = useState(null);
+  const [loaded, setLoaded] = useState({});       // code → { sections, values } once a section has loaded
+  const [exporting, setExporting] = useState(false);
+  const [exportErr, setExportErr] = useState(null);
+
+  // A section reports its loaded data up (keyed by code) for PDF assembly.
+  const handleLoaded = useCallback((code, data) => {
+    setLoaded((cur) => ({ ...cur, [code]: data }));
+  }, []);
+
+  // PDF is ready when every selected module has reported loaded data for the
+  // current period (keyed per code; cleared when period/selection changes).
+  const allLoaded = selected.length > 0 && selected.every((c) => loaded[c]);
+
+  async function handleExport() {
+    setExporting(true); setExportErr(null);
+    try {
+      const mods = selected.map((code) => {
+        const meta = (modules || []).find((m) => m.code === code);
+        const d = loaded[code] || {};
+        return { code, name: (meta && meta.name) || code, sections: d.sections || [], values: d.values || {} };
+      });
+      await exportCompositeToPDF({ year, month, monthName: MONTH_LABEL(month) }, mods);
+    } catch (e) {
+      setExportErr(e.message || 'Could not generate PDF.');
+    } finally { setExporting(false); }
+  }
 
   // Load the user's accessible modules (admin = all active, via listModules;
   // non-admin = my-access intersected with active modules for names/meta).
@@ -83,6 +110,9 @@ export default function CompositeDashboard({ user }) {
     return () => { cancelled = true; };
   }, [isAdmin]);
 
+  // Clear the loaded cache when the period changes (sections re-fetch under new keys).
+  useEffect(() => { setLoaded({}); }, [year, month]);
+
   const yearOptions = buildYearOptions();
   const monthOptions = buildMonthOptions();
 
@@ -96,6 +126,15 @@ export default function CompositeDashboard({ user }) {
       <div style={S.topBar}>
         <button type="button" style={S.backBtn} onClick={() => navigate('/hub')}>← Hub</button>
         <div style={S.title}>Composite View</div>
+        <button
+          type="button"
+          style={{ ...S.pdfBtn, ...((!allLoaded || exporting) ? S.pdfBtnDisabled : {}) }}
+          disabled={!allLoaded || exporting}
+          onClick={handleExport}
+          title={allLoaded ? 'Download the composite as a PDF' : 'Select dashboards and wait for them to load'}
+        >
+          {exporting ? 'Preparing…' : '⤓ Download PDF'}
+        </button>
       </div>
 
       <div style={S.controls}>
@@ -128,6 +167,7 @@ export default function CompositeDashboard({ user }) {
       </div>
 
       <div style={S.body}>
+        {exportErr && <div style={S.alertErr}>{exportErr}</div>}
         {selected.length === 0 ? (
           <div style={S.empty}>Select dashboards to compose a view.</div>
         ) : (
@@ -141,6 +181,7 @@ export default function CompositeDashboard({ user }) {
                 year={year}
                 month={month}
                 user={user}
+                onLoaded={handleLoaded}
               />
             );
           })
@@ -151,7 +192,7 @@ export default function CompositeDashboard({ user }) {
 }
 
 // One module's snapshot section — fetches independently, renders progressively.
-function CompositeSection({ moduleCode, moduleName, year, month, user }) {
+function CompositeSection({ moduleCode, moduleName, year, month, user, onLoaded }) {
   const [state, setState] = useState({ loading: true });
 
   const load = useCallback(() => {
@@ -170,15 +211,18 @@ function CompositeSection({ moduleCode, moduleName, year, month, user }) {
       const layout = layoutRes ? layoutRes.config : null;
       if (published && published.__notPublished) {
         setState({ loading: false, notPublished: true, sections, snapshotMode, layout });
+        if (onLoaded) onLoaded(moduleCode, { sections, values: {} });
         return;
       }
       const values = {};
       (published.data || []).forEach((row) => { values[row.field_key] = row.value ?? ''; });
       setState({ loading: false, sections, snapshotMode, layout, values });
+      if (onLoaded) onLoaded(moduleCode, { sections, values });
     }).catch((e) => {
       setState({ loading: false, error: e.message || 'Could not load.' });
+      if (onLoaded) onLoaded(moduleCode, { sections: [], values: {} });
     });
-  }, [moduleCode, year, month]);
+  }, [moduleCode, year, month, onLoaded]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -216,6 +260,9 @@ const S = {
   topBar: { display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap', padding: '20px 48px 0' },
   backBtn: { padding: '8px 14px', borderRadius: 8, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.12)', color: 'rgba(255,255,255,0.8)', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, fontWeight: 600 },
   title: { fontSize: 22, fontWeight: 800, letterSpacing: '-0.4px' },
+  pdfBtn: { marginLeft: 'auto', padding: '9px 16px', borderRadius: 8, background: 'linear-gradient(135deg, #F3C036 0%, #ec4899 100%)', border: 'none', color: '#1a1028', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, fontWeight: 700 },
+  pdfBtnDisabled: { opacity: 0.4, cursor: 'not-allowed', filter: 'grayscale(0.3)' },
+  alertErr: { marginBottom: 14, padding: '10px 14px', borderRadius: 8, background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.35)', color: '#fca5a5', fontSize: 13 },
   controls: { maxWidth: 1100, margin: '18px auto 0', padding: '0 48px', display: 'flex', flexDirection: 'column', gap: 12 },
   controlRow: { display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 14, padding: '14px 18px' },
   ctrlLabel: { fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.5)', letterSpacing: '1.2px', minWidth: 90 },
