@@ -43,6 +43,7 @@ export const ICON_PATHS = {
   hrSys: '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>',
   lock: '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>',
   inbox: '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9l2-5h14l2 5m-18 0v8a2 2 0 002 2h14a2 2 0 002-2V9m-18 0h5l2 3h4l2-3h5"/>',
+  composite: '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 5h7v5H4V5zm0 9h7v5H4v-5zm9-9h7v8h-7V5zm0 12h7v2h-7v-2z"/>',
 };
 
 // Map dashboard module codes (from API) → presentation metadata.
@@ -119,6 +120,17 @@ export const HUB_SHELL = [
     sortOrder: 3,
     isStatic: true,
     requiredAccess: null,                 // all authed users; the page shows an empty state if nothing awaits
+  },
+  {
+    id: 'composite_view',
+    type: 'module',
+    title: 'Composite View',
+    description: 'Stack multiple dashboards for a period in one view.',
+    iconKey: 'composite',
+    route: '/hub/composite',
+    sortOrder: 4,
+    isStatic: true,
+    requiredAccess: null,                 // all authed users; the page shows only accessible modules
   },
   // Future top-level entries (Finance Dashboards, Compliance Reports, etc.)
   // get added here. Rule 13: same shape, no special-casing.
