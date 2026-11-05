@@ -5,6 +5,7 @@ import DashboardPage from './pages/DashboardPage';
 import AdminPage from './pages/AdminPage';
 import HubPage from './pages/HubPage';
 import WorkflowInbox from './pages/WorkflowInbox';
+import CompositeDashboard from './pages/CompositeDashboard';
 import HROpsPage from './pages/HROpsPage';
 import ModuleEntryPreview from './pages/ModuleEntryPreview';
 import ModuleSnapshotPreview from './pages/ModuleSnapshotPreview';
@@ -62,6 +63,8 @@ function App() {
         <Route path="/hub" element={user ? <HubPage user={user} onLogout={handleLogout} /> : <Navigate to="/login" />} />
         {/* Round 2b — My Inbox (workflow review chain + audit trail), any authed user. */}
         <Route path="/hub/inbox" element={user ? <WorkflowInbox user={user} onLogout={handleLogout} /> : <Navigate to="/login" />} />
+        {/* Phase 6.5-a — Composite View (stacked module snapshots), any authed user. */}
+        <Route path="/hub/composite" element={user ? <CompositeDashboard user={user} onLogout={handleLogout} /> : <Navigate to="/login" />} />
         <Route path="/hub/:categoryId" element={user ? <HubPage user={user} onLogout={handleLogout} /> : <Navigate to="/login" />} />
         {/* HR OPERATIONS MODULE — CUTOVER (Rule 9/10). HR_OPS now routes through
             the generic ModulePage (engine entry = builder-editable) like TA/L&D/
