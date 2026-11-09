@@ -283,6 +283,14 @@ export const labelsAPI = {
 // =============================================
 // Workflow (Phase 1+ — admin/review actions)
 // =============================================
+// Phase 6.5-d: per-user named composite reports.
+export const reportsAPI = {
+  list: () => request('/dashboards/composite-reports'),
+  create: (payload) => request('/dashboards/composite-reports', { method: 'POST', body: JSON.stringify(payload) }),
+  update: (id, payload) => request(`/dashboards/composite-reports/${id}`, { method: 'PUT', body: JSON.stringify(payload) }),
+  remove: (id) => request(`/dashboards/composite-reports/${id}`, { method: 'DELETE' }),
+};
+
 export const workflowAPI = {
   // Phase 3 Round 2a: generic transition (function_head/hr_director review chain,
   // owner resume, any role's allowed transition). Gated by validateTransition.
