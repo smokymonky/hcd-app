@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { dashboardsAPI, targetsAPI } from '../services/api';
+import { dashboardsAPI, targetsAPI, reportsAPI } from '../services/api';
 import { buildYearOptions, buildMonthOptions } from '../engine/computers';
 import Dropdown from '../dashboards/Dropdown';
 // Snapshot renderers — SAME set + mapping ModulePage uses (reused, not forked).
@@ -113,6 +113,41 @@ export default function CompositeDashboard({ user }) {
   // Clear the loaded cache when the period changes (sections re-fetch under new keys).
   useEffect(() => { setLoaded({}); }, [year, month]);
 
+  // Phase 6.5-d: per-user saved reports.
+  const [reports, setReports] = useState([]);
+  const [reportMsg, setReportMsg] = useState(null);
+  const loadReports = useCallback(() => {
+    reportsAPI.list()
+      .then((rows) => setReports(Array.isArray(rows) ? rows : []))
+      .catch((e) => console.error('[Composite] reports load failed:', e));
+  }, []);
+  useEffect(() => { loadReports(); }, [loadReports]);
+
+  async function saveReport() {
+    const name = window.prompt('Name this report:', '');
+    if (name === null) return;            // cancelled
+    if (!name.trim()) { setReportMsg('A name is required.'); return; }
+    setReportMsg(null);
+    try {
+      await reportsAPI.create({ name: name.trim(), config: { module_codes: selected, year, month } });
+      loadReports();
+    } catch (e) { setReportMsg(e.message || 'Could not save report.'); }
+  }
+
+  function applyReport(rep) {
+    const cfg = rep.config || {};
+    if (Array.isArray(cfg.module_codes)) setSelected(cfg.module_codes);
+    if (cfg.year != null) setYear(Number(cfg.year));
+    if (cfg.month != null) setMonth(Number(cfg.month));
+  }
+
+  async function deleteReport(rep, e) {
+    if (e) e.stopPropagation();
+    if (!window.confirm(`Delete report “${rep.name}”?`)) return;
+    try { await reportsAPI.remove(rep.id); loadReports(); }
+    catch (err) { setReportMsg(err.message || 'Could not delete report.'); }
+  }
+
   const yearOptions = buildYearOptions();
   const monthOptions = buildMonthOptions();
 
@@ -164,6 +199,29 @@ export default function CompositeDashboard({ user }) {
             </div>
           )}
         </div>
+        <div style={S.controlRow}>
+          <span style={S.ctrlLabel}>SAVED</span>
+          <div style={S.chips}>
+            {reports.length === 0 ? (
+              <span style={S.dim}>No saved reports yet.</span>
+            ) : reports.map((rep) => (
+              <span key={rep.id} style={S.reportChip}>
+                <button type="button" style={S.reportLoad} onClick={() => applyReport(rep)} title="Load this report">{rep.name}</button>
+                <button type="button" style={S.reportDel} onClick={(e) => deleteReport(rep, e)} title="Delete report">✕</button>
+              </span>
+            ))}
+          </div>
+          <button
+            type="button"
+            style={{ ...S.saveBtn, ...(selected.length === 0 ? S.saveBtnDisabled : {}) }}
+            disabled={selected.length === 0}
+            onClick={saveReport}
+            title={selected.length === 0 ? 'Select dashboards first' : 'Save the current selection + period as a named report'}
+          >
+            ＋ Save as report
+          </button>
+        </div>
+        {reportMsg && <div style={S.alertErr}>{reportMsg}</div>}
       </div>
 
       <div style={S.body}>
@@ -270,6 +328,11 @@ const S = {
   chips: { display: 'flex', gap: 8, flexWrap: 'wrap' },
   chip: { padding: '8px 14px', borderRadius: 20, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.15)', color: 'rgba(255,255,255,0.8)', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, fontWeight: 600 },
   chipOn: { background: 'rgba(243,192,54,0.14)', border: '1px solid rgba(243,192,54,0.45)', color: '#F3C036' },
+  reportChip: { display: 'inline-flex', alignItems: 'center', background: 'rgba(168,85,247,0.12)', border: '1px solid rgba(168,85,247,0.4)', borderRadius: 20, overflow: 'hidden' },
+  reportLoad: { padding: '7px 12px', background: 'transparent', border: 'none', color: '#c084fc', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, fontWeight: 600 },
+  reportDel: { padding: '7px 10px', background: 'transparent', border: 'none', borderLeft: '1px solid rgba(168,85,247,0.3)', color: 'rgba(255,255,255,0.55)', cursor: 'pointer', fontFamily: 'inherit', fontSize: 12 },
+  saveBtn: { marginLeft: 'auto', padding: '8px 14px', borderRadius: 8, background: 'rgba(243,192,54,0.1)', border: '1px solid rgba(243,192,54,0.35)', color: '#F3C036', cursor: 'pointer', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 600 },
+  saveBtnDisabled: { opacity: 0.4, cursor: 'not-allowed' },
   body: { maxWidth: 1100, margin: '0 auto', padding: '22px 48px 0', display: 'flex', flexDirection: 'column', gap: 20 },
   empty: { padding: '56px 24px', textAlign: 'center', color: 'rgba(255,255,255,0.55)', border: '1px dashed rgba(255,255,255,0.15)', borderRadius: 14, fontSize: 15 },
   section: { background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 16, padding: '18px 20px' },
