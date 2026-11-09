@@ -357,6 +357,23 @@ const initDatabase = async () => {
     await pool.query("ALTER TABLE dashboard_modules ADD COLUMN IF NOT EXISTS snapshot_mode VARCHAR(20) NOT NULL DEFAULT 'bespoke'");
 
     // =============================================
+    // PHASE 6.5-d: named composite reports (per-user saved composite views).
+    // config = { module_codes: string[], year: int|null, month: int|null }.
+    // Additive & idempotent; each row belongs to one user (user_id).
+    // =============================================
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS composite_reports (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id),
+        name TEXT NOT NULL,
+        config JSONB NOT NULL,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await pool.query('CREATE INDEX IF NOT EXISTS idx_composite_reports_user ON composite_reports(user_id)');
+
+    // =============================================
     // PHASE 8a-1: Hub metadata on dashboard_modules (additive, idempotent).
     // category (Hub category id), icon_key (maps to a Hub SVG), accent (theme
     // token/hex). Lets a NEW module appear in the Hub without a code change (8a-2
