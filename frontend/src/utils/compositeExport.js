@@ -35,7 +35,11 @@ export async function exportCompositeToPDF(period, modules) {
   L.headerWidth = pageWidth - 14;
 
   // ---- page background + header (verbatim style) ----
-  function drawChrome() {
+  // Full-page dark background + the top header band (box, gold underline, ALJ
+  // text, month badge). This is drawn BEHIND all content, so it must be painted
+  // exactly ONCE per page and ALWAYS before any content — never after (that was
+  // the blank-PDF bug: a didDrawPage background buried the table).
+  function drawBackgroundAndHeader() {
     doc.setFillColor(...C.DARK_BG); doc.rect(0, 0, pageWidth, pageHeight, 'F');
     const hCY = L.headerY + L.headerHeight / 2;
     doc.setFillColor(...C.DARK_BG_3); doc.roundedRect(L.headerX, L.headerY, L.headerWidth, L.headerHeight, L.headerRadius, L.headerRadius, 'F');
@@ -57,6 +61,18 @@ export async function exportCompositeToPDF(period, modules) {
     }
   }
 
+  // Guard: each page number gets its background+header exactly once, before
+  // content. Safe to call from multiple places (manual addPage + autotable's
+  // willDrawPage) — already-chromed pages are skipped, so it never repaints
+  // over content already on the page.
+  const chromedPages = new Set();
+  function chromePage() {
+    const pageNum = doc.internal.getNumberOfPages();
+    if (chromedPages.has(pageNum)) return;
+    chromedPages.add(pageNum);
+    drawBackgroundAndHeader();
+  }
+
   function drawFooter() {
     const pageNum = doc.internal.getNumberOfPages();
     doc.setFillColor(...C.DARK_BG_3); doc.rect(0, pageHeight - 7.8, pageWidth, 7.8, 'F');
@@ -65,7 +81,7 @@ export async function exportCompositeToPDF(period, modules) {
     doc.text(`Page ${pageNum}`, pageWidth - 7, pageHeight - 2.8, { align: 'right' });
   }
 
-  drawChrome();
+  chromePage(); // page 1 background+header BEFORE any content
   const contentTop = L.headerY + L.headerHeight + L.goldLineHeight + 10;
   const bottomLimit = pageHeight - 14;
   let cursorY = contentTop;
@@ -74,7 +90,7 @@ export async function exportCompositeToPDF(period, modules) {
     if (cursorY + needed > bottomLimit) {
       drawFooter();
       doc.addPage();
-      drawChrome();
+      chromePage(); // new page background+header BEFORE continued content
       cursorY = contentTop;
     }
   }
@@ -143,7 +159,11 @@ export async function exportCompositeToPDF(period, modules) {
         alternateRowStyles: { fillColor: C.ROW_ODD },
         bodyStyles: { fillColor: C.ROW_EVEN },
         columnStyles: { 0: { cellWidth: tW * 0.62, textColor: C.LIGHT_PURPLE }, 1: { cellWidth: tW * 0.38, textColor: C.WHITE, fontStyle: 'bold', halign: 'right' } },
-        didDrawPage: () => { drawChrome(); },
+        // Chrome any NEW page autotable creates BEFORE it draws the table
+        // (page 1 is already chromed, so it's skipped — content stays visible).
+        willDrawPage: () => { chromePage(); },
+        // Footer is a bottom band; the table reserves margin.bottom so no overlap.
+        didDrawPage: () => { drawFooter(); },
       });
       cursorY = (doc.lastAutoTable ? doc.lastAutoTable.finalY : cursorY) + 8;
     } else {
