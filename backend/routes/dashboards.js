@@ -1684,4 +1684,103 @@ router.put('/:moduleCode/snapshot-mode', authenticateToken, checkModuleAccessPar
   }
 });
 
+// =============================================
+// PHASE 6.5-d — Named composite reports (PER-USER).
+// Every endpoint is scoped to req.user.id: a user can only see/modify their
+// own saved reports. config = { module_codes: string[], year?, month? }.
+// =============================================
+
+// GET — the current user's reports, newest first.
+router.get('/composite-reports', authenticateToken, async (req, res) => {
+  try {
+    const r = await pool.query(
+      `SELECT id, name, config, updated_at
+       FROM composite_reports
+       WHERE user_id = $1
+       ORDER BY updated_at DESC, id DESC`,
+      [req.user.id]
+    );
+    res.json(r.rows);
+  } catch (err) {
+    console.error('GET /composite-reports error:', err);
+    res.status(500).json({ error: 'Server error loading reports.' });
+  }
+});
+
+// POST — create a report for the current user.
+router.post('/composite-reports', authenticateToken, async (req, res) => {
+  try {
+    const { name, config } = req.body;
+    if (!name || !String(name).trim()) return res.status(400).json({ error: 'name is required.' });
+    if (!config || !Array.isArray(config.module_codes) || config.module_codes.length === 0) {
+      return res.status(400).json({ error: 'config.module_codes must be a non-empty array.' });
+    }
+    const safeConfig = {
+      module_codes: config.module_codes.map(String),
+      year: (config.year == null) ? null : parseInt(config.year, 10),
+      month: (config.month == null) ? null : parseInt(config.month, 10),
+    };
+    const r = await pool.query(
+      `INSERT INTO composite_reports (user_id, name, config)
+       VALUES ($1, $2, $3::jsonb)
+       RETURNING id, name, config, updated_at`,
+      [req.user.id, String(name).trim(), JSON.stringify(safeConfig)]
+    );
+    res.status(201).json(r.rows[0]);
+  } catch (err) {
+    console.error('POST /composite-reports error:', err);
+    res.status(500).json({ error: 'Server error saving report.' });
+  }
+});
+
+// PUT — update one of the current user's reports (scoped by user_id).
+router.put('/composite-reports/:id', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, config } = req.body;
+    if (name !== undefined && !String(name).trim()) return res.status(400).json({ error: 'name cannot be empty.' });
+    let safeConfig = null;
+    if (config !== undefined) {
+      if (!config || !Array.isArray(config.module_codes) || config.module_codes.length === 0) {
+        return res.status(400).json({ error: 'config.module_codes must be a non-empty array.' });
+      }
+      safeConfig = {
+        module_codes: config.module_codes.map(String),
+        year: (config.year == null) ? null : parseInt(config.year, 10),
+        month: (config.month == null) ? null : parseInt(config.month, 10),
+      };
+    }
+    const r = await pool.query(
+      `UPDATE composite_reports
+       SET name = COALESCE($1, name),
+           config = COALESCE($2::jsonb, config),
+           updated_at = NOW()
+       WHERE id = $3 AND user_id = $4
+       RETURNING id, name, config, updated_at`,
+      [name !== undefined ? String(name).trim() : null, safeConfig ? JSON.stringify(safeConfig) : null, id, req.user.id]
+    );
+    if (r.rows.length === 0) return res.status(404).json({ error: 'Report not found.' });
+    res.json(r.rows[0]);
+  } catch (err) {
+    console.error('PUT /composite-reports/:id error:', err);
+    res.status(500).json({ error: 'Server error updating report.' });
+  }
+});
+
+// DELETE — remove one of the current user's own reports (scoped by user_id).
+router.delete('/composite-reports/:id', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const r = await pool.query(
+      'DELETE FROM composite_reports WHERE id = $1 AND user_id = $2 RETURNING id',
+      [id, req.user.id]
+    );
+    if (r.rows.length === 0) return res.status(404).json({ error: 'Report not found.' });
+    res.json({ deleted: true });
+  } catch (err) {
+    console.error('DELETE /composite-reports/:id error:', err);
+    res.status(500).json({ error: 'Server error deleting report.' });
+  }
+});
+
 module.exports = router;
