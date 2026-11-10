@@ -3,7 +3,9 @@ import hrPlanData from '../data/hrPlanData';
 
 const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
-export async function exportToPDF(monthFilter, dataFromDashboard) {
+export async function exportToPDF(monthFilter, dataFromDashboard, year) {
+  // Phase 2.5: optional year (defaults to 2026 — byte-identical when omitted).
+  const planYear = (year === undefined || year === null) ? 2026 : year;
   if (!window.jspdf) {
     const s1 = document.createElement('script');
     s1.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
@@ -79,7 +81,7 @@ export async function exportToPDF(monthFilter, dataFromDashboard) {
   doc.setTextColor(...C.GOLD); doc.setFontSize(8); doc.setFont('helvetica','normal');
   doc.text('FINANCE',12,lsY+7);
   doc.setTextColor(...C.WHITE); doc.setFontSize(18); doc.setFont('helvetica','bold');
-  doc.text('HCD Annual Plan 2026',pageWidth/2,hCY+2,{align:'center'});
+  doc.text('HCD Annual Plan '+planYear,pageWidth/2,hCY+2,{align:'center'});
 
   const bW=35,bH=9,bX=pageWidth-7-bW-9,bY=hCY-bH/2;
   doc.setFillColor(...C.GOLD); doc.roundedRect(bX,bY,bW,bH,2,2,'F');
@@ -180,8 +182,8 @@ export async function exportToPDF(monthFilter, dataFromDashboard) {
   doc.setFillColor(...C.DARK_BG_3); doc.rect(0,pageHeight-7.8,pageWidth,7.8,'F');
   doc.setTextColor(...C.LIGHT_PURPLE); doc.setFontSize(7); doc.setFont('helvetica','normal');
   doc.text('Abdul Latif Jameel Finance | Human Capital Department',7,pageHeight-2.8);
-  const ft=selectedMonth?(monthFullNames[selectedMonth]||selectedMonth)+' 2026':'2026';
+  const ft=selectedMonth?(monthFullNames[selectedMonth]||selectedMonth)+' '+planYear:String(planYear);
   doc.text(ft,pageWidth-7,pageHeight-2.8,{align:'right'});
 
-  doc.save('HCD_Annual_Plan_2026_'+fileNameMonth+'.pdf');
+  doc.save('HCD_Annual_Plan_'+planYear+'_'+fileNameMonth+'.pdf');
 }
