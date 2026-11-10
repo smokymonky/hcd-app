@@ -335,6 +335,15 @@ const initDatabase = async () => {
     await pool.query('ALTER TABLE module_fields ADD COLUMN IF NOT EXISTS featured BOOLEAN DEFAULT false');
 
     // =============================================
+    // PHASE 2.5: multi-year Annual Plan. Add activities.year (additive). All
+    // existing rows are the 2026 plan → backfill 2026; default 2026 so inserts
+    // without a year land in 2026 (backward-compatible). Zero deletions.
+    // =============================================
+    await pool.query('ALTER TABLE activities ADD COLUMN IF NOT EXISTS year INTEGER');
+    await pool.query('UPDATE activities SET year = 2026 WHERE year IS NULL');
+    await pool.query('ALTER TABLE activities ALTER COLUMN year SET DEFAULT 2026');
+
+    // =============================================
     // SNAPSHOT DESIGNER (Y-1): versioned layout configs + per-module mode.
     // Additive & idempotent. All 4 live modules stay snapshot_mode='bespoke';
     // nothing flips to 'designer' here. (Designer UI + convert flow are Y-2+.)
