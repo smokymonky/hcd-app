@@ -87,6 +87,10 @@ const DashboardPage = ({ user, onLogout }) => {
   const [apiError, setApiError] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
   const [collapsedCats, setCollapsedCats] = useState({});
+  // Phase 2.5: multi-year. Default 2026 so the first paint is byte-identical to
+  // today; `years` populates from the DB (always includes 2026).
+  const [selectedYear, setSelectedYear] = useState(2026);
+  const [years, setYears] = useState([2026]);
 
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth <= 768);
@@ -94,20 +98,35 @@ const DashboardPage = ({ user, onLogout }) => {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Load from API, update cache
+  // Phase 2.5: discover the years that have data (always includes 2026); default
+  // the selected year to the LATEST data year (today = 2026 → identical default).
+  // Inline authed fetch (mirrors services/api.js) so api.js stays untouched.
+  useEffect(() => {
+    const API_URL = process.env.REACT_APP_API_URL || 'https://hcd-app.up.railway.app/api';
+    const token = localStorage.getItem('hcd_token');
+    fetch(`${API_URL}/activities/stats/years`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+      .then((r) => (r.ok ? r.json() : []))
+      .then((list) => {
+        const ys = Array.from(new Set([...(Array.isArray(list) ? list : []), 2026])).map(Number).sort((a, b) => a - b);
+        setYears(ys);
+        setSelectedYear(ys[ys.length - 1]);  // latest data year
+      })
+      .catch(() => { /* non-fatal: keep [2026] default */ });
+  }, []);
+
+  // Load from API for the selected year, update cache. The 2026 load uses the
+  // legacy cache key (byte-identical to today); other years fetch fresh.
   useEffect(() => {
     const loadFromAPI = async () => {
       try {
-        const data = await activitiesAPI.getAll();
+        const data = await activitiesAPI.getAll({ year: selectedYear });
         let items = [];
         if (data && data.activities) items = data.activities;
         else if (Array.isArray(data)) items = data;
-        if (items.length > 0) {
-          const mapped = sortActivities(items.map(mapActivity));
-          setAllData(mapped);
-          setFilteredData(mapped);
-          localStorage.setItem('hcd_activities_cache', JSON.stringify(items));
-        }
+        const mapped = sortActivities(items.map(mapActivity));
+        setAllData(mapped);
+        setFilteredData(mapped);
+        if (selectedYear === 2026) localStorage.setItem('hcd_activities_cache', JSON.stringify(items));
         setApiError(false);
       } catch (e) {
         console.log('API not available:', e.message);
@@ -116,7 +135,7 @@ const DashboardPage = ({ user, onLogout }) => {
       setDataLoaded(true);
     };
     loadFromAPI();
-  }, []);
+  }, [selectedYear]);
 
   useEffect(() => { document.body.setAttribute('data-theme', theme); localStorage.setItem('hcd-theme', theme); }, [theme]);
 
@@ -167,6 +186,18 @@ const DashboardPage = ({ user, onLogout }) => {
   const upcoming = filteredData.filter(i => i.dueDates.includes(cm) || i.dueDates.includes(nm)).length;
 
   const canExportPDF = user && ['admin','Admin','hr_director','HR Director','esmd','ceo'].includes(user.role);
+  // Phase 2.5: admin may add ANY year (past/future) as a new tab (client-side;
+  // it persists once an activity is created in that year).
+  const isAdmin = user && String(user.role || '').toLowerCase() === 'admin';
+  function handleAddYear() {
+    const input = window.prompt('Add a year (2000–2100):', String((years[years.length - 1] || 2026) + 1));
+    if (input === null) return;
+    const y = parseInt(input, 10);
+    if (!Number.isInteger(y) || y < 2000 || y > 2100) { window.alert('Enter a valid year between 2000 and 2100.'); return; }
+    if (years.includes(y)) { setSelectedYear(y); return; }  // already a tab → just switch
+    setYears((cur) => Array.from(new Set([...cur, y])).sort((a, b) => a - b));
+    setSelectedYear(y);  // switch to the (empty) new year
+  }
 
   // Mobile: format due dates with status icons
   const getMobileDue = (item) => {
@@ -237,7 +268,30 @@ const DashboardPage = ({ user, onLogout }) => {
             </svg>
           </div>
           <div className="header-divider" />
-          <div className="header-title"><h1>HCD Annual Plan 2026</h1></div>
+          <div className="header-title">
+            <h1>HCD Annual Plan {selectedYear}</h1>
+            {/* Phase 2.5: year tabs + admin '+ Add year' */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
+              {years.map((y) => (
+                <button
+                  key={y} type="button" onClick={() => setSelectedYear(y)}
+                  style={{
+                    padding: '5px 13px', borderRadius: 7, cursor: 'pointer', fontFamily: 'Inter, sans-serif',
+                    fontSize: 12.5, fontWeight: 700,
+                    background: y === selectedYear ? 'var(--gold, #F3C036)' : 'rgba(255,255,255,0.05)',
+                    color: y === selectedYear ? '#1a1028' : 'var(--text-light, rgba(255,255,255,0.6))',
+                    border: y === selectedYear ? '1px solid var(--gold, #F3C036)' : '1px solid rgba(255,255,255,0.12)',
+                  }}
+                >{y}</button>
+              ))}
+              {isAdmin && (
+                <button
+                  type="button" onClick={handleAddYear} title="Add a year"
+                  style={{ padding: '5px 11px', borderRadius: 7, cursor: 'pointer', fontFamily: 'Inter, sans-serif', fontSize: 12.5, fontWeight: 700, background: 'transparent', color: 'var(--gold, #F3C036)', border: '1px dashed rgba(243,192,54,0.5)' }}
+                >+ Add year</button>
+              )}
+            </div>
+          </div>
         </div>
         <div className="header-right">
           {canExportPDF && (
@@ -250,7 +304,7 @@ const DashboardPage = ({ user, onLogout }) => {
             {theme === 'dark' ? '🌙' : '☀️'}
           </button>
           {canExportPDF && (
-            <button className="btn-export" onClick={() => exportToPDF(filters.month, allData)}>
+            <button className="btn-export" onClick={() => exportToPDF(filters.month, allData, selectedYear)}>
               <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
               </svg>
@@ -296,7 +350,7 @@ const DashboardPage = ({ user, onLogout }) => {
           <option value="Completed Early">Completed Early</option>
         </select>
         <select className="filter-select" value={filters.month} onChange={e => setFilters(f => ({...f, month: e.target.value}))}>
-          <option value="all">All Year 2026</option>
+          <option value="all">All Year {selectedYear}</option>
           <option value="Q1">Q1 (Jan-Mar)</option><option value="Q2">Q2 (Apr-Jun)</option>
           <option value="Q3">Q3 (Jul-Sep)</option><option value="Q4">Q4 (Oct-Dec)</option>
           {months.map(m => <option key={m} value={m}>{m}</option>)}
