@@ -14,11 +14,19 @@ const { authenticateToken, checkPermission } = require('../middleware/auth');
 // =============================================
 router.get('/', authenticateToken, async (req, res) => {
   try {
-    const { category, owner, status } = req.query;
+    const { category, owner, status, year } = req.query;
     
     let query = 'SELECT * FROM activities WHERE 1=1';
     const params = [];
     let paramIndex = 1;
+
+    // Phase 2.5: optional ?year. Absent → no year filter (returns ALL, exactly
+    // as before — backward-compatible).
+    if (year !== undefined && year !== '' && year !== null) {
+      query += ` AND year = $${paramIndex}`;
+      params.push(parseInt(year, 10));
+      paramIndex++;
+    }
 
     // Apply filters if provided
     if (category) {
@@ -101,18 +109,21 @@ router.get('/:id', authenticateToken, async (req, res) => {
 // =============================================
 router.post('/', authenticateToken, checkPermission('can_create'), async (req, res) => {
   try {
-    const { name, category, owner, due_dates, status, description, assigned_to, notes } = req.body;
+    const { name, category, owner, due_dates, status, description, assigned_to, notes, year } = req.body;
 
     // Validate required fields
     if (!name || !category || !owner || !due_dates) {
       return res.status(400).json({ error: 'Name, category, owner, and due_dates are required.' });
     }
 
+    // Phase 2.5: year defaults to 2026 when not supplied (backward-compatible).
+    const activityYear = (year === undefined || year === null || year === '') ? 2026 : parseInt(year, 10);
+
     const result = await pool.query(
-      `INSERT INTO activities (name, category, owner, due_dates, status, description, assigned_to, notes, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      `INSERT INTO activities (name, category, owner, due_dates, status, description, assigned_to, notes, created_by, year)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
        RETURNING *`,
-      [name, category, owner, due_dates, status || 'Scheduled', description, assigned_to, notes, req.user.id]
+      [name, category, owner, due_dates, status || 'Scheduled', description, assigned_to, notes, req.user.id, activityYear]
     );
 
     res.status(201).json({
@@ -241,6 +252,14 @@ router.delete('/:id', authenticateToken, checkPermission('can_delete'), async (r
 // =============================================
 router.get('/stats/summary', authenticateToken, async (req, res) => {
   try {
+    const { year } = req.query;
+    // Phase 2.5: optional ?year. Absent → no filter (byte-identical to before).
+    const params = [];
+    let where = '';
+    if (year !== undefined && year !== '' && year !== null) {
+      where = ' WHERE year = $1';
+      params.push(parseInt(year, 10));
+    }
     const result = await pool.query(`
       SELECT 
         COUNT(*) as total,
@@ -251,13 +270,29 @@ router.get('/stats/summary', authenticateToken, async (req, res) => {
         COUNT(*) FILTER (WHERE status = 'On Hold') as on_hold,
         COUNT(*) FILTER (WHERE status = 'Canceled') as canceled,
         COUNT(*) FILTER (WHERE status = 'Completed Early') as completed_early
-      FROM activities
-    `);
+      FROM activities${where}
+    `, params);
 
     res.json(result.rows[0]);
 
   } catch (err) {
     console.error('Get stats error:', err);
+    res.status(500).json({ error: 'Server error.' });
+  }
+});
+
+// =============================================
+// GET /api/activities/stats/years  (Phase 2.5)
+// Distinct years that have data (always includes 2026 via the backfill).
+// =============================================
+router.get('/stats/years', authenticateToken, async (req, res) => {
+  try {
+    const result = await pool.query(
+      'SELECT DISTINCT year FROM activities WHERE year IS NOT NULL ORDER BY year ASC'
+    );
+    res.json(result.rows.map((r) => r.year));
+  } catch (err) {
+    console.error('Get years error:', err);
     res.status(500).json({ error: 'Server error.' });
   }
 });
