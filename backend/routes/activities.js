@@ -6,7 +6,7 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('../config/database');
-const { authenticateToken, checkPermission } = require('../middleware/auth');
+const { authenticateToken, checkPermission, isAdmin } = require('../middleware/auth');
 
 // =============================================
 // GET /api/activities
@@ -285,14 +285,99 @@ router.get('/stats/summary', authenticateToken, async (req, res) => {
 // GET /api/activities/stats/years  (Phase 2.5)
 // Distinct years that have data (always includes 2026 via the backfill).
 // =============================================
+// GET /stats/years — the TABS list. Distinct years from activities ∪ plan_years,
+// EXCLUDING hidden years (plan_years.is_hidden = true). ?includeHidden=true
+// (admin) returns ALL years with { year, is_hidden, hasActivities } for mgmt.
 router.get('/stats/years', authenticateToken, async (req, res) => {
   try {
-    const result = await pool.query(
-      'SELECT DISTINCT year FROM activities WHERE year IS NOT NULL ORDER BY year ASC'
-    );
+    const includeHidden = String(req.query.includeHidden) === 'true';
+    if (includeHidden) {
+      // Admin-only management view.
+      if (!(req.user.role && req.user.role.toLowerCase() === 'admin')) {
+        return res.status(403).json({ error: 'Admins only.' });
+      }
+      const r = await pool.query(`
+        WITH all_years AS (
+          SELECT year FROM plan_years
+          UNION
+          SELECT DISTINCT year FROM activities WHERE year IS NOT NULL
+        )
+        SELECT ay.year,
+               COALESCE(py.is_hidden, false) AS is_hidden,
+               EXISTS (SELECT 1 FROM activities a WHERE a.year = ay.year) AS has_activities
+        FROM all_years ay
+        LEFT JOIN plan_years py ON py.year = ay.year
+        ORDER BY ay.year ASC
+      `);
+      return res.json(r.rows.map((x) => ({ year: x.year, is_hidden: x.is_hidden, hasActivities: x.has_activities })));
+    }
+    // Visible years for everyone (hidden excluded).
+    const result = await pool.query(`
+      SELECT year FROM (
+        SELECT year FROM plan_years
+        UNION
+        SELECT DISTINCT year FROM activities WHERE year IS NOT NULL
+      ) ay
+      WHERE ay.year NOT IN (SELECT year FROM plan_years WHERE is_hidden = true)
+      ORDER BY ay.year ASC
+    `);
     res.json(result.rows.map((r) => r.year));
   } catch (err) {
     console.error('Get years error:', err);
+    res.status(500).json({ error: 'Server error.' });
+  }
+});
+
+// POST /stats/years (admin) — register a year so it persists without activities.
+router.post('/stats/years', authenticateToken, isAdmin, async (req, res) => {
+  try {
+    const y = parseInt(req.body.year, 10);
+    if (!Number.isInteger(y) || y < 2000 || y > 2100) {
+      return res.status(400).json({ error: 'Year must be an integer between 2000 and 2100.' });
+    }
+    await pool.query('INSERT INTO plan_years (year, created_by) VALUES ($1, $2) ON CONFLICT (year) DO NOTHING', [y, req.user.id]);
+    res.status(201).json({ year: y });
+  } catch (err) {
+    console.error('Register year error:', err);
+    res.status(500).json({ error: 'Server error.' });
+  }
+});
+
+// PUT /stats/years/:year (admin) — hide/unhide. 2026 can never be hidden.
+router.put('/stats/years/:year', authenticateToken, isAdmin, async (req, res) => {
+  try {
+    const y = parseInt(req.params.year, 10);
+    if (!Number.isInteger(y)) return res.status(400).json({ error: 'Invalid year.' });
+    const { is_hidden } = req.body;
+    if (typeof is_hidden !== 'boolean') return res.status(400).json({ error: 'is_hidden (boolean) is required.' });
+    if (y === 2026 && is_hidden === true) {
+      return res.status(400).json({ error: 'The 2026 plan cannot be hidden.' });
+    }
+    // Ensure a registry row exists (a data-only year may not have one yet).
+    await pool.query('INSERT INTO plan_years (year, created_by) VALUES ($1, $2) ON CONFLICT (year) DO NOTHING', [y, req.user.id]);
+    await pool.query('UPDATE plan_years SET is_hidden = $1 WHERE year = $2', [is_hidden, y]);
+    res.json({ year: y, is_hidden });
+  } catch (err) {
+    console.error('Hide/unhide year error:', err);
+    res.status(500).json({ error: 'Server error.' });
+  }
+});
+
+// DELETE /stats/years/:year (admin) — HARD delete. Guards: never 2026; never a
+// year that still has activities.
+router.delete('/stats/years/:year', authenticateToken, isAdmin, async (req, res) => {
+  try {
+    const y = parseInt(req.params.year, 10);
+    if (!Number.isInteger(y)) return res.status(400).json({ error: 'Invalid year.' });
+    if (y === 2026) return res.status(400).json({ error: 'The 2026 plan cannot be deleted.' });
+    const cnt = await pool.query('SELECT COUNT(*)::int AS n FROM activities WHERE year = $1', [y]);
+    if (cnt.rows[0].n > 0) {
+      return res.status(400).json({ error: 'Year has activities; delete them first.' });
+    }
+    await pool.query('DELETE FROM plan_years WHERE year = $1', [y]);
+    res.json({ deleted: true });
+  } catch (err) {
+    console.error('Delete year error:', err);
     res.status(500).json({ error: 'Server error.' });
   }
 });
