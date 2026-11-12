@@ -98,21 +98,38 @@ const DashboardPage = ({ user, onLogout }) => {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Phase 2.5: discover the years that have data (always includes 2026); default
-  // the selected year to the LATEST data year (today = 2026 → identical default).
+  // Phase 2.5 FIX+: year registry. `years` = VISIBLE years (plan tabs, everyone).
+  // `yearMeta` = admin management list [{year,is_hidden,hasActivities}].
   // Inline authed fetch (mirrors services/api.js) so api.js stays untouched.
-  useEffect(() => {
-    const API_URL = process.env.REACT_APP_API_URL || 'https://hcd-app.up.railway.app/api';
+  const [yearMeta, setYearMeta] = useState([]);
+  const API_BASE = process.env.REACT_APP_API_URL || 'https://hcd-app.up.railway.app/api';
+  const authFetch = useCallback((path, opts = {}) => {
     const token = localStorage.getItem('hcd_token');
-    fetch(`${API_URL}/activities/stats/years`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+    return fetch(`${API_BASE}/activities/stats/years${path}`, {
+      ...opts,
+      headers: { ...(opts.body ? { 'Content-Type': 'application/json' } : {}), ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    });
+  }, [API_BASE]);
+
+  const loadYears = useCallback((selectLatest) => {
+    const isAdminUser = user && String(user.role || '').toLowerCase() === 'admin';
+    authFetch('')
       .then((r) => (r.ok ? r.json() : []))
       .then((list) => {
         const ys = Array.from(new Set([...(Array.isArray(list) ? list : []), 2026])).map(Number).sort((a, b) => a - b);
         setYears(ys);
-        setSelectedYear(ys[ys.length - 1]);  // latest data year
+        if (selectLatest) setSelectedYear(ys[ys.length - 1]);  // latest visible year
       })
-      .catch(() => { /* non-fatal: keep [2026] default */ });
-  }, []);
+      .catch(() => { /* non-fatal: keep [2026] */ });
+    if (isAdminUser) {
+      authFetch('?includeHidden=true')
+        .then((r) => (r.ok ? r.json() : []))
+        .then((rows) => setYearMeta(Array.isArray(rows) ? rows : []))
+        .catch(() => { /* non-fatal */ });
+    }
+  }, [authFetch, user]);
+
+  useEffect(() => { loadYears(true); }, [loadYears]);
 
   // Load from API for the selected year, update cache. The 2026 load uses the
   // legacy cache key (byte-identical to today); other years fetch fresh.
@@ -189,14 +206,39 @@ const DashboardPage = ({ user, onLogout }) => {
   // Phase 2.5: admin may add ANY year (past/future) as a new tab (client-side;
   // it persists once an activity is created in that year).
   const isAdmin = user && String(user.role || '').toLowerCase() === 'admin';
-  function handleAddYear() {
+  // Add a year → register it (persists), refetch, switch to it.
+  async function handleAddYear() {
     const input = window.prompt('Add a year (2000–2100):', String((years[years.length - 1] || 2026) + 1));
     if (input === null) return;
     const y = parseInt(input, 10);
     if (!Number.isInteger(y) || y < 2000 || y > 2100) { window.alert('Enter a valid year between 2000 and 2100.'); return; }
-    if (years.includes(y)) { setSelectedYear(y); return; }  // already a tab → just switch
-    setYears((cur) => Array.from(new Set([...cur, y])).sort((a, b) => a - b));
-    setSelectedYear(y);  // switch to the (empty) new year
+    try {
+      const r = await authFetch('', { method: 'POST', body: JSON.stringify({ year: y }) });
+      if (!r.ok) { const e = await r.json().catch(() => ({})); window.alert(e.error || 'Could not add year.'); return; }
+      loadYears(false);
+      setSelectedYear(y);
+    } catch (e) { window.alert('Could not add year.'); }
+  }
+  // Hide / unhide a year (2026 protected on the server).
+  async function toggleHideYear(y, hide, e) {
+    if (e) e.stopPropagation();
+    try {
+      const r = await authFetch(`/${y}`, { method: 'PUT', body: JSON.stringify({ is_hidden: hide }) });
+      if (!r.ok) { const er = await r.json().catch(() => ({})); window.alert(er.error || 'Could not change visibility.'); return; }
+      if (hide && selectedYear === y) setSelectedYear(2026);  // leave a now-hidden year
+      loadYears(false);
+    } catch (err) { window.alert('Could not change visibility.'); }
+  }
+  // Delete a year (empty + not 2026; guarded on the server).
+  async function deleteYear(y, e) {
+    if (e) e.stopPropagation();
+    if (!window.confirm(`Delete year ${y}? (Only empty years can be deleted.)`)) return;
+    try {
+      const r = await authFetch(`/${y}`, { method: 'DELETE' });
+      if (!r.ok) { const er = await r.json().catch(() => ({})); window.alert(er.error || 'Could not delete year.'); return; }
+      if (selectedYear === y) setSelectedYear(2026);
+      loadYears(false);
+    } catch (err) { window.alert('Could not delete year.'); }
   }
 
   // Mobile: format due dates with status icons
@@ -270,20 +312,42 @@ const DashboardPage = ({ user, onLogout }) => {
           <div className="header-divider" />
           <div className="header-title">
             <h1>HCD Annual Plan {selectedYear}</h1>
-            {/* Phase 2.5: year tabs + admin '+ Add year' */}
+            {/* Phase 2.5 FIX+: year tabs. Admins see ALL years (hidden greyed +
+                hide/unhide + delete); non-admins see only visible years. */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
-              {years.map((y) => (
-                <button
-                  key={y} type="button" onClick={() => setSelectedYear(y)}
-                  style={{
-                    padding: '5px 13px', borderRadius: 7, cursor: 'pointer', fontFamily: 'Inter, sans-serif',
-                    fontSize: 12.5, fontWeight: 700,
-                    background: y === selectedYear ? 'var(--gold, #F3C036)' : 'rgba(255,255,255,0.05)',
-                    color: y === selectedYear ? '#1a1028' : 'var(--text-light, rgba(255,255,255,0.6))',
-                    border: y === selectedYear ? '1px solid var(--gold, #F3C036)' : '1px solid rgba(255,255,255,0.12)',
-                  }}
-                >{y}</button>
-              ))}
+              {(isAdmin ? (yearMeta.length ? yearMeta : years.map((y) => ({ year: y, is_hidden: false, hasActivities: true }))) : years.map((y) => ({ year: y, is_hidden: false, hasActivities: true }))).map((ym) => {
+                const y = ym.year;
+                const sel = y === selectedYear;
+                const hidden = !!ym.is_hidden;
+                const protectedYear = (y === 2026);
+                return (
+                  <span key={y} style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+                    <button
+                      type="button" onClick={() => setSelectedYear(y)}
+                      title={hidden ? `${y} (hidden)` : String(y)}
+                      style={{
+                        padding: '5px 13px', borderRadius: 7, cursor: 'pointer', fontFamily: 'Inter, sans-serif',
+                        fontSize: 12.5, fontWeight: 700, opacity: hidden ? 0.5 : 1,
+                        background: sel ? 'var(--gold, #F3C036)' : 'rgba(255,255,255,0.05)',
+                        color: sel ? '#1a1028' : 'var(--text-light, rgba(255,255,255,0.6))',
+                        border: sel ? '1px solid var(--gold, #F3C036)' : (hidden ? '1px dashed rgba(255,255,255,0.25)' : '1px solid rgba(255,255,255,0.12)'),
+                      }}
+                    >{y}{hidden ? ' · hidden' : ''}</button>
+                    {isAdmin && !protectedYear && (
+                      <>
+                        <button type="button" title={hidden ? 'Unhide' : 'Hide'} onClick={(e) => toggleHideYear(y, !hidden, e)}
+                          style={{ padding: '4px 6px', borderRadius: 6, cursor: 'pointer', background: 'transparent', border: '1px solid rgba(255,255,255,0.12)', color: 'var(--text-light, rgba(255,255,255,0.5))', fontSize: 11 }}
+                        >{hidden ? '◡' : '◠'}</button>
+                        {!ym.hasActivities && (
+                          <button type="button" title="Delete empty year" onClick={(e) => deleteYear(y, e)}
+                            style={{ padding: '4px 6px', borderRadius: 6, cursor: 'pointer', background: 'transparent', border: '1px solid rgba(239,68,68,0.3)', color: '#ef4444', fontSize: 11 }}
+                          >✕</button>
+                        )}
+                      </>
+                    )}
+                  </span>
+                );
+              })}
               {isAdmin && (
                 <button
                   type="button" onClick={handleAddYear} title="Add a year"
