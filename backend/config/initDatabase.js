@@ -343,6 +343,18 @@ const initDatabase = async () => {
     await pool.query('UPDATE activities SET year = 2026 WHERE year IS NULL');
     await pool.query('ALTER TABLE activities ALTER COLUMN year SET DEFAULT 2026');
 
+    // Phase 2.5 FIX+: year registry so added years PERSIST (even with no
+    // activities) + admin soft-hide. 2026 is always present and protected.
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS plan_years (
+        year INTEGER PRIMARY KEY,
+        is_hidden BOOLEAN DEFAULT false,
+        created_by INTEGER REFERENCES users(id),
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await pool.query('INSERT INTO plan_years (year) VALUES (2026) ON CONFLICT DO NOTHING');
+
     // =============================================
     // SNAPSHOT DESIGNER (Y-1): versioned layout configs + per-module mode.
     // Additive & idempotent. All 4 live modules stay snapshot_mode='bespoke';
